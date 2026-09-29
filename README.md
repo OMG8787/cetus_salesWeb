@@ -187,14 +187,17 @@ https://docs.google.com/document/d/【這一段就是文件ID】/edit
 
 ---
 
-## 第六步：設定前端並上傳到 GitHub Pages
+## 第六步：設定前端並發布到 GitHub Pages
+
+本專案已經附好自動部署設定（`.github/workflows/pages.yml`），整個專案推上 GitHub 後會自動把 `frontend` 資料夾發布成網站，不用手動上傳檔案。
 
 1. 打開本專案 `frontend/config.js`，把 `API_URL` 換成第五步複製的網址
-2. 到 GitHub 新增一個 repository（可以是 public，前端本來就是公開網頁）
-3. 把 `frontend` 資料夾**裡面所有檔案**（`index.html` `products.html` `cases.html` `quote.html` `customers.html` `report.html` `style.css` `config.js` `common.js` `demo.js` `login.js` `products.js` `cases.js` `quote.js` `customers.js` `report.js` `calc.html` `calc.js` `evalreport.html` `evalreport.js` `evalreport-render.js`，以及 `img` 資料夾（裡面是 `logo.png`））整個上傳到 repo 根目錄，注意是「資料夾裡面的每一個檔案」都要上傳，不是只傳一個 index.html
-4. 進入 repo 的 Settings → Pages → Source 選擇你的分支（例如 `main`）與資料夾（`/root`）
-5. 存檔後 GitHub 會給你一個網址，例如：`https://你的帳號.github.io/repo名稱/`
-6. 打開這個網址（會先看到登入頁），用第四步設定的帳密登入，登入成功會自動跳到「產品搜尋」頁，之後點上方分頁按鈕切換
+2. 到 GitHub 新增一個 **Public** repository（前端本來就是公開網頁；README / .gitignore 都不要勾，保持空的）
+3. 把整個專案推上去（`git push`）
+4. 進入 repo 的 **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**
+5. 到 repo 的 **Actions** 分頁，等「部署前端到 GitHub Pages」變成綠色勾勾（第一次如果在第 4 步之前就跑失敗了，點進去按 **Re-run all jobs**）
+6. 網址會是 `https://你的帳號.github.io/repo名稱/`（Settings → Pages 最上面也看得到），打開會先看到登入頁，用第四步設定的帳密登入
+7. 之後改了 `frontend` 裡的檔案，只要 commit + push，網站約 1 分鐘內自動更新；改了 `apps-script/Code.gs` 則要照第五步重新部署 Apps Script
 
 ---
 
