@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>評估報告編輯器 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs">
+  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+  <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+  <button class="tab-btn active" onclick="location.href='cases.html'">案件管理</button>
+  <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+  <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+  <button class="tab-btn" onclick="location.href='report.html'">日報</button>
+</nav>
+
+<section class="tab-content er-page">
+  <!-- 上方工具列 -->
+  <div class="er-topbar">
+    <div class="er-topbar-title">
+      <a href="cases.html" class="er-back">← 案件管理</a>
+      <h2>評估報告編輯器</h2>
+      <select id="er-case" title="選擇案件"><option value="">選擇案件...</option></select>
+      <span id="er-save-status" class="calc-hint"></span>
+    </div>
+    <div class="er-topbar-actions">
+      <button class="btn-secondary" onclick="refillFromCase()" title="用案件最新資料更新自動產生的表格（自己加的區塊不受影響）">↻ 重新帶入案件資料</button>
+      <button class="btn-secondary" onclick="importCaseImages()" title="把案件附件中的圖片帶進報告">🖼 帶入案件圖片</button>
+      <button onclick="printReport()" title="開啟列印視窗，可選「另存為 PDF」">🖨 列印 / 另存 PDF</button>
+      <button onclick="downloadReportHtml()">⬇ 下載 HTML</button>
+      <button onclick="saveReportToCase()" title="把報告存成 HTML 檔放進案件附件（Google 雲端硬碟）">☁ 存到案件附件</button>
+    </div>
+  </div>
+
+  <div class="er-grid">
+    <!-- 左：編輯區 -->
+    <div class="er-editor">
+      <div class="er-tabs">
+        <button id="er-tab-content" class="er-tab active" onclick="switchEditorTab('content')">報告內容</button>
+        <button id="er-tab-brand" class="er-tab" onclick="switchEditorTab('brand')">版面與品牌</button>
+      </div>
+
+      <!-- 報告內容 -->
+      <div id="er-panel-content">
+        <div id="er-blocks"></div>
+        <div class="er-add-bar">
+          <span>新增區塊：</span>
+          <button class="btn-mini" onclick="addBlock('heading')">＋ 章節標題</button>
+          <button class="btn-mini" onclick="addBlock('text')">＋ 文字</button>
+          <button class="btn-mini" onclick="addBlock('images')">＋ 圖片</button>
+          <button class="btn-mini" onclick="addBlock('imageText')">＋ 圖文並排</button>
+          <button class="btn-mini" onclick="addBlock('table')">＋ 表格</button>
+          <button class="btn-mini" onclick="addBlock('callout')">＋ 重點框</button>
+          <button class="btn-mini" onclick="addBlock('signature')">＋ 簽核欄</button>
+          <button class="btn-mini" onclick="addBlock('pagebreak')">＋ 分頁</button>
+          <button class="btn-mini" onclick="addBlock('cover')">＋ 封面</button>
+        </div>
+        <div class="calc-hint">小技巧：圖片可以直接拖曳到圖片區塊，或截圖後在圖片區塊按 Ctrl+V 貼上；點右邊預覽的內容會跳到對應區塊。</div>
+      </div>
+
+      <!-- 版面與品牌 -->
+      <div id="er-panel-brand" style="display:none;">
+        <div class="er-form">
+          <h4>品牌</h4>
+          <label>配色主題
+            <select id="er-theme-preset"></select></label>
+          <div class="er-row">
+            <label>主色<input type="color" id="er-primary" /></label>
+            <label>標題色<input type="color" id="er-dark" /></label>
+            <label>內文顏色<input type="color" id="er-text-color" /></label>
+          </div>
+          <label>字型<select id="er-font"></select></label>
+          <label>內文字級（px）<input type="number" id="er-base-size" min="11" max="20" step="0.5" /></label>
+          <label>公司名稱<input id="er-company" /></label>
+          <label>公司英文 / 副標<input id="er-company-sub" /></label>
+          <label>Logo
+            <span class="er-logo-row">
+              <img id="er-logo-preview" alt="" />
+              <input type="file" id="er-logo-file" accept="image/*" />
+              <button type="button" class="btn-mini" onclick="resetLogo()">用預設 Logo</button>
+            </span></label>
+          <label class="er-check"><input type="checkbox" id="er-watermark" /> 顯示浮水印</label>
+          <label>浮水印文字<input id="er-watermark-text" /></label>
+
+          <h4>報告資訊</h4>
+          <label>報告標題<input id="er-title" /></label>
+          <div class="er-row">
+            <label>報告編號<input id="er-report-no" /></label>
+            <label>版次<input id="er-version" /></label>
+          </div>
+          <div class="er-row">
+            <label>報告日期<input type="date" id="er-date" /></label>
+            <label>撰寫人<input id="er-author" /></label>
+          </div>
+          <label class="er-check"><input type="checkbox" id="er-numbering" /> 章節自動編號（01、02…）</label>
+
+          <h4>頁尾</h4>
+          <label>聲明文字（可多行）<textarea id="er-footer-text" rows="3"></textarea></label>
+          <label>結語<input id="er-footer-bless" /></label>
+          <label>封面底部說明<input id="er-cover-note" /></label>
+          <button type="button" class="btn-secondary" onclick="saveBrandAsDefault()">把品牌設定存成我的預設</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右：即時預覽 -->
+    <div class="er-preview">
+      <div class="er-preview-bar">
+        <strong>即時預覽（A4）</strong>
+        <label>縮放
+          <select id="er-zoom">
+            <option value="0.6">60%</option>
+            <option value="0.75" selected>75%</option>
+            <option value="0.9">90%</option>
+            <option value="1">100%</option>
+          </select></label>
+      </div>
+      <div class="er-preview-frame-wrap">
+        <iframe id="er-preview-frame" title="報告預覽" sandbox="allow-same-origin allow-modals"></iframe>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="config.js"></script>
+<script src="demo.js"></script>
+<script src="common.js"></script>
+<script src="evalreport-render.js"></script>
+<script src="evalreport.js"></script>
+</body>
+</html>

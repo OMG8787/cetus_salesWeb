@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AOI 系統登入</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<div id="login-screen" class="screen">
+  <div class="login-box">
+    <h1>AOI 系統登入</h1>
+    <input id="login-username" placeholder="帳號" />
+    <input id="login-password" type="password" placeholder="密碼" />
+    <button onclick="doLogin()">登入</button>
+    <p id="login-message" class="message"></p>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="demo.js"></script>
+<script src="common.js"></script>
+<script src="login.js"></script>
+</body>
+</html>

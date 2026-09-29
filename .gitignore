@@ -1,0 +1,14 @@
+# 舊 ERP 系統原始碼（只當參考，不公開）
+old/
+
+# 原本的 CCD 計算器（功能已整合進 calc.html）
+frontend/CCD_*.html
+
+# 系統 / 編輯器暫存
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log
+node_modules/

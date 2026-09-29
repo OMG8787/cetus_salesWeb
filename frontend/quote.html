@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>報價系統 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs">
+  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+  <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+  <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+  <button class="tab-btn active" onclick="location.href='quote.html'">報價系統</button>
+  <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+  <button class="tab-btn" onclick="location.href='report.html'">日報</button>
+</nav>
+
+<section class="tab-content">
+  <h2>報價設定</h2>
+  <input id="quote-customer-name" placeholder="客戶名稱(會印在報價單抬頭)" />
+
+  <label>客戶類型：</label>
+  <select id="quote-customer-type" onchange="onQuoteTypeChange()">
+    <option value="1.3">設備商（底價 × 1.3）</option>
+    <option value="1.5">一般用戶（底價 × 1.5）</option>
+    <option value="custom">自訂義（自行輸入倍數）</option>
+  </select>
+  <input id="quote-custom-multiplier" placeholder="自訂倍數，例如 1.4" style="display:none;" oninput="renderQuoteTable()" />
+
+  <label style="display:block; margin-top:10px;">
+    <input type="checkbox" id="quote-field-mode" onchange="renderQuoteTable()" />
+    客戶現場展示模式（隱藏底價/牌價，只顯示報價，適合直接給客戶看）
+  </label>
+
+  <h3>新增品項</h3>
+  <div id="quote-item-panel">
+    <div class="autocomplete-wrap">
+      <input id="qi-internal-model" placeholder="輸入內部型號或關鍵字（會自動搜尋，避免打錯/忘記完整型號）" oninput="onQuoteModelInput()" autocomplete="off" />
+      <div id="qi-model-suggestions" class="suggestions-box"></div>
+    </div>
+    <button onclick="fillQuoteItemFromProduct()">帶入（也可直接點上方搜尋建議）</button>
+    <input id="qi-name" placeholder="品名" />
+    <input id="qi-base-price" placeholder="底價" oninput="syncFromBasePrice()" />
+    <input id="qi-list-price" placeholder="牌價（= 底價 × 2，可直接輸入自動反推底價）" oninput="syncFromListPrice()" />
+    <input id="qi-quantity" placeholder="數量" value="1" />
+    <div>本項報價（單價）預覽：<span id="qi-preview-price">-</span></div>
+    <button onclick="addQuoteItem()">加入報價單</button>
+  </div>
+
+  <h3>報價品項清單</h3>
+  <table id="quote-table">
+    <thead id="quote-table-head"></thead>
+    <tbody></tbody>
+  </table>
+  <h3>總計：<span id="quote-total">0</span></h3>
+
+  <label>輸出格式：</label>
+  <select id="quote-format">
+    <option value="pdf">PDF</option>
+    <option value="docx">Word</option>
+    <option value="html">HTML（免範本，自己轉檔）</option>
+  </select>
+  <button onclick="generateQuoteDoc()">產生報價單</button>
+  <button onclick="clearQuote()">清空報價單</button>
+</section>
+
+<div id="preview-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header"><h3>文件預覽</h3><button onclick="closePreviewModal()">關閉</button></div>
+    <div id="preview-modal-list"></div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="demo.js"></script>
+<script src="common.js"></script>
+<script src="quote.js"></script>
+</body>
+</html>

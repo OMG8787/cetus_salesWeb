@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>日報 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs">
+  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+  <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+  <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+  <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+  <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+  <button class="tab-btn active" onclick="location.href='report.html'">日報</button>
+</nav>
+
+<section class="tab-content">
+  <h2>今日日報</h2>
+  <button onclick="loadDailyReportPreview()">重新整理今日資料</button>
+  <div id="daily-report-preview" class="result-box"></div>
+
+  <h3>手動補充說明</h3>
+  <textarea id="daily-report-notes" placeholder="今天還有什麼想補充在日報裡的內容，直接打在這裡"></textarea>
+
+  <button onclick="sendDailyReport()">確認寄送日報</button>
+</section>
+
+<script src="config.js"></script>
+<script src="demo.js"></script>
+<script src="common.js"></script>
+<script src="report.js"></script>
+</body>
+</html>

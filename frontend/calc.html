@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>選型計算 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs">
+  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+  <button class="tab-btn active" onclick="location.href='calc.html'">選型計算</button>
+  <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+  <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+  <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+  <button class="tab-btn" onclick="location.href='report.html'">日報</button>
+</nav>
+
+<section class="tab-content calc-page">
+  <div class="calc-toolbar">
+    <h2 style="margin:0;">選型計算</h2>
+    <span class="calc-hint">邊聽客戶說明邊輸入，任何欄位一改就即時重算；算不過的地方會馬上列在右邊「檢查結果」</span>
+  </div>
+
+  <!-- 從案件帶入 / 存回 -->
+  <div class="panel calc-case-bar">
+    <label>案件</label>
+    <select id="c-case" onchange="onCalcCaseChange()"><option value="">（不帶入案件）</option></select>
+    <select id="c-ccd"><option value="">（先選案件）</option></select>
+    <button onclick="loadFromCaseCcd()">帶入此 CCD 需求</button>
+    <button onclick="saveToCaseCcd()">把計算結果存回此 CCD</button>
+    <button class="btn-secondary" onclick="copyCalcSummary()">複製計算摘要</button>
+    <button class="btn-secondary" onclick="resetCalc()">全部清空</button>
+  </div>
+
+  <div class="calc-grid">
+    <div class="calc-main">
+
+      <!-- 1. 客戶需求 -->
+      <div class="panel">
+        <h3>① 客戶需求</h3>
+        <div class="calc-fields">
+          <label>檢測範圍 長 W<span class="calc-input-unit"><input id="c-fov-l" type="number" step="any" /><em>mm</em></span></label>
+          <label>檢測範圍 寬 H<span class="calc-input-unit"><input id="c-fov-s" type="number" step="any" /><em>mm</em></span></label>
+          <label>最小檢測精度（公差方向）
+            <span class="calc-input-unit">
+              <select id="c-acc-tol" title="公差方向">
+                <option value="pm">± 正負</option>
+                <option value="p">+ 只能多</option>
+                <option value="m">− 只能少</option>
+              </select>
+              <input id="c-acc" type="number" step="any" min="0" />
+              <select id="c-acc-unit"><option value="um">µm</option><option value="mm">mm</option></select></span></label>
+          <label>單個特徵所需像素<span class="calc-input-unit"><input id="c-ppf" type="number" step="any" value="5" /><em>px</em></span></label>
+          <label>工作距離 WD（客戶可接受）<span class="calc-input-unit"><input id="c-wd" type="number" step="any" placeholder="選填，FA 鏡頭必填" /><em>mm</em></span></label>
+        </div>
+        <div class="calc-out-row">
+          <div class="calc-out"><span>計算用精度</span><strong id="o-acc-eff">-</strong></div>
+          <div class="calc-out"><span>要求空間解析度（上限）</span><strong id="o-px-req">-</strong></div>
+          <div class="calc-out"><span>相機至少需要像素</span><strong id="o-res-req">-</strong></div>
+        </div>
+      </div>
+
+      <!-- 2. 相機 -->
+      <div class="panel">
+        <h3>② 相機（決定像素數與感測器尺寸）</h3>
+        <div class="calc-fields">
+          <label>相機來源
+            <select id="c-cam-source">
+              <option value="catalog">從相機型錄挑選</option>
+              <option value="manual">手動輸入規格</option>
+            </select></label>
+          <label id="c-cam-model-wrap">型號
+            <select id="c-cam-model"><option value="">自動（最小符合需求）</option></select></label>
+          <label>空間解析度基準邊
+            <select id="c-px-side">
+              <option value="s">短邊（預設）</option>
+              <option value="l">長邊</option>
+            </select></label>
+        </div>
+        <div id="c-cam-manual" class="calc-fields" style="display:none;">
+          <label>解析度 長邊<span class="calc-input-unit"><input id="c-res-w" type="number" step="1" /><em>px</em></span></label>
+          <label>解析度 短邊<span class="calc-input-unit"><input id="c-res-h" type="number" step="1" /><em>px</em></span></label>
+          <label>像素尺寸<span class="calc-input-unit"><input id="c-pix" type="number" step="any" /><em>µm</em></span></label>
+          <label>最大影格率<span class="calc-input-unit"><input id="c-fps" type="number" step="any" placeholder="選填" /><em>fps</em></span></label>
+        </div>
+        <div id="c-catalog-status" class="calc-hint"></div>
+        <h4 class="calc-subtitle">建議相機 <small class="calc-hint">（長邊 ≥ 所需長邊、短邊 ≥ 所需短邊，取最接近需求的 3 款；點卡片即可選用）</small></h4>
+        <div id="c-cam-recs" class="lens-recs"></div>
+        <div class="calc-out-row">
+          <div class="calc-out"><span>採用相機</span><strong id="o-cam">-</strong></div>
+          <div class="calc-out"><span>感測器尺寸</span><strong id="o-sensor">-</strong></div>
+        </div>
+      </div>
+
+      <!-- 3. 鏡頭 -->
+      <div class="panel">
+        <h3>③ 鏡頭</h3>
+        <div class="calc-fields">
+          <label>鏡頭類型
+            <select id="c-lens-type">
+              <option value="fa">FA 鏡頭（定焦）</option>
+              <option value="tele">遠心鏡頭</option>
+            </select></label>
+          <label>型號
+            <select id="c-lens-model"><option value="">自動（採用建議第一名）</option></select></label>
+          <label id="c-f-user-wrap">焦距 F <small id="c-f-user-mode" class="calc-mode-tag">自動</small>
+            <span class="calc-input-unit"><input id="c-f-user" type="number" step="any" placeholder="輸入 WD 後自動計算" /><em>mm</em>
+              <button type="button" id="c-f-user-auto" class="btn-mini" onclick="setTargetAuto('c-f-user')" title="改回自動計算">↺ 自動</button></span></label>
+          <label id="c-mag-user-wrap">倍率 <small id="c-mag-user-mode" class="calc-mode-tag">自動</small>
+            <span class="calc-input-unit"><input id="c-mag-user" type="number" step="any" placeholder="自動計算" /><em>x</em>
+              <button type="button" id="c-mag-user-auto" class="btn-mini" onclick="setTargetAuto('c-mag-user')" title="改回自動計算">↺ 自動</button></span></label>
+        </div>
+        <div class="calc-out-row">
+          <div class="calc-out"><span id="o-target-label">FA 理論焦距</span><strong id="o-target">-</strong></div>
+          <div class="calc-out"><span>採用鏡頭</span><strong id="o-lens">-</strong></div>
+          <div class="calc-out"><span>工作距離 WD</span><strong id="o-wd-act">-</strong></div>
+          <div class="calc-out" id="o-angle-box"><span>水平 / 垂直視角</span><strong id="o-angle">-</strong></div>
+        </div>
+        <h4 class="calc-subtitle">建議鏡頭 <small class="calc-hint">（以上方「焦距 / 倍率」欄位的值搜尋；點卡片即可選用；扣分：焦距/倍率差距、解析力、延伸環、視野拍不滿）</small></h4>
+        <div id="c-lens-recs" class="lens-recs"></div>
+      </div>
+
+      <!-- 4. 實際視野與空間解析度 -->
+      <div class="panel">
+        <h3>④ 實際視野與空間解析度（相機 + 鏡頭）</h3>
+        <div class="calc-out-row">
+          <div class="calc-out"><span>實際視野</span><strong id="o-fov-act">-</strong></div>
+          <div class="calc-out"><span>空間解析度</span><strong id="o-px-act">-</strong></div>
+          <div class="calc-out"><span>最小特徵佔</span><strong id="o-feat-px">-</strong></div>
+        </div>
+      </div>
+
+      <!-- 5. 飛拍 -->
+      <div class="panel">
+        <h3>⑤ 飛拍 / 產能</h3>
+        <div class="calc-fields">
+          <label>移動速度<span class="calc-input-unit"><input id="c-speed" type="number" step="any" placeholder="選填" /><em>mm/s</em></span></label>
+          <label>移動方向
+            <select id="c-motion"><option value="s">沿寬 H 方向移動</option><option value="l">沿長 W 方向移動</option></select></label>
+          <label>曝光時間
+            <span class="calc-input-unit"><input id="c-exp" type="number" step="any" placeholder="選填" />
+              <select id="c-exp-unit"><option value="us">µs</option><option value="ms">ms</option></select></span></label>
+          <label>容許拖影<span class="calc-input-unit"><input id="c-blur" type="number" step="any" value="1" /><em>px</em></span></label>
+          <label>每秒檢測數量<span class="calc-input-unit"><input id="c-pps" type="number" step="any" placeholder="選填" /><em>pcs/s</em></span></label>
+        </div>
+        <div class="calc-out-row">
+          <div class="calc-out"><span>容許最長曝光</span><strong id="o-max-exp">-</strong></div>
+          <div class="calc-out"><span>容許最大速度</span><strong id="o-max-speed">-</strong></div>
+          <div class="calc-out"><span>實際拖影</span><strong id="o-blur">-</strong></div>
+          <div class="calc-out"><span>連續拍攝所需影格率</span><strong id="o-fps-req">-</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右側：即時檢查結果 -->
+    <aside class="calc-side">
+      <div class="panel calc-check">
+        <h3>檢查結果</h3>
+        <div id="c-msgs"></div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<script src="config.js"></script>
+<script src="demo.js"></script>
+<script src="common.js"></script>
+<script src="calc.js"></script>
+</body>
+</html>

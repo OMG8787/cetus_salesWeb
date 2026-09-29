@@ -1,0 +1,476 @@
+/**
+ * products.js - 產品搜尋 / 詢價 頁面專屬邏輯
+ * 依賴 common.js 的 callApi() / 預覽彈窗 / Enter送出小工具，記得那支檔案要先載入。
+ */
+
+let currentInternalModel = null;
+
+function toggleNewProductForm() {
+  const form = document.getElementById('new-product-form');
+  form.style.display = form.style.display === 'block' ? 'none' : 'block';
+}
+
+function syncProductPriceFromBase(prefix) {
+  const base = parseFloat(document.getElementById(prefix + '-ref-price').value);
+  if (!isNaN(base)) document.getElementById(prefix + '-list-price').value = (base * 2).toFixed(2);
+}
+
+function syncProductPriceFromList(prefix) {
+  const list = parseFloat(document.getElementById(prefix + '-list-price').value);
+  if (!isNaN(list)) document.getElementById(prefix + '-ref-price').value = (list / 2).toFixed(2);
+}
+
+async function addProduct() {
+  const result = await callApi('addProduct', {
+    internalModel: document.getElementById('np-internal-model').value.trim(),
+    supplierModel: document.getElementById('np-supplier-model').value,
+    supplier: document.getElementById('np-supplier').value,
+    supplierContact: document.getElementById('np-supplier-contact').value,
+    supplierContactEmail: document.getElementById('np-supplier-email').value,
+    origin: document.getElementById('np-origin').value,
+    category: document.getElementById('np-category').value,
+    compatibleGroup: document.getElementById('np-compatible-group').value,
+    refPrice: document.getElementById('np-ref-price').value,
+    notes: document.getElementById('np-notes').value,
+  });
+  if (!result.success) return alert(result.message);
+  clearCached('products_all');
+  alert('已新增產品');
+  document.getElementById('new-product-form').style.display = 'none';
+  ['np-internal-model', 'np-supplier-model', 'np-supplier', 'np-supplier-contact', 'np-supplier-email', 'np-origin', 'np-compatible-group', 'np-ref-price', 'np-list-price', 'np-notes'].forEach(
+    (id) => (document.getElementById(id).value = '')
+  );
+  searchProducts();
+}
+
+// ------------------------------------------------------------
+// 產品搜尋：一進頁面把全部產品抓回來，之後打字都在瀏覽器本機即時篩選（不用每打一個字就打一次後端），
+// 結果依相符程度排序，並分頁顯示（每頁 10/20/30 筆，選擇會記住）
+// ------------------------------------------------------------
+const PAGE_SIZE_KEY = 'aoi_product_page_size';
+let allProducts = [];
+let filteredProducts = [];
+let productPage = 1;
+
+/** 從後端重新抓全部產品（新增/修改/刪除產品後也呼叫這個）。 */
+async function searchProducts() {
+  const cached = getCached('products_all');
+  if (cached) {
+    allProducts = cached;
+    applyProductFilter();
+  }
+
+  const result = await callApi('searchProducts', { keyword: '' });
+  if (!result.success) return alert(result.message);
+  allProducts = result.products;
+  setCached('products_all', allProducts);
+  applyProductFilter(true);
+}
+
+function onProductSearchInput() {
+  productPage = 1;
+  applyProductFilter();
+}
+
+/**
+ * 相符程度分數，越小越前面：
+ * 0 = 內部/供應商型號完全相同、1 = 型號開頭相符、2 = 型號包含關鍵字、3 = 其他欄位包含
+ * 多個關鍵字用空白隔開，必須全部都有對到（AND），分數取最差的那個。
+ */
+function productMatchScore(p, keywords) {
+  const models = [p.InternalModel, p.SupplierModel].map((v) => String(v || '').toLowerCase());
+  const others = [p.Supplier, p.Category, p.Origin, p.CompatibleGroup, p.SupplierContact, p.Notes].map((v) => String(v || '').toLowerCase());
+  let worst = 0;
+  for (const kw of keywords) {
+    let score;
+    if (models.some((m) => m === kw)) score = 0;
+    else if (models.some((m) => m.startsWith(kw))) score = 1;
+    else if (models.some((m) => m.includes(kw))) score = 2;
+    else if (others.some((o) => o.includes(kw))) score = 3;
+    else return -1;
+    worst = Math.max(worst, score);
+  }
+  return worst;
+}
+
+/** keepPage = true：背景資料更新時保留目前頁碼（超出範圍會自動拉回最後一頁）。 */
+function applyProductFilter(keepPage) {
+  const keywords = document.getElementById('product-search-input').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const byModel = (a, b) => String(a.InternalModel || '').localeCompare(String(b.InternalModel || ''));
+
+  if (!keywords.length) {
+    filteredProducts = allProducts.slice().sort(byModel);
+  } else {
+    filteredProducts = allProducts
+      .map((p) => ({ p, score: productMatchScore(p, keywords) }))
+      .filter((x) => x.score > -1)
+      .sort((a, b) => a.score - b.score || byModel(a.p, b.p))
+      .map((x) => x.p);
+  }
+  // 有點欄位標題排序的話，照該欄位排（同值時維持上面的相符程度順序）
+  if (productSort.key) {
+    const dir = productSort.dir === 'desc' ? -1 : 1;
+    filteredProducts.sort((a, b) => dir * compareProductField(a, b, productSort.key));
+  }
+  if (!keepPage) productPage = 1;
+  renderProductPage();
+}
+
+// ------------------------------------------------------------
+// 點表頭排序：第一次點 → 文字欄位由小到大、數字欄位(底價/詢價次數)由大到小；
+// 再點一次反過來；第三次點取消，回到「相符程度」排序。選擇會記住。
+// ------------------------------------------------------------
+const PRODUCT_SORT_KEY = 'aoi_product_sort';
+const NUMERIC_SORT_FIELDS = ['RefPrice', 'InquiryCount'];
+let productSort = { key: null, dir: 'asc' };
+
+function compareProductField(a, b, key) {
+  if (NUMERIC_SORT_FIELDS.includes(key)) {
+    const x = parseFloat(a[key]);
+    const y = parseFloat(b[key]);
+    // 沒填的一律排最後
+    if (isNaN(x) && isNaN(y)) return 0;
+    if (isNaN(x)) return productSort.dir === 'desc' ? -1 : 1;
+    if (isNaN(y)) return productSort.dir === 'desc' ? 1 : -1;
+    return x - y;
+  }
+  return String(a[key] || '').localeCompare(String(b[key] || ''), 'zh-Hant');
+}
+
+function onProductSortClick(key) {
+  const firstDir = NUMERIC_SORT_FIELDS.includes(key) ? 'desc' : 'asc';
+  if (productSort.key !== key) {
+    productSort = { key, dir: firstDir };
+  } else if (productSort.dir === firstDir) {
+    productSort.dir = firstDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    productSort = { key: null, dir: 'asc' };
+  }
+  try {
+    localStorage.setItem(PRODUCT_SORT_KEY, JSON.stringify(productSort));
+  } catch (e) {}
+  renderSortIndicators();
+  applyProductFilter();
+}
+
+function renderSortIndicators() {
+  document.querySelectorAll('#product-table th.sortable').forEach((th) => {
+    th.classList.remove('asc', 'desc');
+    if (th.dataset.sort === productSort.key) th.classList.add(productSort.dir);
+  });
+}
+
+function getProductPageSize() {
+  return parseInt(document.getElementById('product-page-size').value, 10) || 10;
+}
+
+function onProductPageSizeChange() {
+  try {
+    localStorage.setItem(PAGE_SIZE_KEY, document.getElementById('product-page-size').value);
+  } catch (e) {}
+  productPage = 1;
+  renderProductPage();
+}
+
+function goProductPage(page) {
+  productPage = page;
+  renderProductPage();
+}
+
+function renderProductPage() {
+  const size = getProductPageSize();
+  const total = filteredProducts.length;
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  productPage = Math.min(Math.max(1, productPage), totalPages);
+
+  const start = (productPage - 1) * size;
+  renderProductTable(filteredProducts.slice(start, start + size));
+
+  document.getElementById('product-page-info').textContent = total
+    ? `共 ${total} 筆，顯示第 ${start + 1}–${Math.min(start + size, total)} 筆`
+    : '查無符合的產品';
+  document.getElementById('product-page-label').textContent = `${productPage} / ${totalPages}`;
+  document.getElementById('product-page-first').disabled = productPage <= 1;
+  document.getElementById('product-page-prev').disabled = productPage <= 1;
+  document.getElementById('product-page-next').disabled = productPage >= totalPages;
+  document.getElementById('product-page-last').disabled = productPage >= totalPages;
+  document.getElementById('product-page-last').dataset.page = totalPages;
+}
+
+function renderProductTable(products) {
+  const tbody = document.querySelector('#product-table tbody');
+  tbody.innerHTML = '';
+  products.forEach((p) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.InternalModel || ''}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || ''}</td><td>${p.InquiryCount || 0}</td><td>${p.Notes || ''}</td>
+      <td><button onclick="viewProduct('${p.InternalModel}')">查看/詢價</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function viewProduct(internalModel) {
+  currentInternalModel = internalModel;
+  const result = await callApi('getProduct', { internalModel });
+  if (!result.success) return alert(result.message);
+
+  document.getElementById('product-detail').style.display = 'block';
+  document.getElementById('edit-product-form').style.display = 'none';
+  document.getElementById('pd-internal-model').textContent = internalModel;
+
+  document.getElementById('pd-last-price').innerHTML = result.lastPrice
+    ? `上次報價：${result.lastPrice.Price} ${result.lastPrice.Currency || ''}（供應商：${result.lastPrice.Supplier}，日期：${result.lastPrice.Date}）`
+    : '尚無詢價紀錄';
+
+  document.getElementById('pd-compatible').innerHTML =
+    '可搭配產品：' + (result.compatibleProducts.length ? result.compatibleProducts.map((p) => p.InternalModel).join('、') : '無');
+
+  document.getElementById('pd-notes').innerHTML = '備註：' + (result.product.Notes || '（無）') + (result.product.Origin ? '｜產地：' + result.product.Origin : '');
+
+  document.getElementById('inquiry-result').textContent = '';
+
+  document.getElementById('ep-supplier-model').value = result.product.SupplierModel || '';
+  document.getElementById('ep-supplier').value = result.product.Supplier || '';
+  document.getElementById('ep-supplier-contact').value = result.product.SupplierContact || '';
+  document.getElementById('ep-supplier-email').value = result.product.SupplierContactEmail || '';
+  document.getElementById('ep-origin').value = result.product.Origin || '';
+  document.getElementById('ep-category').value = result.product.Category || '相機';
+  document.getElementById('ep-compatible-group').value = result.product.CompatibleGroup || '';
+  document.getElementById('ep-ref-price').value = result.product.RefPrice || '';
+  document.getElementById('ep-list-price').value = result.product.RefPrice ? (parseFloat(result.product.RefPrice) * 2).toFixed(2) : '';
+  document.getElementById('ep-notes').value = result.product.Notes || '';
+
+  renderPriceHistoryTable(result.priceHistory || []);
+}
+
+function renderPriceHistoryTable(history) {
+  const tbody = document.querySelector('#price-history-table tbody');
+  tbody.innerHTML = '';
+  history.forEach((h) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${h.Date}</td><td>${h.Supplier}</td><td>${h.Price}</td><td>${h.Currency || ''}</td><td>${h.Notes || ''}</td>
+      <td>
+        <button onclick="editPriceRecord(${h.RowIndex})">編輯</button>
+        <button onclick="deletePriceRecord(${h.RowIndex})">刪除</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function editPriceRecord(rowIndex) {
+  const newPrice = prompt('輸入新的價格：');
+  if (newPrice === null) return;
+  const result = await callApi('updatePriceRecord', { rowIndex, fields: { Price: newPrice } });
+  if (result.success) {
+    viewProduct(currentInternalModel);
+  } else {
+    alert(result.message);
+  }
+}
+
+async function deletePriceRecord(rowIndex) {
+  if (!confirm('確定要刪除這筆價格紀錄嗎？')) return;
+  const result = await callApi('deletePriceRecord', { rowIndex });
+  if (result.success) {
+    viewProduct(currentInternalModel);
+    searchProducts(); // 詢價次數跟著更新
+  } else {
+    alert(result.message);
+  }
+}
+
+function toggleEditProductForm() {
+  const form = document.getElementById('edit-product-form');
+  form.style.display = form.style.display === 'block' ? 'none' : 'block';
+}
+
+async function saveProductEdit() {
+  const fields = {
+    SupplierModel: document.getElementById('ep-supplier-model').value,
+    Supplier: document.getElementById('ep-supplier').value,
+    SupplierContact: document.getElementById('ep-supplier-contact').value,
+    SupplierContactEmail: document.getElementById('ep-supplier-email').value,
+    Origin: document.getElementById('ep-origin').value,
+    Category: document.getElementById('ep-category').value,
+    CompatibleGroup: document.getElementById('ep-compatible-group').value,
+    RefPrice: document.getElementById('ep-ref-price').value,
+    Notes: document.getElementById('ep-notes').value,
+  };
+  const result = await callApi('updateProduct', { internalModel: currentInternalModel, fields });
+  if (result.success) {
+    clearCached('products_all');
+    alert('已儲存修改');
+    viewProduct(currentInternalModel);
+    searchProducts();
+  } else {
+    alert(result.message);
+  }
+}
+
+async function deleteCurrentProduct() {
+  if (!confirm(`確定要刪除產品「${currentInternalModel}」嗎？此動作無法復原。`)) return;
+  const result = await callApi('deleteProduct', { internalModel: currentInternalModel });
+  if (result.success) {
+    clearCached('products_all');
+    document.getElementById('product-detail').style.display = 'none';
+    searchProducts();
+  } else {
+    alert(result.message);
+  }
+}
+
+async function addPriceRecord() {
+  const supplier = document.getElementById('pd-supplier').value;
+  const price = document.getElementById('pd-price').value;
+  const caseId = document.getElementById('pd-case').value;
+  const result = await callApi('addPriceRecord', { internalModel: currentInternalModel, supplier, price, caseId });
+  if (result.success) {
+    alert('已存入價格紀錄');
+    viewProduct(currentInternalModel);
+    searchProducts(); // 詢價次數跟著更新
+  } else {
+    alert(result.message);
+  }
+}
+
+async function generateInquiry() {
+  const quantity = document.getElementById('pd-quantity').value;
+  const result = await callApi('generateInquiryDraft', { internalModel: currentInternalModel, quantity });
+  if (!result.success) return alert(result.message);
+
+  let text = `【主旨】${result.subject}\n\n${result.body}`;
+  if (result.draftUrl) text += `\n\n(已自動建立 Gmail 草稿，點此開啟：${result.draftUrl})`;
+  document.getElementById('inquiry-result').textContent = text;
+}
+
+// ---- 詢價暫存清單：可以累積多個產品，最後一次合併成一封詢價信；48小時後自動清空 ----
+const INQUIRY_CART_KEY = 'aoi_inquiry_cart';
+const CART_DURATION_MS = 48 * 60 * 60 * 1000;
+
+function loadInquiryCart() {
+  const raw = localStorage.getItem(INQUIRY_CART_KEY);
+  if (!raw) return { items: [], expiresAt: null };
+  const cart = JSON.parse(raw);
+  if (cart.expiresAt && Date.now() > cart.expiresAt) {
+    localStorage.removeItem(INQUIRY_CART_KEY);
+    return { items: [], expiresAt: null };
+  }
+  return cart;
+}
+
+function saveInquiryCart(cart) {
+  localStorage.setItem(INQUIRY_CART_KEY, JSON.stringify(cart));
+}
+
+async function addToInquiryCart() {
+  if (!currentInternalModel) return;
+  const quantity = document.getElementById('pd-quantity').value || '1';
+  const result = await callApi('getProduct', { internalModel: currentInternalModel });
+  if (!result.success) return alert(result.message);
+
+  const cart = loadInquiryCart();
+  if (!cart.expiresAt) cart.expiresAt = Date.now() + CART_DURATION_MS;
+  cart.items.push({
+    internalModel: result.product.InternalModel,
+    supplierModel: result.product.SupplierModel || '',
+    supplierContactEmail: result.product.SupplierContactEmail || '',
+    quantity,
+  });
+  saveInquiryCart(cart);
+  renderInquiryCart();
+  alert('已加入詢價暫存清單');
+}
+
+function renderInquiryCart() {
+  const cart = loadInquiryCart();
+  const box = document.getElementById('inquiry-cart-list');
+  const status = document.getElementById('inquiry-cart-status');
+  if (!box || !status) return;
+
+  box.innerHTML = '';
+  cart.items.forEach((it, idx) => {
+    const div = document.createElement('div');
+    div.className = 'preview-item';
+    div.innerHTML = `<div class="preview-item-header"><span>${it.internalModel}（${it.supplierModel}）｜數量：${it.quantity}</span>
+      <button onclick="removeFromInquiryCart(${idx})">移除</button></div>`;
+    box.appendChild(div);
+  });
+
+  if (cart.expiresAt && cart.items.length) {
+    const hoursLeft = Math.max(0, Math.round((cart.expiresAt - Date.now()) / 3600000));
+    status.textContent = `目前 ${cart.items.length} 項，將於約 ${hoursLeft} 小時後自動清空（可手動延長或清空）`;
+  } else {
+    status.textContent = '目前沒有暫存的詢價項目';
+  }
+}
+
+function removeFromInquiryCart(idx) {
+  const cart = loadInquiryCart();
+  cart.items.splice(idx, 1);
+  if (!cart.items.length) cart.expiresAt = null;
+  saveInquiryCart(cart);
+  renderInquiryCart();
+}
+
+function extendInquiryCart() {
+  const cart = loadInquiryCart();
+  if (!cart.items.length) return alert('目前沒有項目可以延長');
+  cart.expiresAt = Date.now() + CART_DURATION_MS;
+  saveInquiryCart(cart);
+  renderInquiryCart();
+  alert('已延長 48 小時');
+}
+
+function clearInquiryCart() {
+  if (!confirm('確定要清空詢價暫存清單嗎？')) return;
+  localStorage.removeItem(INQUIRY_CART_KEY);
+  renderInquiryCart();
+  document.getElementById('inquiry-cart-result').textContent = '';
+}
+
+async function generateCombinedInquiryText() {
+  const cart = loadInquiryCart();
+  if (!cart.items.length) return alert('詢價清單是空的，請先在產品詳情頁按「加入詢價暫存清單」');
+
+  const blocks = cart.items.map((it) => `供應商型號: ${it.supplierModel}\n對應內部型號: ${it.internalModel}\n需求數量: ${it.quantity}`);
+  const text = '您好，\n\n想請教以下產品報價：\n' + blocks.join('\n---\n') + '\n\n麻煩協助報價，謝謝！';
+
+  document.getElementById('inquiry-cart-result').textContent = text;
+
+  const emails = [...new Set(cart.items.map((it) => it.supplierContactEmail).filter(Boolean))];
+  if (emails.length === 1) {
+    const result = await callApi('createGmailDraft', { to: emails[0], subject: '詢價（多項產品）', body: text });
+    if (result.success && result.draftUrl) {
+      document.getElementById('inquiry-cart-result').textContent += `\n\n(已自動建立 Gmail 草稿，點此開啟：${result.draftUrl})`;
+    }
+  }
+}
+
+// ------------------------------------------------------------
+// 初始化
+// ------------------------------------------------------------
+window.addEventListener('DOMContentLoaded', () => {
+  requireLogin();
+  renderHeaderUser();
+  try {
+    const savedSize = localStorage.getItem(PAGE_SIZE_KEY);
+    if (['10', '20', '30'].includes(savedSize)) document.getElementById('product-page-size').value = savedSize;
+    const savedSort = JSON.parse(localStorage.getItem(PRODUCT_SORT_KEY) || 'null');
+    if (savedSort && savedSort.key) productSort = savedSort;
+  } catch (e) {}
+  document.querySelectorAll('#product-table th.sortable').forEach((th) => {
+    th.addEventListener('click', () => onProductSortClick(th.dataset.sort));
+  });
+  renderSortIndicators();
+  searchProducts();
+  renderInquiryCart();
+  bindEnterSubmit('#new-product-form', addProduct);
+  bindEnterSubmit('#edit-product-form', saveProductEdit);
+
+  const searchInput = document.getElementById('product-search-input');
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onProductSearchInput();
+    }
+  });
+});

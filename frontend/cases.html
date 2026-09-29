@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>案件管理 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs">
+  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+  <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+  <button class="tab-btn active" onclick="location.href='cases.html'">案件管理</button>
+  <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+  <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+  <button class="tab-btn" onclick="location.href='report.html'">日報</button>
+</nav>
+
+<section class="tab-content">
+  <h2>建立新案件（發需求單給 FAE）</h2>
+  <div id="case-create-panel">
+    <label>客戶名稱：</label>
+    <input id="case-customer" list="case-customer-datalist" placeholder="輸入客戶名稱（會自動帶出建議，沒有的話離開欄位時會問你要不要建立）" onblur="onCaseCustomerBlur(this.id)" />
+    <datalist id="case-customer-datalist"></datalist>
+
+    <input id="case-end-customer" placeholder="終端客戶名稱（選填）" />
+    <input id="case-project-contact" placeholder="專案聯絡人（選填）" />
+    <input id="case-contact-phone" placeholder="聯絡電話（選填）" />
+
+    <label>業務：</label>
+    <input id="case-salesperson" list="case-salesperson-datalist" placeholder="輸入業務姓名" onblur="onCaseStaffBlur('業務', 'case-salesperson')" />
+    <datalist id="case-salesperson-datalist"></datalist>
+
+    <label>FAE：</label>
+    <input id="case-fae" list="case-fae-datalist" placeholder="輸入 FAE 姓名" onblur="onCaseStaffBlur('FAE', 'case-fae')" />
+    <datalist id="case-fae-datalist"></datalist>
+
+    <input id="case-product-application" placeholder="產品應用（選填）" />
+    <input id="case-test-object" placeholder="待測物件（選填）" />
+
+    <label>使用軟體名稱：</label>
+    <input id="case-software-name" list="case-software-datalist" placeholder="輸入或從建議選擇軟體名稱" />
+    <datalist id="case-software-datalist"></datalist>
+
+    <label>軟體是否需要客製化（選填）：</label>
+    <select id="case-sw-customization" onchange="toggleSwCustomizationNote('case')">
+      <option value="">未指定</option>
+      <option value="是">是</option>
+      <option value="否">否</option>
+    </select>
+    <textarea id="case-sw-customization-note" placeholder="客製化說明" style="display:none;"></textarea>
+
+    <textarea id="case-requirement" placeholder="需求細節描述"></textarea>
+
+    <h3>檢測需求（可新增/刪除多組 CCD，因為 AOI 可能接多相機）</h3>
+    <div id="ccd-blocks-create"></div>
+    <button onclick="addCcdBlock('create')">+ 新增 CCD</button>
+
+    <br /><br />
+    <button onclick="createCase()">建立案件</button>
+  </div>
+
+  <h2>案件查詢</h2>
+  <div id="case-search-panel">
+    <input id="case-search-keyword" placeholder="搜尋案件編號/客戶/業務/FAE" />
+    <select id="case-search-status">
+      <option value="">全部狀態</option>
+      <option value="需求單已發出">需求單已發出</option>
+      <option value="評估單已發出">評估單已發出</option>
+      <option value="已結案">已結案</option>
+    </select>
+    <button onclick="loadCases()">搜尋 / 重新整理</button>
+  </div>
+
+  <table id="case-table">
+    <thead><tr><th>案件編號</th><th>客戶</th><th>狀態</th><th>建立日期</th><th>操作</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="case-detail" class="panel" style="display:none;">
+    <h3>案件：<span id="cd-case-id"></span></h3>
+
+    <h4>案件資料（可修改）</h4>
+    <div id="case-edit-panel">
+      <label>客戶名稱：</label>
+      <input id="cd-customer" list="case-customer-datalist" placeholder="客戶名稱" onblur="onCaseCustomerBlur(this.id)" />
+      <input id="cd-end-customer" placeholder="終端客戶名稱（選填）" />
+      <input id="cd-project-contact" placeholder="專案聯絡人（選填）" />
+      <input id="cd-contact-phone" placeholder="聯絡電話（選填）" />
+
+      <label>業務：</label>
+      <input id="cd-salesperson" list="case-salesperson-datalist" placeholder="業務" onblur="onCaseStaffBlur('業務', 'cd-salesperson')" />
+      <label>FAE：</label>
+      <input id="cd-fae" list="case-fae-datalist" placeholder="FAE" onblur="onCaseStaffBlur('FAE', 'cd-fae')" />
+
+      <input id="cd-product-application" placeholder="產品應用（選填）" />
+      <input id="cd-test-object" placeholder="待測物件（選填）" />
+
+      <label>使用軟體名稱：</label>
+      <input id="cd-software-name" list="case-software-datalist" placeholder="使用軟體名稱" />
+
+      <label>軟體是否需要客製化：</label>
+      <select id="cd-sw-customization" onchange="toggleSwCustomizationNote('cd')">
+        <option value="">未指定</option>
+        <option value="是">是</option>
+        <option value="否">否</option>
+      </select>
+      <textarea id="cd-sw-customization-note" placeholder="客製化說明" style="display:none;"></textarea>
+
+      <select id="cd-status">
+        <option value="需求單已發出">需求單已發出</option>
+        <option value="評估單已發出">評估單已發出</option>
+        <option value="已結案">已結案</option>
+      </select>
+      <textarea id="cd-requirement" placeholder="需求細節描述"></textarea>
+
+      <h4>檢測需求（可新增/刪除多組 CCD）</h4>
+      <div id="ccd-blocks-detail"></div>
+      <button onclick="addCcdBlock('detail')">+ 新增 CCD</button>
+
+      <br /><br />
+      <button onclick="saveCaseEdit()">儲存修改</button>
+    </div>
+
+    <h4>檢測規章及其他附件</h4>
+    <div id="attachments-list"></div>
+    <input type="file" id="attachment-file-input" />
+    <button onclick="uploadAttachment()">上傳附件</button>
+
+    <h4>產生需求單</h4>
+    <label>輸出格式：</label>
+    <select id="requirement-format">
+      <option value="pdf">PDF</option>
+      <option value="docx">Word</option>
+      <option value="html">HTML（免範本，自己轉檔）</option>
+    </select>
+    <button onclick="generateRequirementDoc()">產生需求單</button>
+
+    <div class="panel">
+      <h4 style="margin-top:0;">📄 專業評估報告（推薦）</h4>
+      <div class="calc-hint">自動帶入案件資料、CCD 需求、選型計算結果與案件圖片，可自己加文字 / 圖片、調字體大小顏色與圖片位置，輸出有公司 Logo 的電子報告（PDF / HTML）。</div>
+      <button onclick="openEvalReportEditor()">開啟評估報告編輯器</button>
+    </div>
+
+    <h4>評估報告 - 方式一：自動生成</h4>
+    <div id="evaluation-auto-panel">
+      <input id="ev-tester" placeholder="測試人員(FAE)" />
+      <input id="ev-recommend" placeholder="建議搭配產品(內部型號，多個用逗號分隔)" />
+      <textarea id="ev-result" placeholder="測試結果/評估結論"></textarea>
+      <textarea id="ev-notes" placeholder="備註"></textarea>
+
+      <label>評估單輸出格式：</label>
+      <select id="evaluation-format">
+        <option value="docx">Word</option>
+        <option value="pdf">PDF</option>
+        <option value="html">HTML（免範本，自己轉檔）</option>
+      </select>
+
+      <label>搭配報價的客戶類型（給自動產生的報價單用）：</label>
+      <select id="evaluation-quote-type">
+        <option value="1.3">設備商（底價 × 1.3）</option>
+        <option value="1.5" selected>一般用戶（底價 × 1.5）</option>
+        <option value="custom">自訂義</option>
+      </select>
+      <input id="evaluation-quote-custom-multiplier" placeholder="自訂倍數，例如 1.4" style="display:none;" />
+      <label>搭配報價單格式：</label>
+      <select id="evaluation-quote-format">
+        <option value="pdf">PDF</option>
+        <option value="docx">Word</option>
+        <option value="html">HTML</option>
+      </select>
+
+      <button onclick="generateEvaluationDoc()">自動產生評估單（會一併自動產生搭配報價單）</button>
+    </div>
+
+    <h4>評估報告 - 方式二：手動撰寫（自訂排版/顏色）</h4>
+    <div class="editor-toolbar">
+      <button onclick="formatDoc('bold')"><b>B</b></button>
+      <button onclick="formatDoc('italic')"><i>I</i></button>
+      <button onclick="formatDoc('underline')"><u>U</u></button>
+      <select onchange="formatDoc('fontSize', this.value)">
+        <option value="">字級</option>
+        <option value="2">小</option>
+        <option value="3">中</option>
+        <option value="5">大</option>
+        <option value="7">特大</option>
+      </select>
+      <input type="color" title="文字顏色" oninput="formatDoc('foreColor', this.value)" />
+      <button onclick="formatDoc('justifyLeft')">靠左</button>
+      <button onclick="formatDoc('justifyCenter')">置中</button>
+      <button onclick="formatDoc('justifyRight')">靠右</button>
+    </div>
+    <div id="manual-report-editor" class="rich-editor" contenteditable="true">在這裡輸入評估報告內容，可以用上面的工具列調整粗體/顏色/字級/對齊...</div>
+    <button onclick="saveManualReportDraft()">儲存草稿</button>
+    <label>下載格式：</label>
+    <select id="manual-report-format">
+      <option value="pdf">PDF</option>
+      <option value="html">HTML</option>
+    </select>
+    <button onclick="previewManualReport()">預覽 / 下載</button>
+  </div>
+</section>
+
+<div id="quick-customer-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header"><h3>建立客戶資料</h3><button onclick="closeQuickCustomerModal()">關閉</button></div>
+    <input id="quick-customer-name" placeholder="公司名稱" />
+    <input id="quick-customer-contact" placeholder="聯絡人" />
+    <input id="quick-customer-phone" placeholder="電話" />
+    <input id="quick-customer-email" placeholder="Email" />
+    <label>客戶分類：</label>
+    <select id="quick-customer-category">
+      <option value="設備商">設備商</option>
+      <option value="代理商">代理商</option>
+      <option value="終端客戶">終端客戶</option>
+      <option value="其他">其他</option>
+    </select>
+    <label>急迫性：</label>
+    <select id="quick-customer-urgency">
+      <option value="高">高</option>
+      <option value="中" selected>中</option>
+      <option value="低">低</option>
+    </select>
+    <button onclick="submitQuickCustomer()">建立客戶</button>
+  </div>
+</div>
+
+<div id="quick-staff-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header"><h3>建立人員資料</h3><button onclick="closeQuickStaffModal()">關閉</button></div>
+    <input id="quick-staff-name" placeholder="姓名" />
+    <label>身份：</label>
+    <select id="quick-staff-role">
+      <option value="業務">業務</option>
+      <option value="FAE">FAE</option>
+    </select>
+    <button onclick="submitQuickStaff()">建立人員</button>
+  </div>
+</div>
+
+<div id="preview-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header"><h3>文件預覽</h3><button onclick="closePreviewModal()">關閉</button></div>
+    <div id="preview-modal-list"></div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="demo.js"></script>
+<script src="common.js"></script>
+<script src="cases.js"></script>
+</body>
+</html>
