@@ -43,6 +43,9 @@
  *                    （CaseID 選填，標記這筆聯繫是針對哪個案件/專案，同客戶有多案件時用來分開查）
  *   Users         - Username, PasswordHash, Role, DisplayName
  *                    （Role 決定權限，見 PERMISSIONS：admin 可以做任何事／sales 業務／fae 工程）
+ *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
+ *   Shortcuts     - Username, Title, Url, OpenOnStart, SortOrder（每人自己的首頁「常用網站」）
+ *   Memos         - Owner, OwnerName, Title, Content, Shared, CreatedDate, LastUpdated（備忘錄，預設只有自己看，Shared=是 全站可看）
  *   Config        - Key, Value
  *   Devices       - DeviceId, Username, DeviceLabel, TokenHash, CreatedDate, LastSeenDate
  *                    （「記住這台裝置」用，讓網頁關掉重開不用重新輸入密碼；管理員在「裝置管理」頁可以移除）
@@ -64,6 +67,9 @@ var SHEET_CONFIG = 'Config';
 var SHEET_DEVICES = 'Devices';
 var SHEET_CUSTOMER_CONTACTS = 'CustomerContacts';
 var SHEET_CASE_COMPANIES = 'CaseCompanies';
+var SHEET_FAVORITES = 'Favorites';
+var SHEET_SHORTCUTS = 'Shortcuts';
+var SHEET_MEMOS = 'Memos';
 
 // ------------------------------------------------------------
 // 2. 路由表
@@ -119,6 +125,17 @@ var ROUTES = {
   updateUser:              { auth: true, fn: handleUpdateUser },
   deleteUser:              { auth: true, fn: handleDeleteUser },
   resetUserPassword:       { auth: true, fn: handleResetUserPassword },
+
+  // 個人化：常用型號 / 首頁常用網站 / 備忘錄 / 行事曆行程
+  getFavorites:            { auth: true, fn: handleGetFavorites },
+  toggleFavorite:          { auth: true, fn: handleToggleFavorite },
+  getShortcuts:            { auth: true, fn: handleGetShortcuts },
+  saveShortcuts:           { auth: true, fn: handleSaveShortcuts },
+  getMemos:                { auth: true, fn: handleGetMemos },
+  addMemo:                 { auth: true, fn: handleAddMemo },
+  updateMemo:              { auth: true, fn: handleUpdateMemo },
+  deleteMemo:              { auth: true, fn: handleDeleteMemo },
+  getCalendarEvents:       { auth: true, fn: handleGetCalendarEvents },
 
   // 文件產生（每種都支援 format: 'html' / 'pdf' / 'docx'）
   generateRequirementDoc:  { auth: true, fn: handleGenerateRequirementDoc },
@@ -205,6 +222,9 @@ var CUSTOMER_CATEGORIES = ['AOI同業資料', '器材原廠', '機構合作設�
 /** 帳號角色：admin(管理員，全部功能) / sales(業務) / fae(工程/FAE)。 */
 var ROLES = ['admin', 'sales', 'fae'];
 SCHEMA[SHEET_CONFIG] = ['Key', 'Value'];
+SCHEMA[SHEET_FAVORITES] = ['Username', 'InternalModel'];
+SCHEMA[SHEET_SHORTCUTS] = ['Username', 'Title', 'Url', 'OpenOnStart', 'SortOrder'];
+SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated'];
 SCHEMA[SHEET_DEVICES] = ['DeviceId', 'Username', 'DeviceLabel', 'TokenHash', 'CreatedDate', 'LastSeenDate'];
 
 /**
@@ -221,6 +241,9 @@ TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash'];
 TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash'];
 TEXT_COLUMNS[SHEET_PRICE_HISTORY] = ['ProductInternalModel', 'CaseID'];
 TEXT_COLUMNS[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel'];
+TEXT_COLUMNS[SHEET_FAVORITES] = ['Username', 'InternalModel'];
+TEXT_COLUMNS[SHEET_SHORTCUTS] = ['Username'];
+TEXT_COLUMNS[SHEET_MEMOS] = ['Owner'];
 
 /** Config 分頁預設要有的設定（值留空，之後自己填）。 */
 var CONFIG_KEYS = [
@@ -1531,6 +1554,173 @@ function handleDeleteCaseAttachment(body) {
   handleUpdateCase({ caseId: body.caseId, fields: { AttachmentLinksJson: JSON.stringify(attachments) } });
 
   return { success: true, attachments: attachments };
+}
+
+// ------------------------------------------------------------
+// 個人化功能：常用型號、首頁常用網站、備忘錄、行事曆行程
+// 資料都用 Username 綁在個人身上（備忘錄勾「分享」才讓全站看到），一律用登入者本人，不接受前端指定別人。
+// ------------------------------------------------------------
+function deleteRowsWhere_(sheetName, colName, value) {
+  var sheet = getSheet(sheetName);
+  var data = sheet.getDataRange().getValues();
+  var col = data[0].indexOf(colName);
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][col]) === String(value)) sheet.deleteRow(i + 1);
+  }
+}
+
+function handleGetFavorites(body) {
+  var me = body._user.username;
+  var favorites = sheetToObjects(SHEET_FAVORITES).rows
+    .filter(function (r) {
+      return r['Username'] === me;
+    })
+    .map(function (r) {
+      return String(r['InternalModel']);
+    });
+  return { success: true, favorites: favorites };
+}
+
+function handleToggleFavorite(body) {
+  if (!body.internalModel) return { success: false, message: '缺少內部型號（沒有內部型號的產品請先補上再加常用）' };
+  var me = body._user.username;
+  var sheet = getSheet(SHEET_FAVORITES);
+  var data = sheet.getDataRange().getValues();
+  var uCol = data[0].indexOf('Username');
+  var mCol = data[0].indexOf('InternalModel');
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (data[i][uCol] === me && String(data[i][mCol]) === String(body.internalModel)) {
+      sheet.deleteRow(i + 1);
+      return { success: true, favorite: false };
+    }
+  }
+  appendObjectRow(SHEET_FAVORITES, { Username: me, InternalModel: String(body.internalModel) });
+  return { success: true, favorite: true };
+}
+
+function handleGetShortcuts(body) {
+  var me = body._user.username;
+  var rows = sheetToObjects(SHEET_SHORTCUTS).rows.filter(function (r) {
+    return r['Username'] === me;
+  });
+  rows.sort(function (a, b) {
+    return Number(a['SortOrder']) - Number(b['SortOrder']);
+  });
+  return {
+    success: true,
+    shortcuts: rows.map(function (r) {
+      return { Title: r['Title'], Url: r['Url'], OpenOnStart: r['OpenOnStart'] === '是' };
+    }),
+  };
+}
+
+/** 整批覆蓋自己的常用網站清單。只接受 http/https 網址（沒寫開頭就補 https://），避免存進 javascript: 之類的連結。 */
+function handleSaveShortcuts(body) {
+  var me = body._user.username;
+  var list = body.shortcuts || [];
+  var cleaned = [];
+  for (var i = 0; i < list.length; i++) {
+    var url = String(list[i].Url || '').trim();
+    if (!url) continue;
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;
+    if (!/^https?:\/\//i.test(url)) return { success: false, message: '只能加入 http / https 網址：' + url };
+    cleaned.push({ Title: String(list[i].Title || '').trim() || url, Url: url, OpenOnStart: list[i].OpenOnStart ? '是' : '' });
+  }
+  deleteRowsWhere_(SHEET_SHORTCUTS, 'Username', me);
+  cleaned.forEach(function (c, idx) {
+    appendObjectRow(SHEET_SHORTCUTS, { Username: me, Title: c.Title, Url: c.Url, OpenOnStart: c.OpenOnStart, SortOrder: idx + 1 });
+  });
+  return { success: true, count: cleaned.length };
+}
+
+/** 自己的備忘錄 + 別人勾了「分享」的備忘錄。 */
+function handleGetMemos(body) {
+  var me = body._user.username;
+  var rows = [];
+  sheetToObjects(SHEET_MEMOS).rows.forEach(function (r, i) {
+    var mine = r['Owner'] === me;
+    if (!mine && r['Shared'] !== '是') return;
+    rows.push({
+      RowIndex: i + 2,
+      Title: r['Title'],
+      Content: r['Content'],
+      Shared: r['Shared'] === '是',
+      OwnerName: r['OwnerName'] || r['Owner'],
+      IsMine: mine,
+      CreatedDate: r['CreatedDate'],
+      LastUpdated: r['LastUpdated'],
+    });
+  });
+  rows.sort(function (a, b) {
+    return String(b.LastUpdated).localeCompare(String(a.LastUpdated));
+  });
+  return { success: true, memos: rows };
+}
+
+function handleAddMemo(body) {
+  if (!String(body.title || '').trim() && !String(body.content || '').trim()) return { success: false, message: '標題或內容至少要填一個' };
+  var today = todayStr();
+  appendObjectRow(SHEET_MEMOS, {
+    Owner: body._user.username,
+    OwnerName: body._user.displayName || body._user.username,
+    Title: body.title || '',
+    Content: body.content || '',
+    Shared: body.shared ? '是' : '',
+    CreatedDate: today,
+    LastUpdated: today,
+  });
+  return { success: true };
+}
+
+/** 備忘錄只有建立者（或 admin）能改、刪；別人分享給大家的只能看。 */
+function checkMemoOwner_(body) {
+  var rowNum = Number(body.rowIndex);
+  var sheet = getSheet(SHEET_MEMOS);
+  if (!rowNum || rowNum < 2 || rowNum > sheet.getLastRow()) throw new Error('查無此備忘錄');
+  var memo = readRowAsObject(SHEET_MEMOS, rowNum);
+  var user = findUserRow_(body._user.username);
+  var isAdmin = user && user['Role'] === 'admin';
+  if (memo['Owner'] !== body._user.username && !isAdmin) throw new Error('只有備忘錄的建立者可以修改或刪除');
+  return rowNum;
+}
+
+function handleUpdateMemo(body) {
+  var rowNum = checkMemoOwner_(body);
+  var f = body.fields || {};
+  var fields = { LastUpdated: todayStr() };
+  if (f.Title !== undefined) fields.Title = f.Title;
+  if (f.Content !== undefined) fields.Content = f.Content;
+  if (f.Shared !== undefined) fields.Shared = f.Shared ? '是' : '';
+  updateRowFields(SHEET_MEMOS, rowNum, fields);
+  return { success: true };
+}
+
+function handleDeleteMemo(body) {
+  var rowNum = checkMemoOwner_(body);
+  getSheet(SHEET_MEMOS).deleteRow(rowNum);
+  return { success: true };
+}
+
+/** 讀取執行者(部署網頁應用程式的那個 Google 帳號)預設行事曆，從今天起 days 天內的行程。 */
+function handleGetCalendarEvents(body) {
+  var days = Math.min(Math.max(Number(body.days) || 7, 1), 60);
+  try {
+    var start = new Date(todayStr() + 'T00:00:00+08:00');
+    var end = new Date(start.getTime() + days * 86400000);
+    var events = CalendarApp.getDefaultCalendar().getEvents(start, end).map(function (ev) {
+      return {
+        Id: ev.getId(),
+        Title: ev.getTitle(),
+        Start: Utilities.formatDate(ev.getStartTime(), 'GMT+8', ev.isAllDayEvent() ? 'yyyy-MM-dd' : "yyyy-MM-dd'T'HH:mm"),
+        End: Utilities.formatDate(ev.getEndTime(), 'GMT+8', ev.isAllDayEvent() ? 'yyyy-MM-dd' : "yyyy-MM-dd'T'HH:mm"),
+        AllDay: ev.isAllDayEvent(),
+        Location: ev.getLocation() || '',
+      };
+    });
+    return { success: true, events: events };
+  } catch (err) {
+    return { success: false, message: '讀取行事曆失敗：' + err.message + '（需要授權日曆權限，請在 Apps Script 重新執行一次 setup 並同意授權）' };
+  }
 }
 
 // ------------------------------------------------------------

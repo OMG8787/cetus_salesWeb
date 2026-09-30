@@ -22,6 +22,7 @@
     <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
   </header>
   <nav class="tabs tabs-grouped">
+  <button class="tab-btn nav-single" onclick="location.href='home.html'">首頁</button>
   <div class="nav-group active-group">
     <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
     <div class="nav-dropdown">
@@ -48,14 +49,17 @@
   </div>
 </nav>
 
-  <section class="tab-content">
+  <section class="tab-content wide">
     <h2>產品搜尋表</h2>
     <input id="product-search-input" placeholder="輸入內部型號 / 供應商型號 / 供應商 / 類別 / 產地關鍵字（邊打邊篩選，多個關鍵字用空白隔開）"
       oninput="onProductSearchInput()" />
-    <button onclick="searchProducts()">重新載入產品資料</button>
-    <button onclick="toggleNewProductForm()">+ 新增產品</button>
-    <button onclick="importCatalog()" title="把「選型計算」型錄（相機/FA鏡頭/遠心鏡頭）讀進產品資料表，只補還沒有的">匯入型錄產品</button>
-    <label class="er-check"><input type="checkbox" id="product-only-incomplete" onchange="onProductSearchInput()" /> 只看資料不完整的</label>
+    <div class="toolbar">
+      <button onclick="searchProducts()">重新載入產品資料</button>
+      <button onclick="toggleNewProductForm()">+ 新增產品</button>
+      <button class="btn-secondary" onclick="importCatalog()" title="把「選型計算」型錄（相機/FA鏡頭/遠心鏡頭）讀進產品資料表，只補還沒有的">匯入型錄產品</button>
+      <label class="inline-check"><input type="checkbox" id="product-only-fav" onchange="onProductSearchInput()" /> ★ 只看常用</label>
+      <label class="inline-check"><input type="checkbox" id="product-only-incomplete" onchange="onProductSearchInput()" /> 只看資料不完整的</label>
+    </div>
     <div id="product-alert" class="calc-hint"></div>
 
     <div id="new-product-form" class="panel" style="display:none;">
@@ -87,6 +91,7 @@
     <table id="product-table">
       <thead>
         <tr>
+          <th>常用</th>
           <th class="sortable" data-sort="InternalModel">內部型號</th>
           <th class="sortable" data-sort="SupplierModel">供應商型號</th>
           <th class="sortable" data-sort="Supplier">供應商</th>

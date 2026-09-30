@@ -16,7 +16,7 @@ async function doLogin() {
       sessionStorage.setItem('role', result.role || '');
       // 記住這台裝置：下次打開網頁會自動用這組權杖換新的登入，不用再打密碼，除非管理員從「裝置管理」移除
       if (result.deviceToken) setCookie(DEVICE_TOKEN_COOKIE, result.deviceToken, DEVICE_YEARS);
-      location.href = 'products.html';
+      location.href = 'home.html';
     } else {
       msg.textContent = result.message || '登入失敗';
     }
@@ -37,7 +37,7 @@ async function tryAutoLogin() {
     sessionStorage.setItem('token', result.token);
     sessionStorage.setItem('username', result.displayName || result.username);
     sessionStorage.setItem('role', result.role || '');
-    location.href = 'products.html';
+    location.href = 'home.html';
     return true;
   }
   // 權杖失效（例如被管理員移除），清掉本機記住的資訊，留在登入頁讓使用者重新輸入密碼
@@ -52,7 +52,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   // 如果這個分頁本來就有登入，直接跳過登入頁
   if (sessionStorage.getItem('token')) {
-    location.href = 'products.html';
+    location.href = 'home.html';
     return;
   }
   await tryAutoLogin();

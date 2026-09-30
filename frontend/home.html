@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>首頁 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs tabs-grouped">
+  <button class="tab-btn nav-single active" onclick="location.href='home.html'">首頁</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+    </div>
+  </div>
+  <button class="tab-btn nav-single" onclick="location.href='report.html'">日報</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">裝置管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
+</nav>
+
+<section class="tab-content wide">
+  <h2 id="home-greeting">首頁</h2>
+
+  <div class="home-grid">
+    <!-- 常用網站 -->
+    <div class="home-card">
+      <h3>常用網站
+        <span class="card-actions">
+          <button onclick="openAllSites()" title="一次開啟所有標了「預設開啟」的網站">▶ 一鍵開啟預設網站</button>
+          <button class="btn-secondary" onclick="toggleSiteEdit()">編輯</button>
+        </span>
+      </h3>
+      <div id="site-list" class="site-list"></div>
+      <div id="site-hint" class="calc-hint"></div>
+      <div id="site-edit" style="display:none;">
+        <div id="site-edit-rows"></div>
+        <div class="toolbar">
+          <button class="btn-secondary" onclick="addSiteRow()">＋ 新增網站</button>
+          <button onclick="saveSites()">儲存</button>
+          <button class="btn-secondary" onclick="toggleSiteEdit()">取消</button>
+        </div>
+        <div class="calc-hint">網址不用打 https://。勾「預設開啟」的網站，會在按「一鍵開啟預設網站」時一起開。</div>
+      </div>
+    </div>
+
+    <!-- 行程 -->
+    <div class="home-card">
+      <h3>Google 日曆行程
+        <span class="card-actions">
+          <select id="cal-days" onchange="loadEvents()">
+            <option value="1">今天</option>
+            <option value="7" selected>未來 7 天</option>
+            <option value="30">未來 30 天</option>
+          </select>
+          <button class="btn-secondary" onclick="loadEvents()">重新整理</button>
+        </span>
+      </h3>
+      <div id="event-list"></div>
+      <div class="calc-hint">讀取的是部署 Apps Script 那個 Google 帳號的預設日曆（客戶追蹤日也會加到這裡）。</div>
+    </div>
+
+    <!-- 常用型號 -->
+    <div class="home-card">
+      <h3>常用型號
+        <span class="card-actions"><button class="btn-secondary" onclick="location.href='products.html?fav=1'">到產品頁查看 / 詢價</button></span>
+      </h3>
+      <div id="fav-list" class="site-list"></div>
+      <div class="calc-hint">在「產品搜尋」按產品前面的 ☆ 就會加入常用。</div>
+    </div>
+
+    <!-- 備忘錄 -->
+    <div class="home-card">
+      <h3>備忘錄
+        <span class="card-actions">
+          <select id="memo-filter" onchange="renderMemos()">
+            <option value="all">全部</option>
+            <option value="mine">只看我的</option>
+            <option value="shared">別人分享的</option>
+          </select>
+        </span>
+      </h3>
+      <div id="memo-add">
+        <input id="memo-title" placeholder="標題（選填）" />
+        <textarea id="memo-content" placeholder="內容"></textarea>
+        <div class="toolbar">
+          <label class="inline-check"><input type="checkbox" id="memo-shared" /> 分享給系統裡所有人（不勾就只有我看得到）</label>
+          <button onclick="addMemo()">新增備忘</button>
+        </div>
+      </div>
+      <div id="memo-list"></div>
+    </div>
+  </div>
+</section>
+
+<script src="config.js"></script>
+<script src="demo.js"></script>
+<script src="common.js"></script>
+<script src="home.js"></script>
+</body>
+</html>

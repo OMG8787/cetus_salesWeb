@@ -148,6 +148,57 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
+    // ---------------- 個人化：常用型號 / 常用網站 / 備忘錄 / 行事曆 ----------------
+    case 'getFavorites':
+      return { success: true, favorites: db.favorites || [] };
+
+    case 'toggleFavorite': {
+      db.favorites = db.favorites || [];
+      const i = db.favorites.indexOf(params.internalModel);
+      if (i > -1) db.favorites.splice(i, 1);
+      else db.favorites.push(params.internalModel);
+      saveDemoDB(db);
+      return { success: true, favorite: i === -1 };
+    }
+
+    case 'getShortcuts':
+      return { success: true, shortcuts: db.shortcuts || [] };
+
+    case 'saveShortcuts': {
+      db.shortcuts = (params.shortcuts || [])
+        .filter((s) => s.Url)
+        .map((s) => ({ Title: s.Title || s.Url, Url: /^https?:\/\//i.test(s.Url) ? s.Url : 'https://' + s.Url, OpenOnStart: !!s.OpenOnStart }));
+      saveDemoDB(db);
+      return { success: true, count: db.shortcuts.length };
+    }
+
+    case 'getMemos':
+      return { success: true, memos: (db.memos || []).map((m, i) => Object.assign({ RowIndex: i, IsMine: true, OwnerName: '我' }, m)) };
+
+    case 'addMemo': {
+      db.memos = db.memos || [];
+      const t = new Date().toISOString().slice(0, 10);
+      db.memos.push({ Title: params.title || '', Content: params.content || '', Shared: !!params.shared, CreatedDate: t, LastUpdated: t });
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'updateMemo': {
+      const m = (db.memos || [])[params.rowIndex];
+      if (!m) return { success: false, message: '查無此備忘錄' };
+      Object.assign(m, params.fields || {}, { LastUpdated: new Date().toISOString().slice(0, 10) });
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'deleteMemo':
+      (db.memos || []).splice(params.rowIndex, 1);
+      saveDemoDB(db);
+      return { success: true };
+
+    case 'getCalendarEvents':
+      return { success: true, events: [{ Id: 'demo1', Title: '（示範）拜訪客戶', Start: new Date().toISOString().slice(0, 10) + 'T14:00', End: '', AllDay: false, Location: '' }] };
+
     case 'importCatalogProducts':
       return { success: true, added: 0, missingInternal: 0, message: '示範模式不會真的讀取型錄，正式模式才會匯入。' };
 

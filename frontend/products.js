@@ -4,6 +4,7 @@
  */
 
 let currentInternalModel = null;
+let favoriteSet = new Set(); // 我的常用型號
 let currentProductRow = null; // 內部型號還沒填的產品用列號辨識
 const STALE_DAYS = 90; // 超過這天數沒更新/詢價，就提醒可以考慮重新向原廠詢價
 
@@ -101,7 +102,9 @@ function applyProductFilter(keepPage) {
   const byModel = (a, b) => String(a.InternalModel || '').localeCompare(String(b.InternalModel || ''));
 
   const onlyIncomplete = document.getElementById('product-only-incomplete').checked;
-  const pool = onlyIncomplete ? allProducts.filter((p) => productIssues(p).length) : allProducts;
+  const onlyFav = document.getElementById('product-only-fav').checked;
+  let pool = onlyIncomplete ? allProducts.filter((p) => productIssues(p).length) : allProducts;
+  if (onlyFav) pool = pool.filter((p) => favoriteSet.has(String(p.InternalModel)));
   if (!keywords.length) {
     filteredProducts = pool.slice().sort(byModel);
   } else {
@@ -208,7 +211,8 @@ function renderProductTable(products) {
   tbody.innerHTML = '';
   products.forEach((p) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${p.InternalModel || '<span class="badge-warn">（缺內部型號）</span>'}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || '<span class="badge-warn">無</span>'}</td><td>${p.InquiryCount || 0}</td><td>${productAlertHtml(p)}</td><td>${p.Notes || ''}</td>
+    const isFav = favoriteSet.has(String(p.InternalModel));
+    tr.innerHTML = `<td>${p.InternalModel ? `<button class="fav-star ${isFav ? '' : 'off'}" title="${isFav ? '取消常用' : '加入常用'}" onclick="toggleFavorite('${String(p.InternalModel).replace(/'/g, "\\'")}')">${isFav ? '★' : '☆'}</button>` : ''}</td><td>${p.InternalModel || '<span class="badge-warn">（缺內部型號）</span>'}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || '<span class="badge-warn">無</span>'}</td><td>${p.InquiryCount || 0}</td><td>${productAlertHtml(p)}</td><td>${p.Notes || ''}</td>
       <td><button onclick="viewProduct('${String(p.InternalModel || '').replace(/'/g, "\\'")}', ${p.RowIndex})">查看/詢價</button></td>`;
     tbody.appendChild(tr);
   });
@@ -478,6 +482,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     th.addEventListener('click', () => onProductSortClick(th.dataset.sort));
   });
   renderSortIndicators();
+  if (new URL(location.href).searchParams.get('fav')) document.getElementById('product-only-fav').checked = true;
+  await loadFavorites();
   searchProducts();
   renderInquiryCart();
   bindEnterSubmit('#new-product-form', addProduct);
@@ -540,4 +546,17 @@ async function importCatalog() {
   alert(result.message);
   clearCached('products_all');
   searchProducts();
+}
+
+async function loadFavorites() {
+  const result = await callApi('getFavorites', {});
+  if (result.success) favoriteSet = new Set(result.favorites);
+}
+
+async function toggleFavorite(model) {
+  const result = await callApi('toggleFavorite', { internalModel: model });
+  if (!result.success) return alert(result.message);
+  if (result.favorite) favoriteSet.add(String(model));
+  else favoriteSet.delete(String(model));
+  applyProductFilter(true);
 }
