@@ -115,7 +115,8 @@ function toggleSwCustomizationNote(prefix) {
 
 // ---- 客戶/業務/FAE 自動完成 + 快速建立 ----
 function applyCasesPageData(data) {
-  updateSoftwareDatalist(data.cases);
+  softwareList = data.software || softwareList;
+  updateSoftwareDatalist();
   renderCaseTable(data.cases);
 
   allCustomersForCase = data.customers;
@@ -183,9 +184,11 @@ function updateStaffDatalistsFromAllStaff() {
     });
 }
 
-function updateSoftwareDatalist(cases) {
+let softwareList = []; // 軟體名稱清單（Software 分頁）
+
+function updateSoftwareDatalist() {
   const list = document.getElementById('case-software-datalist');
-  const names = [...new Set(cases.map((c) => c.SoftwareName).filter(Boolean))];
+  const names = softwareList;
   list.innerHTML = '';
   names.forEach((name) => {
     const opt = document.createElement('option');
@@ -268,9 +271,32 @@ function blockIfCustomerMissing(name) {
   return true;
 }
 
+/** 軟體名稱要在清單內；不在的話詢問是否新增，不新增就不往下。回傳 true 才可以繼續存檔。 */
+async function ensureSoftwareKnown(inputId) {
+  const input = document.getElementById(inputId);
+  const name = input.value.trim();
+  input.value = name;
+  if (!name) return true;
+  if (softwareList.some((n) => n.toLowerCase() === name.toLowerCase())) {
+    input.value = softwareList.find((n) => n.toLowerCase() === name.toLowerCase());
+    return true;
+  }
+  if (!confirm(`「${name}」不在軟體名稱資料庫內，是否新增？`)) return false;
+  const result = await callApi('addSoftware', { name });
+  if (!result.success) {
+    alert(result.message);
+    return false;
+  }
+  softwareList.push(name);
+  updateSoftwareDatalist();
+  clearCached('casesPageData');
+  return true;
+}
+
 async function createCase() {
   const customerName = document.getElementById('case-customer').value;
   if (blockIfCustomerMissing(customerName)) return;
+  if (!(await ensureSoftwareKnown('case-software-name'))) return;
 
   const swCustomization = document.getElementById('case-sw-customization').value;
   const fields = {
@@ -395,6 +421,7 @@ async function viewCase(caseId) {
 
 async function saveCaseEdit() {
   if (blockIfCustomerMissing(document.getElementById('cd-customer').value)) return;
+  if (!(await ensureSoftwareKnown('cd-software-name'))) return;
 
   const swCustomization = document.getElementById('cd-sw-customization').value;
   const fields = {

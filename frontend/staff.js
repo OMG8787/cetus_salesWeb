@@ -56,10 +56,50 @@ async function deleteStaffRow(rowIndex) {
   loadStaff();
 }
 
+async function loadSoftware() {
+  const result = await callApi('getSoftware', {});
+  const table = document.getElementById('software-table');
+  if (!result.success) return;
+  table.style.display = '';
+  const tbody = table.querySelector('tbody');
+  tbody.innerHTML = '';
+  result.software.forEach((s) => {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.textContent = s.Name;
+    const td2 = document.createElement('td');
+    const btn = document.createElement('button');
+    btn.textContent = '刪除';
+    btn.onclick = () => deleteSoftwareName(s.RowIndex, s.Name);
+    td2.appendChild(btn);
+    tr.append(td, td2);
+    tbody.appendChild(tr);
+  });
+}
+
+async function addSoftwareName() {
+  const name = document.getElementById('software-name').value.trim();
+  if (!name) return alert('請輸入軟體名稱');
+  const result = await callApi('addSoftware', { name });
+  if (!result.success) return alert(result.message);
+  clearCached('casesPageData');
+  document.getElementById('software-name').value = '';
+  loadSoftware();
+}
+
+async function deleteSoftwareName(rowIndex, name) {
+  if (!confirm(`確定要從清單刪除「${name}」嗎？（已建立的案件不受影響）`)) return;
+  const result = await callApi('deleteSoftware', { rowIndex });
+  if (!result.success) return alert(result.message);
+  clearCached('casesPageData');
+  loadSoftware();
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   if (!(await ensureAuth())) return;
   renderHeaderUser();
   applyAdminOnlyVisibility();
   await loadStaff();
+  loadSoftware();
   bindEnterSubmit('#staff-add-panel', addStaff);
 });

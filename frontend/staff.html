@@ -69,6 +69,17 @@
     <thead><tr><th>姓名</th><th>角色</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
+
+  <h2>軟體名稱清單</h2>
+  <p class="calc-hint">案件的「軟體名稱」是從這份清單下拉選擇。案件頁輸入清單裡沒有的名稱時，會詢問是否新增；也可以在這裡直接新增或刪除。</p>
+  <div id="software-add-panel">
+    <input id="software-name" placeholder="軟體名稱" />
+    <button onclick="addSoftwareName()">新增</button>
+  </div>
+  <table id="software-table" style="display:none;">
+    <thead><tr><th>軟體名稱</th><th>操作</th></tr></thead>
+    <tbody></tbody>
+  </table>
 </section>
 
 <script src="config.js"></script>

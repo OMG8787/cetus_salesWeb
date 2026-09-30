@@ -46,6 +46,7 @@
  *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
  *   Shortcuts     - Username, Title, Url, OpenOnStart, SortOrder（每人自己的首頁「常用網站」）
  *   Memos         - Owner, OwnerName, Title, Content, Shared, CreatedDate, LastUpdated（備忘錄，預設只有自己看，Shared=是 全站可看）
+ *   Software      - Name（案件「軟體名稱」下拉選單的選項，公司準系統只有幾套；新名稱在案件頁會詢問是否新增）
  *   Config        - Key, Value
  *   Devices       - DeviceId, Username, DeviceLabel, TokenHash, CreatedDate, LastSeenDate
  *                    （「記住這台裝置」用，讓網頁關掉重開不用重新輸入密碼；管理員在「裝置管理」頁可以移除）
@@ -70,6 +71,7 @@ var SHEET_CASE_COMPANIES = 'CaseCompanies';
 var SHEET_FAVORITES = 'Favorites';
 var SHEET_SHORTCUTS = 'Shortcuts';
 var SHEET_MEMOS = 'Memos';
+var SHEET_SOFTWARE = 'Software';
 
 // ------------------------------------------------------------
 // 2. 路由表
@@ -107,6 +109,9 @@ var ROUTES = {
   getCases:                { auth: true, fn: handleGetCases },
   getCase:                 { auth: true, fn: handleGetCase },
   getCasesPageData:        { auth: true, fn: handleGetCasesPageData },
+  getSoftware:             { auth: true, fn: handleGetSoftware },
+  addSoftware:             { auth: true, fn: handleAddSoftware },
+  deleteSoftware:          { auth: true, fn: handleDeleteSoftware },
   updateCase:              { auth: true, fn: handleUpdateCase },
   deleteCase:              { auth: true, fn: handleDeleteCase },
   uploadCaseAttachment:    { auth: true, fn: handleUploadCaseAttachment },
@@ -222,6 +227,7 @@ var CUSTOMER_CATEGORIES = ['AOI同業資料', '器材原廠', '機構合作設�
 /** 帳號角色：admin(管理員，全部功能) / sales(業務) / fae(工程/FAE)。 */
 var ROLES = ['admin', 'sales', 'fae'];
 SCHEMA[SHEET_CONFIG] = ['Key', 'Value'];
+SCHEMA[SHEET_SOFTWARE] = ['Name'];
 SCHEMA[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 SCHEMA[SHEET_SHORTCUTS] = ['Username', 'Title', 'Url', 'OpenOnStart', 'SortOrder'];
 SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated'];
@@ -273,6 +279,7 @@ PERMISSIONS['addStaff'] = ['admin'];
 PERMISSIONS['updateStaff'] = ['admin'];
 PERMISSIONS['deleteStaff'] = ['admin'];
 PERMISSIONS['deleteProduct'] = ['admin', 'sales'];
+PERMISSIONS['deleteSoftware'] = ['admin'];
 PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
@@ -359,6 +366,7 @@ function setup() {
   });
 
   importLegacyCustomers_(log);
+  seedSoftwareFromCases_(log);
   try {
     importCatalogProducts_(log);
   } catch (e) {
@@ -1284,7 +1292,54 @@ function handleGetCasesPageData(body) {
     cases: handleGetCases({}).cases,
     customers: handleGetCustomers({}).customers,
     staff: handleGetStaff({}).staff,
+    software: handleGetSoftware({}).software.map(function (s) {
+      return s.Name;
+    }),
   };
+}
+
+// ------------------------------------------------------------
+// 軟體名稱清單（案件的「軟體名稱」用下拉選單，避免同一套軟體被打成好幾種寫法）
+// ------------------------------------------------------------
+function handleGetSoftware(body) {
+  var rows = sheetToObjects(SHEET_SOFTWARE).rows.map(function (r, i) {
+    return { RowIndex: i + 2, Name: String(r['Name']) };
+  });
+  return { success: true, software: rows };
+}
+
+function handleAddSoftware(body) {
+  var name = String(body.name || '').trim();
+  if (!name) return { success: false, message: '軟體名稱不能空白' };
+  var exists = sheetToObjects(SHEET_SOFTWARE).rows.some(function (r) {
+    return String(r['Name']).toLowerCase() === name.toLowerCase();
+  });
+  if (!exists) appendObjectRow(SHEET_SOFTWARE, { Name: name });
+  return { success: true, added: !exists };
+}
+
+function handleDeleteSoftware(body) {
+  if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
+  getSheet(SHEET_SOFTWARE).deleteRow(body.rowIndex);
+  return { success: true };
+}
+
+/** setup 時把既有案件裡用過的軟體名稱補進清單（只補沒有的），舊資料不用重打。 */
+function seedSoftwareFromCases_(log) {
+  var have = {};
+  sheetToObjects(SHEET_SOFTWARE).rows.forEach(function (r) {
+    have[String(r['Name']).toLowerCase()] = true;
+  });
+  var added = 0;
+  sheetToObjects(SHEET_CASES).rows.forEach(function (r) {
+    var n = String(r['SoftwareName'] || '').trim();
+    if (n && !have[n.toLowerCase()]) {
+      appendObjectRow(SHEET_SOFTWARE, { Name: n });
+      have[n.toLowerCase()] = true;
+      added++;
+    }
+  });
+  if (added && log) log.push('軟體名稱清單：從既有案件補進 ' + added + ' 個名稱');
 }
 
 function handleGetCase(body) {

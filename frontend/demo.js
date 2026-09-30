@@ -148,6 +148,24 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
+    case 'getSoftware':
+      return { success: true, software: (db.software || []).map((x, i) => ({ RowIndex: i, Name: x.Name })) };
+
+    case 'addSoftware': {
+      db.software = db.software || [];
+      const n = String(params.name || '').trim();
+      if (!n) return { success: false, message: '軟體名稱不能空白' };
+      const exists = db.software.some((x) => x.Name.toLowerCase() === n.toLowerCase());
+      if (!exists) db.software.push({ Name: n });
+      saveDemoDB(db);
+      return { success: true, added: !exists };
+    }
+
+    case 'deleteSoftware':
+      (db.software || []).splice(params.rowIndex, 1);
+      saveDemoDB(db);
+      return { success: true };
+
     // ---------------- 個人化：常用型號 / 常用網站 / 備忘錄 / 行事曆 ----------------
     case 'getFavorites':
       return { success: true, favorites: db.favorites || [] };
@@ -313,7 +331,7 @@ function handleDemoApi(action, params) {
       const casesResult = handleDemoApi('getCases', {});
       const customersResult = handleDemoApi('getCustomers', {});
       const staffResult = handleDemoApi('getStaff', {});
-      return { success: true, cases: casesResult.cases, customers: customersResult.customers, staff: staffResult.staff };
+      return { success: true, cases: casesResult.cases, customers: customersResult.customers, staff: staffResult.staff, software: (db.software || []).map((x) => x.Name) };
     }
 
     case 'getCase': {
