@@ -12,3 +12,6 @@ desktop.ini
 .idea/
 *.log
 node_modules/
+# 客戶個資，不公開
+data.xlsx
+apps-script/ImportData.gs

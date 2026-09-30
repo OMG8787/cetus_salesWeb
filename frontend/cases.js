@@ -7,6 +7,12 @@
 let currentCaseId = null;
 let allCustomersForCase = [];
 let allStaff = [];
+let companyFilterForCases = null; // 從客戶管理頁「相關案件」連結過來時，只顯示這間公司相關的案件
+
+// ---- 相關公司：一個案件可能牽涉多間公司（設備商/終端客戶/其他協力廠一起做同一台機台）----
+let createRelatedCompanies = [];
+let detailRelatedCompanies = [];
+const RELATED_COMPANY_ROLE_OPTIONS = ['設備商', '代理商', '終端客戶', '其他'];
 
 // ---- CCD 檢測需求：可新增/刪除多組 ----
 let createCcdList = [];
@@ -60,6 +66,44 @@ function renderCcdBlocks(context) {
       }
     });
     div.innerHTML = fieldsHtml;
+    container.appendChild(div);
+  });
+}
+
+// ---- 相關公司區塊（跟 CCD 區塊同一種模式：可新增/刪除多筆）----
+function addRelatedCompanyBlock(context) {
+  const list = context === 'create' ? createRelatedCompanies : detailRelatedCompanies;
+  list.push({ CompanyName: '', Role: RELATED_COMPANY_ROLE_OPTIONS[0] });
+  renderRelatedCompanyBlocks(context);
+}
+
+function removeRelatedCompanyBlock(context, idx) {
+  const list = context === 'create' ? createRelatedCompanies : detailRelatedCompanies;
+  list.splice(idx, 1);
+  renderRelatedCompanyBlocks(context);
+}
+
+function updateRelatedCompanyField(context, idx, field, value) {
+  const list = context === 'create' ? createRelatedCompanies : detailRelatedCompanies;
+  list[idx][field] = value;
+}
+
+function renderRelatedCompanyBlocks(context) {
+  const list = context === 'create' ? createRelatedCompanies : detailRelatedCompanies;
+  const container = document.getElementById(context === 'create' ? 'related-companies-create' : 'related-companies-detail');
+  if (!container) return;
+
+  container.innerHTML = '';
+  list.forEach((rc, idx) => {
+    const div = document.createElement('div');
+    div.className = 'er-row';
+    const options = RELATED_COMPANY_ROLE_OPTIONS.map((r) => `<option value="${r}" ${rc.Role === r ? 'selected' : ''}>${r}</option>`).join('');
+    div.innerHTML = `
+      <input placeholder="公司名稱" list="case-customer-datalist" value="${rc.CompanyName || ''}"
+        oninput="updateRelatedCompanyField('${context}', ${idx}, 'CompanyName', this.value)"
+        onblur="onCaseCustomerBlur(this)" />
+      <select onchange="updateRelatedCompanyField('${context}', ${idx}, 'Role', this.value)">${options}</select>
+      <button type="button" onclick="removeRelatedCompanyBlock('${context}', ${idx})">刪除</button>`;
     container.appendChild(div);
   });
 }
@@ -150,8 +194,10 @@ function updateSoftwareDatalist(cases) {
   });
 }
 
-function onCaseCustomerBlur(inputId) {
-  const val = document.getElementById(inputId).value.trim();
+/** target 可以是輸入框的 id（原本的客戶名稱欄位），也可以直接傳輸入框本身（相關公司區塊沒有固定 id）。 */
+function onCaseCustomerBlur(target) {
+  const input = typeof target === 'string' ? document.getElementById(target) : target;
+  const val = input.value.trim();
   if (!val) return;
   const exists = allCustomersForCase.some((c) => c.CompanyName === val);
   if (!exists) {
@@ -207,10 +253,28 @@ async function submitQuickStaff() {
 }
 
 // ---- 案件 CRUD ----
+/** 案件一定要掛在已存在的客戶底下：名稱要完全對到客戶清單裡的一筆，對不到就擋下來、引導去建立客戶。 */
+function findExactCustomer(name) {
+  return allCustomersForCase.find((c) => c.CompanyName === (name || '').trim());
+}
+
+function blockIfCustomerMissing(name) {
+  if (findExactCustomer(name)) return false;
+  if (!name || !name.trim()) {
+    alert('請先選擇客戶名稱（必填），案件一定要屬於一個客戶');
+  } else {
+    alert(`「${name}」不在客戶清單中，請先按 Tab／點其他地方離開欄位，跳出視窗建立這間客戶後再建立案件`);
+  }
+  return true;
+}
+
 async function createCase() {
+  const customerName = document.getElementById('case-customer').value;
+  if (blockIfCustomerMissing(customerName)) return;
+
   const swCustomization = document.getElementById('case-sw-customization').value;
   const fields = {
-    customerName: document.getElementById('case-customer').value,
+    customerName,
     endCustomerName: document.getElementById('case-end-customer').value,
     projectContact: document.getElementById('case-project-contact').value,
     contactPhone: document.getElementById('case-contact-phone').value,
@@ -223,6 +287,7 @@ async function createCase() {
     softwareCustomizationNote: swCustomization === '是' ? document.getElementById('case-sw-customization-note').value : '',
     requirementDetails: document.getElementById('case-requirement').value,
     ccdRequirements: createCcdList,
+    relatedCompanies: createRelatedCompanies,
   };
 
   const result = await callApi('createCase', fields);
@@ -238,19 +303,28 @@ async function createCase() {
     document.getElementById('case-sw-customization-note').style.display = 'none';
     createCcdList = [];
     renderCcdBlocks('create');
+    createRelatedCompanies = [];
+    renderRelatedCompanyBlocks('create');
     loadCases();
   } else {
     alert(result.message);
   }
 }
 
+/** companyFilterForCases 有設定的話（從客戶管理「相關案件」點過來），只顯示跟那間公司有關的案件。 */
 async function loadCases() {
   const keyword = document.getElementById('case-search-keyword').value;
   const status = document.getElementById('case-search-status').value;
-  const result = await callApi('getCases', { keyword, status });
+  const result = await callApi('getCases', { keyword, status, companyName: companyFilterForCases || '' });
   if (!result.success) return;
   updateSoftwareDatalist(result.cases);
   renderCaseTable(result.cases);
+}
+
+function clearCompanyFilter() {
+  companyFilterForCases = null;
+  document.getElementById('case-filter-hint').style.display = 'none';
+  loadCases();
 }
 
 function renderCaseTable(cases) {
@@ -305,6 +379,9 @@ async function viewCase(caseId) {
   detailCcdList = c.CcdRequirements || [];
   renderCcdBlocks('detail');
 
+  detailRelatedCompanies = (c.RelatedCompanies || []).map((rc) => ({ CompanyName: rc.CompanyName, Role: rc.Role }));
+  renderRelatedCompanyBlocks('detail');
+
   try {
     currentAttachments = JSON.parse(c.AttachmentLinksJson || '[]');
   } catch (e) {
@@ -317,6 +394,8 @@ async function viewCase(caseId) {
 }
 
 async function saveCaseEdit() {
+  if (blockIfCustomerMissing(document.getElementById('cd-customer').value)) return;
+
   const swCustomization = document.getElementById('cd-sw-customization').value;
   const fields = {
     CustomerName: document.getElementById('cd-customer').value,
@@ -333,7 +412,7 @@ async function saveCaseEdit() {
     Status: document.getElementById('cd-status').value,
     RequirementDetails: document.getElementById('cd-requirement').value,
   };
-  const result = await callApi('updateCase', { caseId: currentCaseId, fields, ccdRequirements: detailCcdList });
+  const result = await callApi('updateCase', { caseId: currentCaseId, fields, ccdRequirements: detailCcdList, relatedCompanies: detailRelatedCompanies });
   if (result.success) {
     clearCached('casesPageData');
     alert('已儲存修改');
@@ -487,6 +566,13 @@ function openEvalReportEditor() {
   location.href = `evalreport.html?caseId=${encodeURIComponent(currentCaseId)}`;
 }
 
+/** 案件詳情裡「📇 客戶聯繫紀錄」：跳去客戶管理頁，直接篩選這間公司的聯繫紀錄。 */
+function viewCustomerContactLogs() {
+  const customerName = document.getElementById('cd-customer').value;
+  if (!customerName) return alert('這個案件還沒有客戶名稱');
+  location.href = `customers.html?company=${encodeURIComponent(customerName)}`;
+}
+
 function formatDoc(command, value) {
   document.getElementById('manual-report-editor').focus();
   document.execCommand(command, false, value || null);
@@ -534,10 +620,30 @@ function previewManualReport() {
 // ------------------------------------------------------------
 // 初始化
 // ------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
-  requireLogin();
+/** 支援從別的頁面連過來：?caseId=X 直接開啟該案件詳情；?company=X 只顯示那間公司相關的案件。 */
+async function applyCaseQueryParams() {
+  const params = new URL(location.href).searchParams;
+  const company = params.get('company');
+  if (company) {
+    companyFilterForCases = company;
+    const hint = document.getElementById('case-filter-hint');
+    hint.style.display = '';
+    hint.innerHTML = `目前只顯示「${company}」相關的案件（含主要客戶與相關公司）。<button type="button" onclick="clearCompanyFilter()">顯示全部案件</button>`;
+    await loadCases();
+  }
+  const caseId = params.get('caseId');
+  if (caseId) {
+    await viewCase(caseId);
+    document.getElementById('case-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!(await ensureAuth())) return;
   renderHeaderUser();
-  loadCasesPageInit();
+  applyAdminOnlyVisibility();
+  await loadCasesPageInit();
+  applyCaseQueryParams();
 
   bindEnterSubmit('#case-search-panel', loadCases);
   bindEnterSubmit('#case-edit-panel', saveCaseEdit);

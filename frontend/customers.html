@@ -16,13 +16,31 @@
   <h1>AOI 業務系統</h1>
   <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
 </header>
-<nav class="tabs">
-  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
-  <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
-  <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
-  <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
-  <button class="tab-btn active" onclick="location.href='customers.html'">客戶管理</button>
-  <button class="tab-btn" onclick="location.href='report.html'">日報</button>
+<nav class="tabs tabs-grouped">
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn active" onclick="location.href='customers.html'">客戶管理</button>
+    </div>
+  </div>
+  <button class="tab-btn nav-single" onclick="location.href='report.html'">日報</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">裝置管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
 </nav>
 
 <section class="tab-content">
@@ -34,10 +52,10 @@
     <input id="cust-email" placeholder="Email" />
     <label>客戶分類：</label>
     <select id="cust-category">
-      <option value="設備商">設備商</option>
-      <option value="代理商">代理商</option>
-      <option value="終端客戶">終端客戶</option>
-      <option value="其他">其他</option>
+      <option value="AOI同業資料">AOI同業資料</option>
+      <option value="器材原廠">器材原廠</option>
+      <option value="機構合作設備商">機構合作設備商</option>
+      <option value="一般客戶" selected>一般客戶</option>
     </select>
     <label>急迫性：</label>
     <select id="cust-urgency">
@@ -47,18 +65,22 @@
     </select>
     <label>下次追蹤日：</label>
     <input id="cust-followup" type="date" />
+    <label class="er-check"><input type="checkbox" id="cust-has-transacted" /> 已交易過</label>
+    <label>上次交易日：</label>
+    <input id="cust-last-transaction" type="date" />
     <button onclick="addCustomer()">新增（有填追蹤日會自動加到你的 Google 日曆）</button>
   </div>
 
   <h2>客戶列表</h2>
   <div>
+    搜尋：<input id="cust-search" placeholder="公司/聯絡人/電話/Email/備註" oninput="renderCustomerTable()" />
     篩選：
     <select id="cust-filter-category" onchange="renderCustomerTable()">
       <option value="">全部分類</option>
-      <option value="設備商">設備商</option>
-      <option value="代理商">代理商</option>
-      <option value="終端客戶">終端客戶</option>
-      <option value="其他">其他</option>
+      <option value="AOI同業資料">AOI同業資料</option>
+      <option value="器材原廠">器材原廠</option>
+      <option value="機構合作設備商">機構合作設備商</option>
+      <option value="一般客戶">一般客戶</option>
     </select>
     <select id="cust-filter-urgency" onchange="renderCustomerTable()">
       <option value="">全部急迫性</option>
@@ -69,25 +91,84 @@
     <button onclick="loadCustomers()">重新整理</button>
   </div>
   <table id="customer-table">
-    <thead><tr><th>公司</th><th>聯絡人</th><th>電話</th><th>分類</th><th>急迫性</th><th>下次追蹤日</th><th>操作</th></tr></thead>
+    <thead><tr><th>公司</th><th>聯絡人</th><th>電話</th><th>分類</th><th>急迫性</th><th>下次追蹤日</th><th>交易狀態</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 
   <h2>新增客戶聯繫紀錄</h2>
+  <div class="calc-hint" id="contact-log-filter-hint" style="display:none;"></div>
   <div id="contact-log-panel">
-    <input id="log-company" placeholder="公司名稱" list="customer-company-list" />
+    <input id="log-company" placeholder="公司名稱" list="customer-company-list" oninput="onLogCompanyChange()" />
     <datalist id="customer-company-list"></datalist>
-    <input id="log-contact" placeholder="聯絡人" />
+    <input id="log-contact" placeholder="聯絡人" list="log-contact-datalist" />
+    <datalist id="log-contact-datalist"></datalist>
     <select id="log-method">
       <option value="電話">電話</option>
       <option value="Email">Email</option>
       <option value="拜訪">拜訪</option>
       <option value="其他">其他</option>
     </select>
+    <label>所屬案件（選填，同客戶有多個案件時可以指定是哪一個）：</label>
+    <select id="log-case"><option value="">（不指定案件）</option></select>
     <textarea id="log-summary" placeholder="聯繫內容摘要"></textarea>
     <button onclick="addContactLog()">新增聯繫紀錄</button>
   </div>
+
+  <h2>聯繫紀錄列表</h2>
+  <div>
+    篩選公司：
+    <select id="log-filter-company" onchange="loadContactLogs()"><option value="">全部公司</option></select>
+    <button onclick="loadContactLogs()">重新整理</button>
+  </div>
+  <table id="contact-log-table">
+    <thead><tr><th>日期</th><th>公司</th><th>聯絡人</th><th>方式</th><th>摘要</th><th>業務</th><th>所屬案件</th><th>操作</th></tr></thead>
+    <tbody></tbody>
+  </table>
 </section>
+
+<div id="customer-edit-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header"><h3>編輯客戶資料</h3><button onclick="closeCustomerEditModal()">關閉</button></div>
+    <input id="ce-company" placeholder="公司名稱" />
+    <input id="ce-contact" placeholder="聯絡人" />
+    <input id="ce-phone" placeholder="電話" />
+    <input id="ce-email" placeholder="Email" />
+    <label>客戶分類：</label>
+    <select id="ce-category">
+      <option value="AOI同業資料">AOI同業資料</option>
+      <option value="器材原廠">器材原廠</option>
+      <option value="機構合作設備商">機構合作設備商</option>
+      <option value="一般客戶">一般客戶</option>
+    </select>
+    <label>急迫性：</label>
+    <select id="ce-urgency"><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
+    <label>下次追蹤日：</label><input id="ce-followup" type="date" />
+    <label class="er-check"><input type="checkbox" id="ce-has-transacted" /> 已交易過</label>
+    <label>上次交易日：</label><input id="ce-last-transaction" type="date" />
+    <textarea id="ce-notes" placeholder="備註" rows="6"></textarea>
+    <button onclick="saveCustomerEdit()">儲存</button>
+  </div>
+</div>
+
+<div id="customer-contacts-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header"><h3>聯絡窗口 - <span id="cc-modal-company"></span></h3><button onclick="closeCustomerContactsModal()">關閉</button></div>
+    <div class="calc-hint">一間公司可以有多個聯絡窗口，各自的姓名/電話/Email 分開記錄（客戶列表上顯示的是「主要聯絡人」，這裡是其他/所有窗口）。</div>
+    <table id="customer-contacts-table">
+      <thead><tr><th>姓名</th><th>職稱</th><th>電話</th><th>Email</th><th>備註</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h4>新增聯絡窗口</h4>
+    <div id="customer-contact-add-panel">
+      <input id="cc-name" placeholder="姓名（必填）" />
+      <input id="cc-title" placeholder="職稱（選填）" />
+      <input id="cc-phone" placeholder="電話" />
+      <input id="cc-email" placeholder="Email" />
+      <input id="cc-notes" placeholder="備註" />
+      <button onclick="addCustomerContact()">新增</button>
+    </div>
+  </div>
+</div>
 
 <div id="preview-modal" class="modal-overlay" style="display:none;">
   <div class="modal-box">

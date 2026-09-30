@@ -35,6 +35,15 @@ let activeBlockId = null;
 const collapsed = new Set();
 
 // ------------------------------------------------------------
+// 產品型號（相機/鏡頭/光源...）：表格欄位下拉建議、找不到就問要不要存進產品資料表，
+// 也是「依報告型號詢價/報價」的資料來源
+// ------------------------------------------------------------
+const MODEL_FIELD_CATEGORY = { 相機型號: '相機', 鏡頭型號: '鏡頭', 光源: '光源', 光源控制器: '調光器' };
+const MODEL_FIELD_LABELS = Object.keys(MODEL_FIELD_CATEGORY);
+let productCatalog = [];
+let quoteModelItems = [];
+
+// ------------------------------------------------------------
 // 小工具
 // ------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
@@ -686,6 +695,205 @@ function dropZone(text, multiple, onAdd) {
   return el('div', {}, [zone, input]);
 }
 
+// ------------------------------------------------------------
+// 型號欄位（相機型號/鏡頭型號/光源/光源控制器）：從產品資料表下拉建議，也可以自己打，
+// 打完離開欄位時，如果不在資料表裡就問要不要順便存進去
+// ------------------------------------------------------------
+async function loadProductCatalog() {
+  const cached = getCached('products_all');
+  if (cached) productCatalog = cached;
+  const result = await callApi('searchProducts', { keyword: '' });
+  if (!result.success) return;
+  productCatalog = result.products;
+  setCached('products_all', productCatalog);
+  refreshModelDatalist();
+}
+
+function refreshModelDatalist() {
+  const list = $('er-model-datalist');
+  if (!list) return;
+  list.innerHTML = '';
+  productCatalog.forEach((p) => list.appendChild(el('option', { value: p.InternalModel })));
+}
+
+function findCatalogProduct(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (!v) return null;
+  return productCatalog.find((p) => String(p.InternalModel).trim().toLowerCase() === v) || null;
+}
+
+/** 型號欄位的輸入框：跟一般 textarea 不同，離開欄位時會檢查是否要匯入產品資料表。 */
+function buildModelValueInput(r) {
+  const input = el('input', { class: 'er-row-v er-model-input', list: 'er-model-datalist', placeholder: '型號（可從清單選，也可以自己打）', value: r.v || '' });
+  const markKnown = () => input.classList.toggle('er-model-known', !!findCatalogProduct(input.value));
+  markKnown();
+  input.addEventListener('input', () => { r.v = input.value; if (r.auto) r.auto = false; markKnown(); changed(); });
+  input.addEventListener('blur', () => maybeImportModel(input, r));
+  return input;
+}
+
+/** 型號不在產品資料表時，問使用者要不要順便新增，方便以後查詢/報價/詢價。 */
+async function maybeImportModel(input, r) {
+  const value = input.value.trim();
+  if (!value || findCatalogProduct(value)) return;
+  const category = MODEL_FIELD_CATEGORY[(r.k || '').trim()] || '其他';
+  if (!confirm(`「${value}」不在產品資料表中，要順便新增一筆（類別：${category}）方便以後查詢 / 詢價 / 報價嗎？\n\n不需要的話按「取消」，這裡仍然可以直接打字使用。`)) return;
+
+  const refPriceInput = prompt('底價（選填，不填之後可以到「產品搜尋」頁再補）：', '');
+  const result = await callApi('addProduct', { internalModel: value, category, refPrice: refPriceInput ? refPriceInput.trim() : '' });
+  if (!result.success) return alert(result.message || '新增失敗');
+
+  productCatalog.push({ InternalModel: value, Category: category, RefPrice: refPriceInput || '', InquiryCount: 0 });
+  clearCached('products_all');
+  refreshModelDatalist();
+  input.classList.add('er-model-known');
+}
+
+// ------------------------------------------------------------
+// 依報告型號詢價 / 報價：掃描報告裡「相機型號/鏡頭型號/光源/光源控制器」欄位，
+// 只要值有對到產品資料表就抓出來，讓你一次產生詢價信或報價單，不用再回產品/報價頁重打一次型號
+// ------------------------------------------------------------
+function toggleQuotePanel() {
+  if (!report) return alert('請先選擇案件');
+  const panel = $('er-quote-panel');
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? '' : 'none';
+  if (show) {
+    if (!$('er-quote-customer').value) $('er-quote-customer').value = (caseData && caseData.CustomerName) || '';
+    refreshQuoteModels();
+  }
+}
+
+/** 掃描目前報告的表格區塊，把「相機型號/鏡頭型號/光源/光源控制器」欄位裡對得到產品資料表的型號整理出來（依型號去重）。 */
+function collectReportModels() {
+  const found = new Map();
+  report.blocks.forEach((b) => {
+    if (b.type !== 'table') return;
+    (b.rows || []).forEach((r) => {
+      if (!MODEL_FIELD_LABELS.includes((r.k || '').trim())) return;
+      const product = findCatalogProduct(r.v);
+      if (product) found.set(product.InternalModel, product);
+    });
+  });
+  return [...found.values()];
+}
+
+function refreshQuoteModels() {
+  const matched = collectReportModels();
+  // 保留使用者已經調整過的數量；新出現的型號預設數量 1
+  const oldQtyByModel = new Map(quoteModelItems.map((it) => [it.InternalModel, it.qty]));
+  quoteModelItems = matched.map((p) => ({ ...p, qty: oldQtyByModel.get(p.InternalModel) || 1 }));
+  renderQuoteModelsTable();
+}
+
+function onQuoteTypeSelectChange() {
+  $('er-quote-custom-wrap').style.display = $('er-quote-type').value === 'custom' ? '' : 'none';
+  renderQuoteModelsTable();
+}
+
+function getEvalQuoteMultiplier() {
+  const type = $('er-quote-type').value;
+  if (type === 'custom') return parseFloat($('er-quote-custom-multiplier').value) || 0;
+  return parseFloat(type);
+}
+
+function getEvalQuoteTypeLabel() {
+  const type = $('er-quote-type').value;
+  if (type === '1.3') return '設備商';
+  if (type === '1.5') return '一般用戶';
+  return `自訂義（×${getEvalQuoteMultiplier()}）`;
+}
+
+function renderQuoteModelsTable() {
+  const box = $('er-quote-models');
+  if (!quoteModelItems.length) {
+    box.innerHTML = '<div class="calc-hint">目前報告的型號欄位裡，沒有對得到產品資料表的型號。可以按上面「重新偵測型號」，或先在型號欄位填寫並確認匯入。</div>';
+    return;
+  }
+  const multiplier = getEvalQuoteMultiplier();
+  const rows = quoteModelItems
+    .map((it, i) => {
+      const base = parseFloat(it.RefPrice);
+      const hasPrice = !isNaN(base) && base > 0;
+      const unitPrice = hasPrice ? base * multiplier : 0;
+      const subtotal = unitPrice * it.qty;
+      return `<tr>
+        <td>${it.InternalModel}${it.SupplierModel ? `（${it.SupplierModel}）` : ''}</td>
+        <td>${hasPrice ? base.toFixed(2) : '<span class="er-no-price">未設定</span>'}</td>
+        <td><input type="number" min="1" step="1" value="${it.qty}" onchange="updateQuoteModelQty(${i}, this.value)" /></td>
+        <td>${hasPrice ? subtotal.toFixed(2) : '-'}</td>
+      </tr>`;
+    })
+    .join('');
+  box.innerHTML = `<table class="er-quote-table"><thead><tr><th>型號</th><th>底價</th><th>數量</th><th>小計（${getEvalQuoteTypeLabel()}）</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function updateQuoteModelQty(index, value) {
+  const qty = parseInt(value, 10);
+  quoteModelItems[index].qty = qty > 0 ? qty : 1;
+  renderQuoteModelsTable();
+}
+
+/** 產生合併詢價信（不管有沒有底價都列進去，詢價本來就是為了問到價格），同供應商信箱只有一組時順便建 Gmail 草稿。 */
+async function generateInquiryFromReport() {
+  if (!quoteModelItems.length) return alert('目前沒有可以詢價的型號，請先「重新偵測型號」');
+
+  const blocks = [];
+  const emails = new Set();
+  for (const it of quoteModelItems) {
+    const detail = await callApi('getProduct', { internalModel: it.InternalModel });
+    if (!detail.success) continue;
+    const p = detail.product;
+    const lastPrice = detail.lastPrice;
+    if (p.SupplierContactEmail) emails.add(p.SupplierContactEmail);
+    blocks.push(
+      `供應商型號: ${p.SupplierModel || '-'}\n對應內部型號: ${p.InternalModel}\n` +
+        (lastPrice ? `上次報價紀錄: ${lastPrice.Price} ${lastPrice.Currency || ''}（${lastPrice.Date}）\n` : '') +
+        `需求數量: ${it.qty}`
+    );
+  }
+  if (!blocks.length) return alert('讀取產品資料失敗，請稍後再試');
+
+  const text = `您好，\n\n想請教以下產品報價：\n${blocks.join('\n---\n')}\n\n麻煩協助報價，謝謝！`;
+  const files = [{ base64: btoa(unescape(encodeURIComponent(text))), filename: `詢價信_${report.caseId}.txt`, mimeType: 'text/plain', label: '詢價信（依報告型號自動整理）' }];
+
+  if (emails.size === 1) {
+    const draft = await callApi('createGmailDraft', { to: [...emails][0], subject: `詢價 - ${report.caseId}`, body: text });
+    if (draft.success && draft.draftUrl) alert(`已自動建立 Gmail 草稿：${draft.draftUrl}`);
+  }
+  openPreviewModal(files);
+}
+
+/** 產生報價單：只有底價的型號才會列進去，沒有底價的會先提醒。 */
+async function generateQuoteFromReport() {
+  if (!quoteModelItems.length) return alert('目前沒有可以報價的型號，請先「重新偵測型號」');
+
+  const priced = quoteModelItems.filter((it) => !isNaN(parseFloat(it.RefPrice)) && parseFloat(it.RefPrice) > 0);
+  const skipped = quoteModelItems.length - priced.length;
+  if (!priced.length) return alert('這些型號都還沒有底價，請先到「產品搜尋」補上底價再產生報價單');
+  if (skipped && !confirm(`有 ${skipped} 項型號沒有底價，報價單裡不會出現，要繼續產生嗎？`)) return;
+
+  const multiplier = getEvalQuoteMultiplier();
+  const rows = priced.map((it) => {
+    const basePrice = parseFloat(it.RefPrice);
+    const listPrice = basePrice * 2;
+    const unitPrice = basePrice * multiplier;
+    const subtotal = unitPrice * it.qty;
+    return { name: `${it.InternalModel}${it.SupplierModel ? `（${it.SupplierModel}）` : ''}`, basePrice, listPrice, unitPrice, quantity: it.qty, subtotal };
+  });
+  const total = rows.reduce((sum, r) => sum + r.subtotal, 0);
+
+  const result = await callApi('generateQuoteDoc', {
+    customerName: $('er-quote-customer').value,
+    quoteType: getEvalQuoteTypeLabel(),
+    format: $('er-quote-format').value,
+    items: rows.map((r) => ({ name: r.name, basePrice: r.basePrice.toFixed(2), listPrice: r.listPrice.toFixed(2), unitPrice: r.unitPrice.toFixed(2), quantity: r.quantity, subtotal: r.subtotal.toFixed(2) })),
+    total: total.toFixed(2),
+  });
+  if (!result.success) return alert(result.message);
+  openPreviewModal([Object.assign({}, result, { label: '報價單（依報告型號自動整理）' })]);
+}
+
 const BLOCK_EDITORS = {
   cover(b, body) {
     body.append(
@@ -716,9 +924,12 @@ const BLOCK_EDITORS = {
     (b.rows || []).forEach((r, i) => {
       const k = el('input', { value: r.k || '', placeholder: '欄位名稱', class: 'er-row-k' });
       k.addEventListener('input', () => { r.k = k.value; changed(); });
-      const v = el('textarea', { rows: r.wide ? 3 : 1, placeholder: '內容', class: 'er-row-v' });
-      v.value = r.v || '';
-      v.addEventListener('input', () => { r.v = v.value; if (r.auto) r.auto = false; changed(); });
+      const isModelField = MODEL_FIELD_LABELS.includes((r.k || '').trim());
+      const v = isModelField ? buildModelValueInput(r) : el('textarea', { rows: r.wide ? 3 : 1, placeholder: '內容', class: 'er-row-v' });
+      if (!isModelField) {
+        v.value = r.v || '';
+        v.addEventListener('input', () => { r.v = v.value; if (r.auto) r.auto = false; changed(); });
+      }
       const wide = el('input', { type: 'checkbox', title: '這一列自己佔整列（適合長文字）' });
       wide.checked = !!r.wide;
       wide.addEventListener('change', () => { r.wide = wide.checked; renderBlocks(); changed(); });
@@ -1112,8 +1323,9 @@ document.addEventListener('paste', async (e) => {
 });
 
 window.addEventListener('DOMContentLoaded', async () => {
-  requireLogin();
+  if (!(await ensureAuth())) return;
   renderHeaderUser();
+  applyAdminOnlyVisibility();
   initBrandPanel();
   $('er-zoom').addEventListener('change', () => {
     const doc = $('er-preview-frame').contentDocument;
@@ -1125,6 +1337,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const caseId = new URL(location.href).searchParams.get('caseId') || '';
   await loadDefaultLogo();
   loadCaseList(caseId);
+  loadProductCatalog();
   if (caseId) await loadCase(caseId);
 });
 

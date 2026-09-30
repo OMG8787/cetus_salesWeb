@@ -448,9 +448,10 @@ async function generateCombinedInquiryText() {
 // ------------------------------------------------------------
 // 初始化
 // ------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
-  requireLogin();
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!(await ensureAuth())) return;
   renderHeaderUser();
+  applyAdminOnlyVisibility();
   try {
     const savedSize = localStorage.getItem(PAGE_SIZE_KEY);
     if (['10', '20', '30'].includes(savedSize)) document.getElementById('product-page-size').value = savedSize;

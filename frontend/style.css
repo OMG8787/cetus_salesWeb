@@ -26,6 +26,16 @@ header button { margin-left: 12px; padding: 6px 12px; border: none; border-radiu
 .tab-btn { flex: 1; padding: 14px; border: none; background: none; cursor: pointer; font-size: 15px; }
 .tab-btn.active { border-bottom: 3px solid #2c5aa0; font-weight: bold; color: #2c5aa0; }
 
+/* 導覽列分類（功能變多之後用滑鼠移過去展開子項目，點分類按鈕直接去該分類第一頁） */
+.nav-group { position: relative; flex: 1; display: flex; }
+.nav-group-btn { flex: 1; margin: 0; padding: 14px; border: none; background: none; cursor: pointer; font-size: 15px; color: #222; }
+.nav-group.active-group > .nav-group-btn { border-bottom: 3px solid #2c5aa0; font-weight: bold; color: #2c5aa0; }
+.nav-dropdown { display: none; flex-direction: column; position: absolute; top: 100%; left: 0; min-width: 190px; background: white; border: 1px solid #ddd; border-top: none; box-shadow: 0 6px 14px rgba(0,0,0,.12); z-index: 60; }
+.nav-group:hover .nav-dropdown, .nav-group:focus-within .nav-dropdown { display: flex; }
+.nav-dropdown .tab-btn { flex: none; width: 100%; text-align: left; padding: 10px 14px; }
+.nav-dropdown .tab-btn.active { background: #eef2f7; }
+.tab-btn.nav-single { flex: 1; }
+
 .tab-content { padding: 24px; max-width: 900px; margin: 0 auto; }
 .tab-content h2 { margin-top: 28px; }
 .tab-content input, .tab-content textarea {
@@ -273,3 +283,16 @@ th.sortable.desc::after { content: ' ▼'; color: #2c5aa0; }
 .er-preview-bar select { padding: 3px 6px; }
 .er-preview-frame-wrap { height: calc(100vh - 215px); min-height: 480px; }
 #er-preview-frame { width: 100%; height: 100%; border: 0; background: #e9edf2; }
+
+/* 依報告型號詢價 / 報價面板 */
+.er-quote-panel { margin: 0 0 12px; }
+.er-quote-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.er-quote-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.er-quote-table th, .er-quote-table td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
+.tab-content .er-quote-table input[type=number] { width: 70px; margin: 0; padding: 4px 6px; }
+.er-quote-table .er-no-price { color: #c0392b; }
+
+/* 評估報告表格中的型號欄位：輸入框 + 匯入提示 */
+.er-model-field-wrap { display: flex; flex-direction: column; gap: 2px; }
+.tab-content .er-model-input { margin: 0; }
+.er-model-input.er-model-known { border-color: #1e8e3e; background: #f3fbf5; }

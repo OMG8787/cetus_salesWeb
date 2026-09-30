@@ -175,9 +175,10 @@ async function generateQuoteDoc() {
   openPreviewModal([Object.assign({}, result, { label: '報價單' })]);
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  requireLogin();
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!(await ensureAuth())) return;
   renderHeaderUser();
+  applyAdminOnlyVisibility();
   renderQuoteTable();
   bindEnterSubmit('#quote-item-panel', addQuoteItem);
 });

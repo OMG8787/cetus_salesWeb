@@ -16,13 +16,31 @@
   <h1>AOI 業務系統</h1>
   <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
 </header>
-<nav class="tabs">
-  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
-  <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
-  <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
-  <button class="tab-btn active" onclick="location.href='quote.html'">報價系統</button>
-  <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
-  <button class="tab-btn" onclick="location.href='report.html'">日報</button>
+<nav class="tabs tabs-grouped">
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn active" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+    </div>
+  </div>
+  <button class="tab-btn nav-single" onclick="location.href='report.html'">日報</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">裝置管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
 </nav>
 
 <section class="tab-content">

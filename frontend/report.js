@@ -17,8 +17,9 @@ async function sendDailyReport() {
   alert(result.message || (result.success ? '已送出' : '失敗'));
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  requireLogin();
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!(await ensureAuth())) return;
   renderHeaderUser();
+  applyAdminOnlyVisibility();
   loadDailyReportPreview();
 });

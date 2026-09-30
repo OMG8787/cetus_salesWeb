@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>日報 - AOI 業務系統</title>
+<title>人員管理 - AOI 業務系統</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -32,31 +32,47 @@
       <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
     </div>
   </div>
-  <button class="tab-btn nav-single active" onclick="location.href='report.html'">日報</button>
-  <div class="nav-group">
+  <button class="tab-btn nav-single" onclick="location.href='report.html'">日報</button>
+  <div class="nav-group active-group">
     <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
     <div class="nav-dropdown">
       <button class="tab-btn" onclick="location.href='devices.html'">裝置管理</button>
-      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only active" onclick="location.href='staff.html'">人員管理</button>
       <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
     </div>
   </div>
 </nav>
 
 <section class="tab-content">
-  <h2>今日日報</h2>
-  <button onclick="loadDailyReportPreview()">重新整理今日資料</button>
-  <div id="daily-report-preview" class="result-box"></div>
+  <h2>人員管理</h2>
+  <p class="calc-hint">
+    這裡管理的是案件管理頁「業務／FAE」欄位自動完成用的人員清單，跟登入帳號（帳號管理）是分開的兩件事——
+    同一個人可能有登入帳號，也可能只是被指派在案件上但不需要登入系統。只有 <strong>管理員（admin）</strong> 能新增/修改/刪除。
+  </p>
 
-  <h3>手動補充說明</h3>
-  <textarea id="daily-report-notes" placeholder="今天還有什麼想補充在日報裡的內容，直接打在這裡"></textarea>
+  <h3>新增人員</h3>
+  <div id="staff-add-panel">
+    <input id="staff-name" placeholder="姓名（必填）" />
+    <select id="staff-role">
+      <option value="業務">業務</option>
+      <option value="FAE">FAE</option>
+      <option value="其他">其他</option>
+    </select>
+    <button onclick="addStaff()">新增</button>
+  </div>
 
-  <button onclick="sendDailyReport()">確認寄送日報</button>
+  <h3>人員列表</h3>
+  <button onclick="loadStaff()">重新整理</button>
+  <div id="staff-message" class="calc-hint"></div>
+  <table id="staff-table" style="display:none;">
+    <thead><tr><th>姓名</th><th>角色</th><th>操作</th></tr></thead>
+    <tbody></tbody>
+  </table>
 </section>
 
 <script src="config.js"></script>
 <script src="demo.js"></script>
 <script src="common.js"></script>
-<script src="report.js"></script>
+<script src="staff.js"></script>
 </body>
 </html>

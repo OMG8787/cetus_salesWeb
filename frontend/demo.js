@@ -15,6 +15,9 @@ function loadDemoDB() {
   if (saved) {
     const parsed = JSON.parse(saved);
     if (!parsed.staff) parsed.staff = []; // 相容舊版本存的示範資料庫
+    if (!parsed.devices) parsed.devices = [];
+    if (!parsed.customerContacts) parsed.customerContacts = [];
+    if (!parsed.users) parsed.users = [];
     return parsed;
   }
 
@@ -31,6 +34,9 @@ function loadDemoDB() {
     customers: [],
     contactLogs: [],
     staff: [],
+    devices: [],
+    customerContacts: [],
+    users: [],
   };
   localStorage.setItem(DEMO_DB_KEY, JSON.stringify(initial));
   return initial;
@@ -60,9 +66,38 @@ function handleDemoApi(action, params) {
   switch (action) {
     case 'login': {
       if (params.username === '0000' && params.password === '0000') {
-        return { success: true, token: 'demo-token', username: '0000（示範帳號）', role: 'admin' };
+        // 示範模式也模擬「記住這台裝置」，方便測試免密碼自動登入的畫面效果（裝置清單存在本機瀏覽器）
+        if (params.deviceId) {
+          db.devices = db.devices || [];
+          const exist = db.devices.find((d) => d.DeviceId === params.deviceId);
+          if (exist) exist.DeviceLabel = params.deviceLabel || exist.DeviceLabel;
+          else db.devices.push({ DeviceId: params.deviceId, Username: '0000', DeviceLabel: params.deviceLabel || '', TokenHash: 'demo-device-token', CreatedDate: new Date().toISOString().slice(0, 10), LastSeenDate: new Date().toISOString().slice(0, 10) });
+          saveDemoDB(db);
+        }
+        return { success: true, token: 'demo-token', username: '0000', displayName: '0000（示範帳號）', role: 'admin', deviceToken: params.deviceId ? 'demo-device-token' : undefined };
       }
       return { success: false, message: '示範模式僅接受帳密 0000 / 0000' };
+    }
+
+    case 'resumeSession': {
+      const device = (db.devices || []).find((d) => d.DeviceId === params.deviceId && d.TokenHash === params.deviceToken);
+      if (!device) return { success: false, message: '這台裝置的登入紀錄已被移除，請重新輸入帳密登入' };
+      return { success: true, token: 'demo-token', username: '0000', displayName: '0000（示範帳號）', role: 'admin' };
+    }
+
+    case 'logoutDevice': {
+      db.devices = (db.devices || []).filter((d) => d.DeviceId !== params.deviceId);
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'getDevices':
+      return { success: true, devices: (db.devices || []).map((d, i) => Object.assign({ RowIndex: i }, d)) };
+
+    case 'removeDevice': {
+      db.devices = (db.devices || []).filter((_, i) => i !== params.rowIndex);
+      saveDemoDB(db);
+      return { success: true };
     }
 
     // ---------------- 產品 CRUD ----------------
@@ -175,6 +210,10 @@ function handleDemoApi(action, params) {
 
     // ---------------- 案件 CRUD ----------------
     case 'createCase': {
+      if (!params.customerName) return { success: false, message: '請先選擇客戶（客戶名稱為必填）' };
+      if (!db.customers.some((c) => c.CompanyName === params.customerName)) {
+        return { success: false, message: `「${params.customerName}」不在客戶資料表中，請先在「客戶管理」建立這間客戶，或用畫面上的建議清單挑選` };
+      }
       const caseId = demoCaseId();
       db.cases.push({
         CaseID: caseId,
@@ -193,6 +232,7 @@ function handleDemoApi(action, params) {
         CreatedDate: new Date().toISOString().slice(0, 10),
         RequirementDetails: params.requirementDetails || '',
         CcdRequirements: params.ccdRequirements || [],
+        RelatedCompanies: params.relatedCompanies || [],
         AttachmentLinksJson: '[]',
         EvaluationResult: '',
         EvaluationReportHtml: '',
@@ -208,6 +248,9 @@ function handleDemoApi(action, params) {
       if (params.keyword) {
         const kw = params.keyword.toLowerCase();
         cases = cases.filter((c) => ['CaseID', 'CustomerName', 'Salesperson', 'FAE'].some((f) => String(c[f] || '').toLowerCase().includes(kw)));
+      }
+      if (params.companyName) {
+        cases = cases.filter((c) => c.CustomerName === params.companyName || (c.RelatedCompanies || []).some((rc) => rc.CompanyName === params.companyName));
       }
       return { success: true, cases };
     }
@@ -228,8 +271,12 @@ function handleDemoApi(action, params) {
     case 'updateCase': {
       const c = db.cases.find((c) => c.CaseID === params.caseId);
       if (!c) return { success: false, message: '查無此案件' };
+      if (params.fields && params.fields.CustomerName && !db.customers.some((cust) => cust.CompanyName === params.fields.CustomerName)) {
+        return { success: false, message: `「${params.fields.CustomerName}」不在客戶資料表中，請先在「客戶管理」建立這間客戶，或用畫面上的建議清單挑選` };
+      }
       Object.assign(c, params.fields || {});
       if (params.ccdRequirements) c.CcdRequirements = params.ccdRequirements;
+      if (params.relatedCompanies) c.RelatedCompanies = params.relatedCompanies;
       c.LastUpdated = new Date().toISOString().slice(0, 10);
       saveDemoDB(db);
       return { success: true };
@@ -241,9 +288,9 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
-    // ---------------- 人員 (業務/FAE 自動完成) ----------------
+    // ---------------- 人員 (業務/FAE 自動完成，含 CRUD) ----------------
     case 'getStaff': {
-      let staff = db.staff || [];
+      let staff = (db.staff || []).map((s, i) => Object.assign({ RowIndex: i }, s));
       if (params.role) staff = staff.filter((s) => s.Role === params.role);
       return { success: true, staff };
     }
@@ -253,6 +300,55 @@ function handleDemoApi(action, params) {
       db.staff.push({ Name: params.name, Role: params.role || '' });
       saveDemoDB(db);
       return { success: true };
+    }
+
+    case 'updateStaff': {
+      const s = (db.staff || [])[params.rowIndex];
+      if (!s) return { success: false, message: '查無此人員' };
+      Object.assign(s, params.fields || {});
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'deleteStaff': {
+      (db.staff || []).splice(params.rowIndex, 1);
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    // ---------------- 帳號管理（示範模式：0000 帳號視同 admin，其他帳號存在本機） ----------------
+    case 'getUsers': {
+      db.users = db.users || [];
+      return { success: true, users: db.users.map((u, i) => Object.assign({ RowIndex: i }, u)), roles: ['admin', 'sales', 'fae'] };
+    }
+
+    case 'addUser': {
+      db.users = db.users || [];
+      if (!params.username) return { success: false, message: '帳號為必填' };
+      if (db.users.some((u) => u.Username === params.username)) return { success: false, message: '此帳號已存在' };
+      const password = params.password || Math.random().toString(36).slice(2, 10);
+      db.users.push({ Username: params.username, Role: params.role || 'sales', DisplayName: params.displayName || params.username });
+      saveDemoDB(db);
+      return { success: true, password: params.password ? undefined : password };
+    }
+
+    case 'updateUser': {
+      const u = (db.users || [])[params.rowIndex];
+      if (!u) return { success: false, message: '查無此帳號' };
+      Object.assign(u, params.fields || {});
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'deleteUser': {
+      (db.users || []).splice(params.rowIndex, 1);
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'resetUserPassword': {
+      const password = params.password || Math.random().toString(36).slice(2, 10);
+      return { success: true, password };
     }
 
     // ---------------- 案件附件 ----------------
@@ -335,6 +431,8 @@ function handleDemoApi(action, params) {
         Category: params.category || '',
         Urgency: params.urgency || '',
         Notes: params.notes || '',
+        HasTransacted: params.hasTransacted ? '是' : '',
+        LastTransactionDate: params.lastTransactionDate || '',
       });
       saveDemoDB(db);
       return { success: true };
@@ -354,6 +452,43 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
+    // ---------------- 客戶聯絡人（一間公司可以有多個聯絡窗口）----------------
+    case 'getCustomerContacts': {
+      db.customerContacts = db.customerContacts || [];
+      let contacts = db.customerContacts.map((c, i) => Object.assign({ RowIndex: i }, c));
+      if (params.companyName) contacts = contacts.filter((c) => c.CompanyName === params.companyName);
+      return { success: true, contacts };
+    }
+
+    case 'addCustomerContact': {
+      if (!params.companyName || !params.contactName) return { success: false, message: '公司名稱與聯絡人姓名為必填' };
+      db.customerContacts = db.customerContacts || [];
+      db.customerContacts.push({
+        CompanyName: params.companyName,
+        ContactName: params.contactName,
+        Phone: params.phone || '',
+        Email: params.email || '',
+        Title: params.title || '',
+        Notes: params.notes || '',
+      });
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'updateCustomerContact': {
+      const c = (db.customerContacts || [])[params.rowIndex];
+      if (!c) return { success: false, message: '查無此聯絡人' };
+      Object.assign(c, params.fields || {});
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'deleteCustomerContact': {
+      (db.customerContacts || []).splice(params.rowIndex, 1);
+      saveDemoDB(db);
+      return { success: true };
+    }
+
     // ---------------- 客戶聯繫紀錄 ----------------
     case 'addContactLog': {
       db.contactLogs.push({
@@ -363,15 +498,32 @@ function handleDemoApi(action, params) {
         Method: params.method || '',
         Summary: params.summary || '',
         Salesperson: params.salesperson || '',
+        CaseID: params.caseId || '',
       });
       saveDemoDB(db);
       return { success: true };
     }
 
     case 'getContactLogs': {
-      let logs = db.contactLogs.slice();
+      let logs = db.contactLogs.map((l, i) => Object.assign({ RowIndex: i }, l));
       if (params.date) logs = logs.filter((l) => l.Date === params.date);
+      if (params.companyName) logs = logs.filter((l) => l.CompanyName === params.companyName);
+      logs.sort((a, b) => new Date(b.Date) - new Date(a.Date));
       return { success: true, logs };
+    }
+
+    case 'updateContactLog': {
+      const l = db.contactLogs[params.rowIndex];
+      if (!l) return { success: false, message: '查無此紀錄' };
+      Object.assign(l, params.fields || {});
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'deleteContactLog': {
+      db.contactLogs.splice(params.rowIndex, 1);
+      saveDemoDB(db);
+      return { success: true };
     }
 
     // ---------------- 日報 ----------------

@@ -2,8 +2,8 @@
  * ============================================================
  * common.js - 每一頁都會載入的共用邏輯
  * ------------------------------------------------------------
- * 內容：呼叫後端的 callApi()、載入遮罩、登入狀態檢查、登出、
- * 文件預覽彈窗、Enter鍵送出小工具。
+ * 內容：呼叫後端的 callApi()、載入遮罩、登入狀態檢查（含「記住這台裝置」
+ * 免密碼自動登入）、登出、文件預覽彈窗、Enter鍵送出小工具。
  *
  * 頁面專屬的邏輯（產品/案件/報價/客戶/日報）分別放在
  * products.js / cases.js / quote.js / customers.js / report.js，
@@ -13,7 +13,54 @@
 
 let currentToken = sessionStorage.getItem('token') || null;
 let currentUsername = sessionStorage.getItem('username') || null;
+let currentRole = sessionStorage.getItem('role') || null;
 let loadingCount = 0;
+
+// ------------------------------------------------------------
+// Cookie 小工具（「記住這台裝置」用，存在瀏覽器本機，網站看不到密碼本身）
+// ------------------------------------------------------------
+function getCookie(name) {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/** days 給很大的數字（例如 3650 = 10 年）模擬「無期限」；瀏覽器本身對 cookie 有效期有上限(約 400 天)，
+ * 到期後就需要重新輸入密碼，但正常使用期間（沒被瀏覽器清除資料）不會主動過期。 */
+function setCookie(name, value, days) {
+  const expires = new Date(Date.now() + days * 86400000).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+function deleteCookie(name) {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+}
+
+const DEVICE_ID_COOKIE = 'aoi_device_id';
+const DEVICE_TOKEN_COOKIE = 'aoi_device_token';
+const DEVICE_YEARS = 3650;
+
+/** 這台瀏覽器的裝置 ID，第一次使用時產生一組並記住，之後同一台裝置永遠是同一個 ID。 */
+function getOrCreateDeviceId() {
+  let id = getCookie(DEVICE_ID_COOKIE);
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    setCookie(DEVICE_ID_COOKIE, id, DEVICE_YEARS);
+  }
+  return id;
+}
+
+/** 給後端看的裝置說明文字（作業系統 + 瀏覽器），方便管理員在「裝置管理」分辨是哪一台。 */
+function getDeviceLabel() {
+  const ua = navigator.userAgent || '';
+  const os = /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : '其他系統';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '瀏覽器';
+  return `${os} / ${browser}`;
+}
+
+function clearDeviceCookies() {
+  deleteCookie(DEVICE_ID_COOKIE);
+  deleteCookie(DEVICE_TOKEN_COOKIE);
+}
 
 // ------------------------------------------------------------
 // 載入遮罩
@@ -57,11 +104,35 @@ async function callApi(action, params) {
 // ------------------------------------------------------------
 // 登入狀態
 // ------------------------------------------------------------
-/** 每個需要登入才能看的頁面，一開始就呼叫這個；沒登入會導回 index.html。 */
-function requireLogin() {
-  if (!currentToken) {
-    location.href = 'index.html';
+/**
+ * 每個需要登入才能看的頁面，一開始就呼叫這個（改成 async，記得用 await）：
+ *   1. 這個分頁本來就有登入(sessionStorage)→ 直接放行
+ *   2. 沒有的話，但瀏覽器記得這台裝置(cookie) → 悄悄用裝置權杖換一個新的登入，不用重打密碼
+ *   3. 都沒有 → 導回 index.html
+ * 回傳 true 才可以繼續往下執行頁面自己的初始化，回傳 false 時該次呼叫的頁面應該直接 return。
+ */
+async function ensureAuth() {
+  if (currentToken) return true;
+
+  const deviceId = getCookie(DEVICE_ID_COOKIE);
+  const deviceToken = getCookie(DEVICE_TOKEN_COOKIE);
+  if (deviceId && deviceToken) {
+    const result = await callApi('resumeSession', { deviceId, deviceToken });
+    if (result.success) {
+      currentToken = result.token;
+      currentUsername = result.displayName || result.username;
+      currentRole = result.role || '';
+      sessionStorage.setItem('token', currentToken);
+      sessionStorage.setItem('username', currentUsername);
+      sessionStorage.setItem('role', currentRole);
+      return true;
+    }
+    // 裝置權杖失效(通常是管理員移除了這台裝置)，清掉本機記住的資訊，回登入頁重打密碼
+    clearDeviceCookies();
   }
+
+  location.href = 'index.html';
+  return false;
 }
 
 function renderHeaderUser() {
@@ -69,7 +140,28 @@ function renderHeaderUser() {
   if (el) el.textContent = currentUsername + (typeof DEMO_MODE !== 'undefined' && DEMO_MODE ? '（示範模式，資料只存在這台瀏覽器）' : '');
 }
 
-function logout() {
+/**
+ * 把畫面上標了 class="admin-only" 的導覽列按鈕，非 admin 角色時隱藏起來（純 UI 層級的引導，
+ * 真正的權限限制在後端 PERMISSIONS 已經擋好了，就算有人手動打開頁面或改網址也不會真的能操作）。
+ */
+function applyAdminOnlyVisibility() {
+  if (currentRole === 'admin') return;
+  document.querySelectorAll('.admin-only').forEach((el) => {
+    el.style.display = 'none';
+  });
+}
+
+/** 登出：連同「記住這台裝置」的紀錄一起清掉，下次要重新輸入密碼。 */
+async function logout() {
+  const deviceId = getCookie(DEVICE_ID_COOKIE);
+  if (deviceId && currentToken) {
+    try {
+      await callApi('logoutDevice', { deviceId });
+    } catch (e) {
+      // 網路有問題就算了，本機的登入狀態還是照樣清掉
+    }
+  }
+  clearDeviceCookies();
   sessionStorage.clear();
   location.href = 'index.html';
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>日報 - AOI 業務系統</title>
+<title>帳號管理 - AOI 業務系統</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -32,31 +32,51 @@
       <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
     </div>
   </div>
-  <button class="tab-btn nav-single active" onclick="location.href='report.html'">日報</button>
-  <div class="nav-group">
+  <button class="tab-btn nav-single" onclick="location.href='report.html'">日報</button>
+  <div class="nav-group active-group">
     <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
     <div class="nav-dropdown">
       <button class="tab-btn" onclick="location.href='devices.html'">裝置管理</button>
       <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
-      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+      <button class="tab-btn admin-only active" onclick="location.href='users.html'">帳號管理</button>
     </div>
   </div>
 </nav>
 
 <section class="tab-content">
-  <h2>今日日報</h2>
-  <button onclick="loadDailyReportPreview()">重新整理今日資料</button>
-  <div id="daily-report-preview" class="result-box"></div>
+  <h2>帳號管理</h2>
+  <p class="calc-hint">
+    管理登入系統用的帳號與角色：<strong>admin</strong>（管理員，全部功能）／<strong>sales</strong>（業務，不能管理帳號/人員/裝置，但可以刪除客戶/案件等資料）／
+    <strong>fae</strong>（工程，不能刪除資料、不能管理帳號/人員/裝置）。只有 <strong>admin</strong> 能看到這頁。
+    密碼只會顯示「這一次」（新增或重設時），系統不會存明文密碼，請截圖或抄下來交給當事人。
+  </p>
 
-  <h3>手動補充說明</h3>
-  <textarea id="daily-report-notes" placeholder="今天還有什麼想補充在日報裡的內容，直接打在這裡"></textarea>
+  <h3>新增帳號</h3>
+  <div id="user-add-panel">
+    <input id="user-username" placeholder="帳號（必填，之後不能改）" />
+    <input id="user-displayname" placeholder="顯示名稱" />
+    <select id="user-role">
+      <option value="sales">sales（業務）</option>
+      <option value="fae">fae（工程/FAE）</option>
+      <option value="admin">admin（管理員）</option>
+    </select>
+    <input id="user-password" placeholder="密碼（留空自動產生亂數密碼）" />
+    <button onclick="addUser()">新增</button>
+  </div>
+  <div id="user-add-result" class="calc-hint"></div>
 
-  <button onclick="sendDailyReport()">確認寄送日報</button>
+  <h3>帳號列表</h3>
+  <button onclick="loadUsers()">重新整理</button>
+  <div id="users-message" class="calc-hint"></div>
+  <table id="users-table" style="display:none;">
+    <thead><tr><th>帳號</th><th>顯示名稱</th><th>角色</th><th>操作</th></tr></thead>
+    <tbody></tbody>
+  </table>
 </section>
 
 <script src="config.js"></script>
 <script src="demo.js"></script>
 <script src="common.js"></script>
-<script src="report.js"></script>
+<script src="users.js"></script>
 </body>
 </html>

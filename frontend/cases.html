@@ -17,25 +17,47 @@
   <h1>AOI 業務系統</h1>
   <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
 </header>
-<nav class="tabs">
-  <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
-  <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
-  <button class="tab-btn active" onclick="location.href='cases.html'">案件管理</button>
-  <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
-  <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
-  <button class="tab-btn" onclick="location.href='report.html'">日報</button>
+<nav class="tabs tabs-grouped">
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn active" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+    </div>
+  </div>
+  <button class="tab-btn nav-single" onclick="location.href='report.html'">日報</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">裝置管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
 </nav>
 
 <section class="tab-content">
   <h2>建立新案件（發需求單給 FAE）</h2>
   <div id="case-create-panel">
-    <label>客戶名稱：</label>
+    <label>客戶名稱（必填，一定要是已存在的客戶）：</label>
     <input id="case-customer" list="case-customer-datalist" placeholder="輸入客戶名稱（會自動帶出建議，沒有的話離開欄位時會問你要不要建立）" onblur="onCaseCustomerBlur(this.id)" />
     <datalist id="case-customer-datalist"></datalist>
 
     <input id="case-end-customer" placeholder="終端客戶名稱（選填）" />
     <input id="case-project-contact" placeholder="專案聯絡人（選填）" />
     <input id="case-contact-phone" placeholder="聯絡電話（選填）" />
+
+    <h3>相關公司（選填，一個案件可能牽涉多間公司，例如設備商+終端客戶+其他協力廠）</h3>
+    <div id="related-companies-create"></div>
+    <button type="button" onclick="addRelatedCompanyBlock('create')">+ 新增相關公司</button>
 
     <label>業務：</label>
     <input id="case-salesperson" list="case-salesperson-datalist" placeholder="輸入業務姓名" onblur="onCaseStaffBlur('業務', 'case-salesperson')" />
@@ -71,6 +93,7 @@
   </div>
 
   <h2>案件查詢</h2>
+  <div id="case-filter-hint" class="calc-hint" style="display:none;"></div>
   <div id="case-search-panel">
     <input id="case-search-keyword" placeholder="搜尋案件編號/客戶/業務/FAE" />
     <select id="case-search-status">
@@ -88,7 +111,9 @@
   </table>
 
   <div id="case-detail" class="panel" style="display:none;">
-    <h3>案件：<span id="cd-case-id"></span></h3>
+    <h3>案件：<span id="cd-case-id"></span>
+      <button id="cd-view-customer-btn" onclick="viewCustomerContactLogs()" title="跳到客戶管理，查看這間公司的聯繫紀錄">📇 客戶聯繫紀錄</button>
+    </h3>
 
     <h4>案件資料（可修改）</h4>
     <div id="case-edit-panel">
@@ -97,6 +122,10 @@
       <input id="cd-end-customer" placeholder="終端客戶名稱（選填）" />
       <input id="cd-project-contact" placeholder="專案聯絡人（選填）" />
       <input id="cd-contact-phone" placeholder="聯絡電話（選填）" />
+
+      <h4>相關公司（選填）</h4>
+      <div id="related-companies-detail"></div>
+      <button type="button" onclick="addRelatedCompanyBlock('detail')">+ 新增相關公司</button>
 
       <label>業務：</label>
       <input id="cd-salesperson" list="case-salesperson-datalist" placeholder="業務" onblur="onCaseStaffBlur('業務', 'cd-salesperson')" />
@@ -220,10 +249,10 @@
     <input id="quick-customer-email" placeholder="Email" />
     <label>客戶分類：</label>
     <select id="quick-customer-category">
-      <option value="設備商">設備商</option>
-      <option value="代理商">代理商</option>
-      <option value="終端客戶">終端客戶</option>
-      <option value="其他">其他</option>
+      <option value="AOI同業資料">AOI同業資料</option>
+      <option value="器材原廠">器材原廠</option>
+      <option value="機構合作設備商">機構合作設備商</option>
+      <option value="一般客戶" selected>一般客戶</option>
     </select>
     <label>急迫性：</label>
     <select id="quick-customer-urgency">

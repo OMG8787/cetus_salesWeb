@@ -1130,9 +1130,10 @@ function toggleCamSource() {
   document.getElementById('c-cam-model-wrap').style.display = manual ? 'none' : '';
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  requireLogin();
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!(await ensureAuth())) return;
   renderHeaderUser();
+  applyAdminOnlyVisibility();
 
   const state = loadCalcState();
   ['c-cam-model', 'c-lens-model'].forEach((id) => {
