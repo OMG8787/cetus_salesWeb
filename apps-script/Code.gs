@@ -15,7 +15,7 @@
  *   5. 各功能模組：
  *      產品(含CRUD) / 價格紀錄(含CRUD) / 詢價信 /
  *      案件(含查詢修改刪除) / 文件產生(需求單・評估單・報價單) /
- *      客戶(含分類/急迫性+行事曆) / 客戶聯繫紀錄 / 日報
+ *      客戶(含分類/急迫性+行事曆) / 客戶聯繫紀錄
  *
  * 試算表分頁與欄位(詳見 README.md)：
  *   Products      - InternalModel, SupplierModel, Supplier, SupplierContact,
@@ -165,9 +165,6 @@ var ROUTES = {
   updateContactLog:        { auth: true, fn: handleUpdateContactLog },
   deleteContactLog:        { auth: true, fn: handleDeleteContactLog },
 
-  // 日報 / 週報（可指定日期區間、業務）
-  getDailyReportData:      { auth: true, fn: handleGetDailyReportData },
-  sendDailyReportNow:      { auth: true, fn: handleSendDailyReportNow },
 };
 
 // ------------------------------------------------------------
@@ -256,7 +253,6 @@ var CONFIG_KEYS = [
   ['TemplateDocId_Requirement', '需求單 Google 文件範本 ID（選填，只用 HTML 格式可不填）'],
   ['TemplateDocId_Evaluation', '評估單 Google 文件範本 ID（選填）'],
   ['TemplateDocId_Quote', '報價單 Google 文件範本 ID（選填）'],
-  ['ReportEmail', '日報收件信箱（選填，多個用逗號分隔）'],
 ];
 
 var WARM_TRIGGER_MINUTES = 10;
@@ -518,7 +514,7 @@ function rowToObject(header, row) {
 
 /**
  * 試算表會把寫進去的 "2026-09-23" 文字自動轉成日期格式，讀出來變成 Date 物件，
- * 跟字串比對(例如日報篩選「今天」)永遠不相等，傳到前端也會變成 ISO 時間字串。
+ * 跟字串比對永遠不相等，傳到前端也會變成 ISO 時間字串。
  * 這裡統一把日期儲存格轉回 yyyy-MM-dd 字串。
  */
 function normalizeCellValue(v) {
@@ -2174,7 +2170,7 @@ function handleDeleteCustomerContact(body) {
 }
 
 // ------------------------------------------------------------
-// 客戶聯繫紀錄 (日報的資料來源)
+// 客戶聯繫紀錄
 // ------------------------------------------------------------
 function handleAddContactLog(body) {
   appendObjectRow(SHEET_CONTACT_LOGS, {
@@ -2189,7 +2185,7 @@ function handleAddContactLog(body) {
   return { success: true };
 }
 
-/** date：只看某一天(日報用)；companyName：只看某間公司(客戶管理頁的聯繫紀錄列表用)，兩個都可以不給。 */
+/** date：只看某一天；companyName：只看某間公司(客戶管理頁的聯繫紀錄列表用)，兩個都可以不給。 */
 function handleGetContactLogs(body) {
   var data = sheetToObjects(SHEET_CONTACT_LOGS);
   var rows = data.rows.map(function (r, i) {
@@ -2221,73 +2217,4 @@ function handleDeleteContactLog(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
   getSheet(SHEET_CONTACT_LOGS).deleteRow(body.rowIndex);
   return { success: true };
-}
-
-// ------------------------------------------------------------
-// 日報：以當日的「客戶聯繫紀錄」為主，加上今日案件動態、今日應追蹤客戶，
-// 並支援前端傳入的「手動補充說明」一起放進信件內容。
-// ------------------------------------------------------------
-
-/** 組出日報文字內容(共用給自動排程跟手動送出用)。 */
-function buildDailyReportText(manualNotes) {
-  var today = Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd');
-
-  var contactLogs = sheetToObjects(SHEET_CONTACT_LOGS).rows.filter(function (r) {
-    return r['Date'] === today;
-  });
-  var cases = sheetToObjects(SHEET_CASES).rows.filter(function (r) {
-    return r['LastUpdated'] === today || r['CreatedDate'] === today;
-  });
-  var followUps = sheetToObjects(SHEET_CUSTOMERS).rows.filter(function (r) {
-    return r['NextFollowUpDate'] === today;
-  });
-
-  var lines = [];
-  lines.push('AOI 業務日報 - ' + today);
-  lines.push('');
-  lines.push('【今日客戶聯繫紀錄】(' + contactLogs.length + ' 筆)');
-  contactLogs.forEach(function (c) {
-    lines.push('- ' + c['CompanyName'] + '（' + c['Contact'] + '）｜方式:' + c['Method'] + '｜' + c['Summary']);
-  });
-  lines.push('');
-  lines.push('【今日更新/新增案件】(' + cases.length + ' 筆)');
-  cases.forEach(function (c) {
-    lines.push('- ' + c['CaseID'] + ' | ' + c['CustomerName'] + ' | 狀態: ' + c['Status']);
-  });
-  lines.push('');
-  lines.push('【今日應追蹤客戶】(' + followUps.length + ' 筆)');
-  followUps.forEach(function (c) {
-    lines.push('- ' + c['CompanyName'] + '（' + c['Contact'] + '）');
-  });
-
-  if (manualNotes) {
-    lines.push('');
-    lines.push('【手動補充說明】');
-    lines.push(manualNotes);
-  }
-
-  return { text: lines.join('\n'), today: today, contactLogs: contactLogs, cases: cases, followUps: followUps };
-}
-
-/** 給前端「產生今日日報預覽」用，只組資料不寄信。 */
-function handleGetDailyReportData(body) {
-  var data = buildDailyReportText(body.manualNotes || '');
-  return { success: true, text: data.text, contactLogs: data.contactLogs, cases: data.cases, followUps: data.followUps };
-}
-
-/** 排程觸發用：時間驅動的觸發條件要指定這個函式。不含手動補充說明(排程沒有人手動輸入)。 */
-function sendDailyReport() {
-  var reportEmail = getConfig('ReportEmail');
-  if (!reportEmail) return;
-  var data = buildDailyReportText('');
-  GmailApp.sendEmail(reportEmail, 'AOI 業務日報 - ' + data.today, data.text);
-}
-
-/** 前端「確認寄送日報」按鈕用，會把手動補充說明一起帶進信件內容。 */
-function handleSendDailyReportNow(body) {
-  var reportEmail = getConfig('ReportEmail');
-  if (!reportEmail) return { success: false, message: '尚未在 Config 分頁設定 ReportEmail' };
-  var data = buildDailyReportText(body.manualNotes || '');
-  GmailApp.sendEmail(reportEmail, 'AOI 業務日報 - ' + data.today, data.text);
-  return { success: true, message: '已寄出日報到 ' + reportEmail };
 }

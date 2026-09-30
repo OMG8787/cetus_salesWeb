@@ -598,27 +598,6 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
-    // ---------------- 日報 ----------------
-    case 'getDailyReportData':
-    case 'sendDailyReportNow': {
-      const today = new Date().toISOString().slice(0, 10);
-      const contactLogs = db.contactLogs.filter((l) => l.Date === today);
-      const cases = db.cases.filter((c) => c.LastUpdated === today || c.CreatedDate === today);
-      const followUps = db.customers.filter((c) => c.NextFollowUpDate === today);
-      const lines = [`AOI 業務日報 - ${today}`, '', `【今日客戶聯繫紀錄】(${contactLogs.length} 筆)`];
-      contactLogs.forEach((c) => lines.push(`- ${c.CompanyName}（${c.Contact}）｜方式:${c.Method}｜${c.Summary}`));
-      lines.push('', `【今日更新/新增案件】(${cases.length} 筆)`);
-      cases.forEach((c) => lines.push(`- ${c.CaseID} | ${c.CustomerName} | 狀態: ${c.Status}`));
-      lines.push('', `【今日應追蹤客戶】(${followUps.length} 筆)`);
-      followUps.forEach((c) => lines.push(`- ${c.CompanyName}（${c.Contact}）`));
-      if (params.manualNotes) lines.push('', '【手動補充說明】', params.manualNotes);
-
-      if (action === 'getDailyReportData') {
-        return { success: true, text: lines.join('\n'), contactLogs, cases, followUps };
-      }
-      return { success: true, message: '示範模式：這個功能只有接上真正的後端才會真的寄信。以下是產生的內容：\n\n' + lines.join('\n') };
-    }
-
     default:
       return { success: false, message: '示範模式尚未支援此操作: ' + action };
   }
