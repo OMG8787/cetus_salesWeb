@@ -324,6 +324,72 @@ function buildBlocksFromCase(c) {
   return blocks;
 }
 
+/** 自由製作：不綁案件，從空白範本開始（客戶、專案等資料自己填）。 */
+function buildFreeBlocks() {
+  const blank = (k, wide) => ({ k, v: '', wide: !!wide });
+  return [
+    { id: newId(), type: 'cover', source: 'cover', kicker: 'AOI VISION INSPECTION REPORT', title: '', subtitle: '', customer: '', image: '' },
+    headingBlock('基本資訊'),
+    { id: newId(), type: 'table', title: '', badge: '', rows: [blank('客戶名稱'), blank('終端客戶'), blank('聯絡人'), blank('業務'), blank('FAE'), blank('產品應用'), blank('待測物件'), blank('使用軟體'), blank('需求描述', true)] },
+    headingBlock('原始需求分析'),
+    { id: newId(), type: 'table', badge: 'CCD1', title: '檢測需求', rows: reqRows({}) },
+    headingBlock('FAE 評估方案'),
+    { id: newId(), type: 'table', badge: 'CCD1', title: '方案規格', rows: planRows({}) },
+    headingBlock('測試影像'),
+    { id: newId(), type: 'images', title: '', columns: 2, width: 80, align: 'center', items: [] },
+    headingBlock('評估結論'),
+    { id: newId(), type: 'callout', variant: 'conclusion', title: '評估結論', html: '' },
+    { id: newId(), type: 'signature', slots: [{ label: '撰寫（FAE）', name: '', date: '' }, { label: '審核', name: '', date: '' }, { label: '客戶確認', name: '', date: '' }] },
+  ];
+}
+
+function newFreeReport() {
+  const d = todayStr();
+  return {
+    caseId: '',
+    theme: defaultTheme(),
+    meta: { reportNo: `ER-${d.replace(/-/g, '')}-01`, date: d, author: currentUsername || '', version: 'V1.0' },
+    blocks: buildFreeBlocks(),
+  };
+}
+
+/** 草稿 / 檔名用的代號：有案件用案件編號，自由製作用「自由製作」。 */
+function reportKey() {
+  return (report && report.caseId) || '自由製作';
+}
+
+async function loadFree(forceNew) {
+  if (report) {
+    clearTimeout(saveTimer);
+    await saveDraft();
+  }
+  caseData = null;
+  const draft = forceNew ? null : await DraftStore.get(DRAFT_PREFIX + '自由製作');
+  if (draft && draft.blocks) {
+    report = draft;
+    report.theme = Object.assign(defaultTheme(), report.theme);
+    $('er-save-status').textContent = `自由製作模式（不綁案件）：已載入上次草稿（${new Date(draft.savedAt || Date.now()).toLocaleString('zh-TW', { hour12: false })}）`;
+  } else {
+    report = newFreeReport();
+    $('er-save-status').textContent = '自由製作模式（不綁案件）：已建立空白報告，直接填寫即可';
+  }
+  activeBlockId = null;
+  collapsed.clear();
+  const url = new URL(location.href);
+  url.searchParams.delete('caseId');
+  history.replaceState(null, '', url);
+  $('er-case').value = '';
+  fillBrandPanel();
+  renderBlocks();
+  renderPreview();
+  if (forceNew) changed();
+}
+
+async function newFreeFromScratch() {
+  if (!confirm('要清空目前的自由製作內容、從空白報告重新開始嗎？（案件的報告草稿不受影響）')) return;
+  await loadFree(true);
+}
+
 function newReport(c) {
   const d = todayStr();
   return {
@@ -339,7 +405,8 @@ function newReport(c) {
  * 自己填的欄位（光源、控制器、測試結論…）保留；自己新增的區塊完全不動。
  */
 function refillFromCase() {
-  if (!report || !caseData) return;
+  if (!report) return;
+  if (!caseData) return alert('目前是自由製作模式，沒有案件資料可以帶入。要帶入請先在左上角選一個案件。');
   const c = caseData;
   const ccds = c.CcdRequirements || [];
   const mergeRows = (oldRows, newRows) =>
@@ -387,6 +454,7 @@ function stripHtml(html) {
 
 /** 把案件附件裡的圖片帶進「測試影像」區塊（沒有就在結論前面新增一個）。 */
 async function importCaseImages() {
+  if (report && !report.caseId) return alert('自由製作模式沒有案件附件可以帶入，請直接在圖片區塊上傳、拖曳或貼上圖片。');
   if (!report) return alert('請先選擇案件');
   const result = await callApi('getCaseImages', { caseId: report.caseId });
   if (!result.success) return alert(result.message || '讀取圖片失敗');
@@ -855,10 +923,10 @@ async function generateInquiryFromReport() {
   if (!blocks.length) return alert('讀取產品資料失敗，請稍後再試');
 
   const text = `您好，\n\n想請教以下產品報價：\n${blocks.join('\n---\n')}\n\n麻煩協助報價，謝謝！`;
-  const files = [{ base64: btoa(unescape(encodeURIComponent(text))), filename: `詢價信_${report.caseId}.txt`, mimeType: 'text/plain', label: '詢價信（依報告型號自動整理）' }];
+  const files = [{ base64: btoa(unescape(encodeURIComponent(text))), filename: `詢價信_${reportKey()}.txt`, mimeType: 'text/plain', label: '詢價信（依報告型號自動整理）' }];
 
   if (emails.size === 1) {
-    const draft = await callApi('createGmailDraft', { to: [...emails][0], subject: `詢價 - ${report.caseId}`, body: text });
+    const draft = await callApi('createGmailDraft', { to: [...emails][0], subject: `詢價 - ${reportKey()}`, body: text });
     if (draft.success && draft.draftUrl) alert(`已自動建立 Gmail 草稿：${draft.draftUrl}`);
   }
   openPreviewModal(files);
@@ -1169,7 +1237,7 @@ async function saveDraft() {
   if (!report) return;
   report.savedAt = new Date().toISOString();
   try {
-    await DraftStore.set(DRAFT_PREFIX + report.caseId, report);
+    await DraftStore.set(DRAFT_PREFIX + reportKey(), report);
     $('er-save-status').textContent = `草稿已自動儲存（本機）${new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}`;
   } catch (e) {
     $('er-save-status').textContent = '⚠ 草稿無法自動儲存（瀏覽器空間不足），完成後請記得「存到案件附件」';
@@ -1184,7 +1252,7 @@ function finalHtml() {
 }
 
 function reportFilename(ext) {
-  return safeFilename(`${report.theme.title || '評估報告'}_${report.caseId}_${report.meta.date || todayStr()}.${ext}`);
+  return safeFilename(`${report.theme.title || '評估報告'}_${reportKey()}_${report.meta.date || todayStr()}.${ext}`);
 }
 
 function downloadReportHtml() {
@@ -1222,6 +1290,7 @@ function printReport() {
 
 async function saveReportToCase() {
   if (!report) return alert('請先選擇案件');
+  if (!report.caseId) return alert('自由製作的報告沒有綁案件，無法存到案件附件。請用「下載 HTML」或「列印 / 另存 PDF」；要存進案件，請從案件管理開啟評估報告。');
   const html = finalHtml();
   const sizeMb = new Blob([html]).size / 1024 / 1024;
   if (sizeMb > 35) return alert(`報告檔案約 ${sizeMb.toFixed(1)} MB，超過上傳上限，請減少或縮小圖片後再試`);
@@ -1250,7 +1319,7 @@ async function saveReportToCase() {
 async function loadCaseList(selectedId) {
   const select = $('er-case');
   const fill = (cases) => {
-    select.innerHTML = '<option value="">選擇案件...</option>';
+    select.innerHTML = '<option value="">（不綁案件，自由製作）</option>';
     cases.forEach((c) => select.append(el('option', { value: c.CaseID, text: `${c.CaseID}｜${c.CustomerName || ''}` })));
     if (selectedId) {
       if (![...select.options].some((o) => o.value === selectedId)) select.append(el('option', { value: selectedId, text: selectedId }));
@@ -1331,7 +1400,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const doc = $('er-preview-frame').contentDocument;
     if (doc) doc.documentElement.style.zoom = $('er-zoom').value;
   });
-  $('er-case').addEventListener('change', () => loadCase($('er-case').value));
+  $('er-case').addEventListener('change', () => ($('er-case').value ? loadCase($('er-case').value) : loadFree(false)));
   renderBlocks();
 
   const caseId = new URL(location.href).searchParams.get('caseId') || '';
@@ -1339,6 +1408,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadCaseList(caseId);
   loadProductCatalog();
   if (caseId) await loadCase(caseId);
+  else await loadFree(false);
 });
 
 // 離開頁面前把還沒存的草稿存起來

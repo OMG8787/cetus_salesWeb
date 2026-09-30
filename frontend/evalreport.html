@@ -26,11 +26,12 @@
       <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
     </div>
   </div>
-  <div class="nav-group">
+  <div class="nav-group active-group">
     <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
     <div class="nav-dropdown">
       <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
       <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+      <button class="tab-btn active" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
     </div>
   </div>
   <div class="nav-group">
@@ -50,6 +51,7 @@
       <a href="cases.html" class="er-back">← 案件管理</a>
       <h2>評估報告編輯器</h2>
       <select id="er-case" title="選擇案件"><option value="">選擇案件...</option></select>
+      <button class="btn-secondary" onclick="newFreeFromScratch()" title="清空目前自由製作的內容，重新從空白報告開始">＋ 新的自由報告</button>
       <span id="er-save-status" class="calc-hint"></span>
     </div>
     <div class="er-topbar-actions">
