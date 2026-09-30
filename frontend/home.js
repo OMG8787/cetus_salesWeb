@@ -37,7 +37,11 @@ function renderSites() {
   });
 }
 
-/** 一次開啟所有「預設開啟」的網站。瀏覽器可能會擋掉第二個以後的分頁，被擋時要在網址列旁允許本站的彈出式視窗。 */
+/**
+ * 一次開啟所有「預設開啟」的網站。瀏覽器規定「一次點擊只能開一個分頁」，多開的會被當成廣告彈窗擋掉，
+ * 網頁本身無法繞過。解法有兩種：① 在網址列允許本網站的彈出式視窗（設一次就永久有效）；
+ * ② 按「下載啟動檔」，下載一個 .bat，之後雙擊它就能一次開好全部（Windows）。
+ */
 function openAllSites() {
   const targets = sites.filter((s) => s.OpenOnStart);
   const hint = document.getElementById('site-hint');
@@ -45,15 +49,43 @@ function openAllSites() {
     hint.textContent = '沒有標「預設開啟」的網站，按「編輯」勾選。';
     return;
   }
-  let blocked = 0;
+  const blocked = [];
   targets.forEach((s) => {
     const w = window.open(s.Url, '_blank');
     if (w) w.opener = null;
-    else blocked++;
+    else blocked.push(s);
   });
-  hint.textContent = blocked
-    ? `有 ${blocked} 個網站被瀏覽器擋住了：請點網址列右邊的「已封鎖彈出式視窗」圖示，選「一律允許」本網站，再按一次就會全部開啟。`
-    : `已開啟 ${targets.length} 個網站。`;
+  if (!blocked.length) {
+    hint.textContent = `已開啟 ${targets.length} 個網站。`;
+    return;
+  }
+  hint.innerHTML = `瀏覽器一次點擊只讓開一個分頁，另外 ${blocked.length} 個被擋住了。<br>
+    <strong>方法一（設一次永久有效）</strong>：點網址列右側的「已封鎖彈出式視窗」圖示 → 選「一律允許 ${esc(location.host)} 顯示彈出式視窗」→ 再按一次「一鍵開啟」。<br>
+    <strong>方法二</strong>：<a href="#" onclick="downloadLauncher(); return false;">下載啟動檔（.bat）</a>，之後雙擊它就會一次開好全部預設網站。<br>
+    或直接點下面被擋的網站：`;
+  blocked.forEach((s) => {
+    const a = document.createElement('a');
+    a.href = s.Url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = ' ' + s.Title + ' ';
+    hint.appendChild(a);
+  });
+}
+
+/** 產生 Windows 批次檔：雙擊就用預設瀏覽器開啟所有預設網站，不受瀏覽器彈窗限制。 */
+function downloadLauncher() {
+  const targets = sites.filter((s) => s.OpenOnStart);
+  if (!targets.length) return alert('沒有標「預設開啟」的網站');
+  const lines = ['@echo off', 'chcp 65001 >nul'].concat(targets.map((s) => `start "" "${s.Url.replace(/"/g, '').replace(/%/g, '%%')}"`));
+  const crlf = String.fromCharCode(13, 10);
+  const blob = new Blob([String.fromCharCode(0xfeff) + lines.join(crlf) + crlf], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '上班一鍵開啟網站.bat';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function toggleSiteEdit() {
