@@ -148,6 +148,9 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
+    case 'importCatalogProducts':
+      return { success: true, added: 0, missingInternal: 0, message: '示範模式不會真的讀取型錄，正式模式才會匯入。' };
+
     case 'deleteProduct': {
       db.products = db.products.filter((p) => p.InternalModel !== params.internalModel);
       saveDemoDB(db);

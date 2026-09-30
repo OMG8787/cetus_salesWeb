@@ -54,6 +54,9 @@
       oninput="onProductSearchInput()" />
     <button onclick="searchProducts()">重新載入產品資料</button>
     <button onclick="toggleNewProductForm()">+ 新增產品</button>
+    <button onclick="importCatalog()" title="把「選型計算」型錄（相機/FA鏡頭/遠心鏡頭）讀進產品資料表，只補還沒有的">匯入型錄產品</button>
+    <label class="er-check"><input type="checkbox" id="product-only-incomplete" onchange="onProductSearchInput()" /> 只看資料不完整的</label>
+    <div id="product-alert" class="calc-hint"></div>
 
     <div id="new-product-form" class="panel" style="display:none;">
       <h3>新增產品</h3>
@@ -90,6 +93,7 @@
           <th class="sortable" data-sort="Category">類別</th>
           <th class="sortable" data-sort="RefPrice">底價</th>
           <th class="sortable" data-sort="InquiryCount">詢價次數</th>
+          <th>資料提醒 / 上次修改</th>
           <th>備註</th>
           <th>操作</th>
         </tr>
@@ -127,6 +131,7 @@
 
     <div id="product-detail" class="panel" style="display:none;">
       <h3>產品詳情：<span id="pd-internal-model"></span></h3>
+      <div id="pd-alerts"></div>
       <div id="pd-last-price"></div>
       <div id="pd-compatible"></div>
       <div id="pd-notes"></div>
@@ -136,6 +141,7 @@
 
       <div id="edit-product-form" class="panel" style="display:none;">
         <h4>編輯產品</h4>
+        <input id="ep-internal-model" placeholder="內部型號（必填，缺的話請補上）" />
         <input id="ep-supplier-model" placeholder="供應商型號" />
         <input id="ep-supplier" placeholder="供應商" />
         <input id="ep-supplier-contact" placeholder="供應商窗口" />
@@ -144,6 +150,7 @@
         <label>類別：</label>
         <select id="ep-category">
           <option value="相機">相機</option>
+          <option value="鏡頭">鏡頭</option>
           <option value="調光器">調光器</option>
           <option value="光源">光源</option>
           <option value="線材">線材</option>

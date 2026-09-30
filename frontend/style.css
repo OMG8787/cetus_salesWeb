@@ -296,3 +296,5 @@ th.sortable.desc::after { content: ' ▼'; color: #2c5aa0; }
 .er-model-field-wrap { display: flex; flex-direction: column; gap: 2px; }
 .tab-content .er-model-input { margin: 0; }
 .er-model-input.er-model-known { border-color: #1e8e3e; background: #f3fbf5; }
+
+.badge-warn { display: inline-block; background: #fff3cd; color: #8a5a00; border: 1px solid #ffe08a; border-radius: 4px; padding: 0 6px; font-size: 12px; }

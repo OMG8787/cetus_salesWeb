@@ -19,7 +19,8 @@
  *
  * 試算表分頁與欄位(詳見 README.md)：
  *   Products      - InternalModel, SupplierModel, Supplier, SupplierContact,
- *                    SupplierContactEmail, Origin, Category, CompatibleGroup, RefPrice, Notes
+ *                    SupplierContactEmail, Origin, Category, CompatibleGroup, RefPrice, Notes, LastUpdated
+ *                    （LastUpdated=上次修改日期，前端用來提醒資料多久沒更新、要不要重新詢價）
  *   PriceHistory  - Date, ProductInternalModel, Supplier, Price, Currency, CaseID, Notes
  *   Cases         - CaseID, CustomerName, EndCustomerName, ProjectContact, ContactPhone,
  *                    Salesperson, FAE, ProductApplication, TestObject, SoftwareName,
@@ -83,6 +84,7 @@ var ROUTES = {
   addProduct:              { auth: true, fn: handleAddProduct },
   updateProduct:           { auth: true, fn: handleUpdateProduct },
   deleteProduct:           { auth: true, fn: handleDeleteProduct },
+  importCatalogProducts:   { auth: true, fn: handleImportCatalogProducts },
 
   // 價格紀錄
   addPriceRecord:          { auth: true, fn: handleAddPriceRecord },
@@ -188,7 +190,7 @@ function jsonOutput(obj) {
  * 之後要加新欄位，改這裡再重新執行一次 setup 就好。
  */
 var SCHEMA = {};
-SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes'];
+SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated'];
 SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Price', 'Currency', 'CaseID', 'Notes'];
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
@@ -248,6 +250,7 @@ PERMISSIONS['addStaff'] = ['admin'];
 PERMISSIONS['updateStaff'] = ['admin'];
 PERMISSIONS['deleteStaff'] = ['admin'];
 PERMISSIONS['deleteProduct'] = ['admin', 'sales'];
+PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
 PERMISSIONS['deletePriceRecord'] = ['admin', 'sales'];
@@ -333,6 +336,11 @@ function setup() {
   });
 
   importLegacyCustomers_(log);
+  try {
+    importCatalogProducts_(log);
+  } catch (e) {
+    log.push('型錄匯入失敗（可以之後在「產品搜尋」頁按「匯入型錄產品」重試）：' + e.message);
+  }
 
   // 試算表新建時附的空白「工作表1 / Sheet1」，沒有資料就刪掉
   ['工作表1', 'Sheet1'].forEach(function (n) {
@@ -814,6 +822,9 @@ function handleResetUserPassword(body) {
 function handleSearchProducts(body) {
   var keyword = String(body.keyword || '').toLowerCase();
   var data = sheetToObjects(SHEET_PRODUCTS);
+  data.rows.forEach(function (r, i) {
+    r.RowIndex = i + 2;
+  });
   var results = data.rows.filter(function (r) {
     if (!keyword) return true;
     return data.header.some(function (h) {
@@ -823,12 +834,15 @@ function handleSearchProducts(body) {
 
   // 每個產品的詢價次數(= 價格紀錄筆數)，前端可以拿來排序看哪些是熱門產品
   var counts = {};
+  var lastDates = {};
   sheetToObjects(SHEET_PRICE_HISTORY).rows.forEach(function (h) {
     var key = h['ProductInternalModel'];
     counts[key] = (counts[key] || 0) + 1;
+    if (!lastDates[key] || String(h['Date']) > lastDates[key]) lastDates[key] = String(h['Date']);
   });
   results.forEach(function (r) {
     r.InquiryCount = counts[r['InternalModel']] || 0;
+    r.LastInquiryDate = lastDates[r['InternalModel']] || '';
   });
   return { success: true, products: results };
 }
@@ -837,17 +851,20 @@ function handleGetProduct(body) {
   var internalModel = body.internalModel;
   var data = sheetToObjects(SHEET_PRODUCTS);
   var product = null;
-  data.rows.forEach(function (r) {
-    if (String(r['InternalModel']) === String(internalModel)) product = r;
+  data.rows.forEach(function (r, i) {
+    r.RowIndex = i + 2;
+    // 內部型號還沒填的產品(例如從型錄匯入的)用 rowIndex 找
+    if (body.rowIndex ? r.RowIndex === Number(body.rowIndex) : String(r['InternalModel']) === String(internalModel)) product = r;
   });
   if (!product) return { success: false, message: '查無此產品' };
+  internalModel = product['InternalModel'];
 
   var group = product['CompatibleGroup'];
   var compatibleProducts = data.rows.filter(function (r) {
     return group && r['CompatibleGroup'] === group && r['InternalModel'] !== internalModel;
   });
 
-  var priceHistory = handleGetPriceHistory({ internalModel: internalModel }).history;
+  var priceHistory = internalModel ? handleGetPriceHistory({ internalModel: internalModel }).history : [];
 
   return {
     success: true,
@@ -886,6 +903,7 @@ function handleAddProduct(body) {
     CompatibleGroup: body.compatibleGroup || '',
     RefPrice: body.refPrice || '',
     Notes: body.notes || '',
+    LastUpdated: todayStr(),
   });
   return { success: true };
 }
@@ -893,19 +911,144 @@ function handleAddProduct(body) {
 function handleUpdateProduct(body) {
   var sheet = getSheet(SHEET_PRODUCTS);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var rowNum = findProductRowIndex(header, body.internalModel);
-  if (rowNum === -1) return { success: false, message: '查無此產品' };
-  updateRowFields(SHEET_PRODUCTS, rowNum, body.fields);
+  var rowNum = body.rowIndex ? Number(body.rowIndex) : findProductRowIndex(header, body.internalModel);
+  if (rowNum === -1 || rowNum < 2 || rowNum > sheet.getLastRow()) return { success: false, message: '查無此產品' };
+  var fields = Object.assign({}, body.fields);
+  if (fields.InternalModel !== undefined) {
+    fields.InternalModel = String(fields.InternalModel).trim();
+    var dup = findProductRowIndex(header, fields.InternalModel);
+    if (fields.InternalModel && dup > -1 && dup !== rowNum) return { success: false, message: '此內部型號已被其他產品使用' };
+  }
+  fields.LastUpdated = todayStr();
+  updateRowFields(SHEET_PRODUCTS, rowNum, fields);
   return { success: true };
 }
 
 function handleDeleteProduct(body) {
   var sheet = getSheet(SHEET_PRODUCTS);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var rowNum = findProductRowIndex(header, body.internalModel);
+  var rowNum = body.rowIndex ? Number(body.rowIndex) : findProductRowIndex(header, body.internalModel);
+  if (rowNum > sheet.getLastRow()) rowNum = -1;
   if (rowNum === -1) return { success: false, message: '查無此產品' };
   sheet.deleteRow(rowNum);
   return { success: true };
+}
+
+// ------------------------------------------------------------
+// 從「選型計算」型錄(公開 Google 試算表)匯入產品：分頁 GigE / USB3 / FA鏡頭 / 遠心鏡頭
+// 只補缺的：已存在(內部型號相同，或 原廠+原廠型號 相同)的不動。價格型錄裡沒有，匯入後 RefPrice 為空，
+// 產品頁會提醒補價格、補內部型號，並顯示上次修改日期。型錄 ID 存在 Config 的 CatalogSheetId（沒設就用預設那份）。
+// ------------------------------------------------------------
+var DEFAULT_CATALOG_SHEET_ID = '1Enn6Yr6bOtlpWUSoy_Hd00VKWQh-0m4x';
+var CATALOG_TABS = [
+  { tab: 'GigE', category: '相機', kind: 'camera', label: 'GigE' },
+  { tab: 'USB3', category: '相機', kind: 'camera', label: 'USB3.0' },
+  { tab: 'FA鏡頭', category: '鏡頭', kind: 'fa', label: 'FA鏡頭' },
+  { tab: '遠心鏡頭', category: '鏡頭', kind: 'tele', label: '遠心鏡頭' },
+];
+
+function fetchCatalogTab_(sheetId, tab) {
+  var url = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(tab);
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('讀取型錄分頁「' + tab + '」失敗(HTTP ' + res.getResponseCode() + ')，確認型錄試算表是「知道連結的人可檢視」');
+  return Utilities.parseCsv(res.getContentText('UTF-8'));
+}
+
+/** 用欄名關鍵字找欄位（型錄欄名是「中文+英文」連在一起，例如「畫素Pixels」）。 */
+function catalogCol_(header, keyword) {
+  for (var i = 0; i < header.length; i++) {
+    if (String(header[i]).replace(/\s+/g, '').indexOf(keyword) > -1) return i;
+  }
+  return -1;
+}
+
+function catalogSpec_(kind, header, row) {
+  function v(keyword) {
+    var i = catalogCol_(header, keyword);
+    return i > -1 ? String(row[i] || '').trim() : '';
+  }
+  var parts = [];
+  if (kind === 'camera') {
+    if (v('畫素')) parts.push(v('畫素') + '萬畫素');
+    ['黑白/彩色', 'SensorType', 'PixelSize', 'DataInterface'].forEach(function (k) {
+      if (v(k)) parts.push(v(k));
+    });
+    if (v('FPS')) parts.push(v('FPS') + 'fps');
+  } else if (kind === 'fa') {
+    if (v('解析度')) parts.push(v('解析度') + 'MP');
+    if (v('焦距')) parts.push('焦距' + v('焦距') + 'mm');
+    if (v('SensorSize')) parts.push('靶面' + v('SensorSize'));
+    if (v('LensType')) parts.push(v('LensType') + '接口');
+    if (v('FocusWD')) parts.push('最近對焦' + v('FocusWD') + 'mm');
+  } else {
+    if (v('MAG')) parts.push('倍率' + v('MAG') + 'x');
+    if (v('WD')) parts.push('WD' + v('WD') + 'mm');
+    if (v('解析度')) parts.push('解析度' + v('解析度'));
+    if (v('DOF')) parts.push('景深' + v('DOF'));
+    if (v('Coaxial')) parts.push(v('Coaxial'));
+    if (v('SensorSize')) parts.push('靶面' + v('SensorSize'));
+  }
+  return parts.join('，');
+}
+
+function importCatalogProducts_(log) {
+  var sheetId = getConfig('CatalogSheetId') || DEFAULT_CATALOG_SHEET_ID;
+  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var byInternal = {};
+  var bySupplierModel = {};
+  existing.forEach(function (r) {
+    if (r['InternalModel']) byInternal[String(r['InternalModel'])] = true;
+    if (r['SupplierModel']) bySupplierModel[r['Supplier'] + '|' + r['SupplierModel']] = true;
+  });
+
+  var today = todayStr();
+  var added = 0;
+  var missingInternal = 0;
+  var skippedTabs = [];
+  CATALOG_TABS.forEach(function (t) {
+    var rows;
+    try {
+      rows = fetchCatalogTab_(sheetId, t.tab);
+    } catch (e) {
+      skippedTabs.push(t.tab + '（' + e.message + '）');
+      return;
+    }
+    if (rows.length < 2) return;
+    var header = rows[0];
+    var iSupplier = catalogCol_(header, '原廠名稱');
+    var iOrigModel = catalogCol_(header, '原廠型號');
+    var iName = catalogCol_(header, '公司型號');
+    rows.slice(1).forEach(function (row) {
+      var supplier = iSupplier > -1 ? String(row[iSupplier] || '').trim() : '';
+      var origModel = iOrigModel > -1 ? String(row[iOrigModel] || '').trim() : '';
+      var internal = iName > -1 ? String(row[iName] || '').trim() : '';
+      if (!internal && !origModel) return; // 空白列
+      if (internal && byInternal[internal]) return;
+      if (origModel && bySupplierModel[supplier + '|' + origModel]) return;
+      appendObjectRow(SHEET_PRODUCTS, {
+        InternalModel: internal,
+        SupplierModel: origModel,
+        Supplier: supplier,
+        Category: t.category,
+        Notes: t.label + '；' + catalogSpec_(t.kind, header, row),
+        LastUpdated: today,
+      });
+      if (internal) byInternal[internal] = true;
+      if (origModel) bySupplierModel[supplier + '|' + origModel] = true;
+      if (!internal) missingInternal++;
+      added++;
+    });
+  });
+
+  var msg = '型錄匯入：新增 ' + added + ' 筆產品（型錄沒有價格與供應商聯絡資料；其中 ' + missingInternal + ' 筆缺內部型號，產品頁會提醒補資料）';
+  if (skippedTabs.length) msg += '；略過：' + skippedTabs.join('、');
+  if (log) log.push(msg);
+  return { added: added, missingInternal: missingInternal, skipped: skippedTabs, message: msg };
+}
+
+function handleImportCatalogProducts(body) {
+  var r = importCatalogProducts_(null);
+  return { success: true, added: r.added, missingInternal: r.missingInternal, message: r.message };
 }
 
 // ------------------------------------------------------------

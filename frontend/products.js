@@ -4,6 +4,8 @@
  */
 
 let currentInternalModel = null;
+let currentProductRow = null; // 內部型號還沒填的產品用列號辨識
+const STALE_DAYS = 90; // 超過這天數沒更新/詢價，就提醒可以考慮重新向原廠詢價
 
 function toggleNewProductForm() {
   const form = document.getElementById('new-product-form');
@@ -98,10 +100,12 @@ function applyProductFilter(keepPage) {
   const keywords = document.getElementById('product-search-input').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const byModel = (a, b) => String(a.InternalModel || '').localeCompare(String(b.InternalModel || ''));
 
+  const onlyIncomplete = document.getElementById('product-only-incomplete').checked;
+  const pool = onlyIncomplete ? allProducts.filter((p) => productIssues(p).length) : allProducts;
   if (!keywords.length) {
-    filteredProducts = allProducts.slice().sort(byModel);
+    filteredProducts = pool.slice().sort(byModel);
   } else {
-    filteredProducts = allProducts
+    filteredProducts = pool
       .map((p) => ({ p, score: productMatchScore(p, keywords) }))
       .filter((x) => x.score > -1)
       .sort((a, b) => a.score - b.score || byModel(a.p, b.p))
@@ -186,6 +190,8 @@ function renderProductPage() {
   const start = (productPage - 1) * size;
   renderProductTable(filteredProducts.slice(start, start + size));
 
+  const incompleteCount = allProducts.filter((p) => productIssues(p).length).length;
+  document.getElementById('product-alert').textContent = incompleteCount ? `⚠ 有 ${incompleteCount} 筆產品資料不完整（缺內部型號/底價/供應商/詢價信箱），請補齊；勾「只看資料不完整的」可以只看這些` : '';
   document.getElementById('product-page-info').textContent = total
     ? `共 ${total} 筆，顯示第 ${start + 1}–${Math.min(start + size, total)} 筆`
     : '查無符合的產品';
@@ -202,20 +208,24 @@ function renderProductTable(products) {
   tbody.innerHTML = '';
   products.forEach((p) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${p.InternalModel || ''}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || ''}</td><td>${p.InquiryCount || 0}</td><td>${p.Notes || ''}</td>
-      <td><button onclick="viewProduct('${p.InternalModel}')">查看/詢價</button></td>`;
+    tr.innerHTML = `<td>${p.InternalModel || '<span class="badge-warn">（缺內部型號）</span>'}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || '<span class="badge-warn">無</span>'}</td><td>${p.InquiryCount || 0}</td><td>${productAlertHtml(p)}</td><td>${p.Notes || ''}</td>
+      <td><button onclick="viewProduct('${String(p.InternalModel || '').replace(/'/g, "\\'")}', ${p.RowIndex})">查看/詢價</button></td>`;
     tbody.appendChild(tr);
   });
 }
 
-async function viewProduct(internalModel) {
-  currentInternalModel = internalModel;
-  const result = await callApi('getProduct', { internalModel });
+async function viewProduct(internalModel, rowIndex) {
+  const result = await callApi('getProduct', rowIndex ? { rowIndex } : { internalModel });
   if (!result.success) return alert(result.message);
+  internalModel = result.product.InternalModel || '';
+  currentInternalModel = internalModel;
+  currentProductRow = result.product.RowIndex;
 
   document.getElementById('product-detail').style.display = 'block';
   document.getElementById('edit-product-form').style.display = 'none';
-  document.getElementById('pd-internal-model').textContent = internalModel;
+  document.getElementById('pd-internal-model').textContent = internalModel || '（缺內部型號，請按「編輯此產品」補上）';
+  document.getElementById('pd-alerts').innerHTML = productAlertHtml(result.product, true);
+  document.getElementById('ep-internal-model').value = internalModel;
 
   document.getElementById('pd-last-price').innerHTML = result.lastPrice
     ? `上次報價：${result.lastPrice.Price} ${result.lastPrice.Currency || ''}（供應商：${result.lastPrice.Supplier}，日期：${result.lastPrice.Date}）`
@@ -261,7 +271,7 @@ async function editPriceRecord(rowIndex) {
   if (newPrice === null) return;
   const result = await callApi('updatePriceRecord', { rowIndex, fields: { Price: newPrice } });
   if (result.success) {
-    viewProduct(currentInternalModel);
+    viewProduct(currentInternalModel, currentProductRow);
   } else {
     alert(result.message);
   }
@@ -271,7 +281,7 @@ async function deletePriceRecord(rowIndex) {
   if (!confirm('確定要刪除這筆價格紀錄嗎？')) return;
   const result = await callApi('deletePriceRecord', { rowIndex });
   if (result.success) {
-    viewProduct(currentInternalModel);
+    viewProduct(currentInternalModel, currentProductRow);
     searchProducts(); // 詢價次數跟著更新
   } else {
     alert(result.message);
@@ -284,7 +294,10 @@ function toggleEditProductForm() {
 }
 
 async function saveProductEdit() {
+  const newModel = document.getElementById('ep-internal-model').value.trim();
+  if (!newModel) return alert('內部型號不能空白，請補上（或用別的欄位確認後再補）');
   const fields = {
+    InternalModel: newModel,
     SupplierModel: document.getElementById('ep-supplier-model').value,
     Supplier: document.getElementById('ep-supplier').value,
     SupplierContact: document.getElementById('ep-supplier-contact').value,
@@ -295,11 +308,12 @@ async function saveProductEdit() {
     RefPrice: document.getElementById('ep-ref-price').value,
     Notes: document.getElementById('ep-notes').value,
   };
-  const result = await callApi('updateProduct', { internalModel: currentInternalModel, fields });
+  const result = await callApi('updateProduct', { rowIndex: currentProductRow, internalModel: currentInternalModel, fields });
   if (result.success) {
     clearCached('products_all');
     alert('已儲存修改');
-    viewProduct(currentInternalModel);
+    currentInternalModel = newModel;
+    viewProduct(currentInternalModel, currentProductRow);
     searchProducts();
   } else {
     alert(result.message);
@@ -308,7 +322,7 @@ async function saveProductEdit() {
 
 async function deleteCurrentProduct() {
   if (!confirm(`確定要刪除產品「${currentInternalModel}」嗎？此動作無法復原。`)) return;
-  const result = await callApi('deleteProduct', { internalModel: currentInternalModel });
+  const result = await callApi('deleteProduct', { rowIndex: currentProductRow, internalModel: currentInternalModel });
   if (result.success) {
     clearCached('products_all');
     document.getElementById('product-detail').style.display = 'none';
@@ -319,13 +333,14 @@ async function deleteCurrentProduct() {
 }
 
 async function addPriceRecord() {
+  if (!currentInternalModel) return alert('這個產品還沒有內部型號，請先按「編輯此產品」補上內部型號才能存價格紀錄');
   const supplier = document.getElementById('pd-supplier').value;
   const price = document.getElementById('pd-price').value;
   const caseId = document.getElementById('pd-case').value;
   const result = await callApi('addPriceRecord', { internalModel: currentInternalModel, supplier, price, caseId });
   if (result.success) {
     alert('已存入價格紀錄');
-    viewProduct(currentInternalModel);
+    viewProduct(currentInternalModel, currentProductRow);
     searchProducts(); // 詢價次數跟著更新
   } else {
     alert(result.message);
@@ -333,6 +348,7 @@ async function addPriceRecord() {
 }
 
 async function generateInquiry() {
+  if (!currentInternalModel) return alert('這個產品還沒有內部型號，請先補上內部型號');
   const quantity = document.getElementById('pd-quantity').value;
   const result = await callApi('generateInquiryDraft', { internalModel: currentInternalModel, quantity });
   if (!result.success) return alert(result.message);
@@ -362,7 +378,7 @@ function saveInquiryCart(cart) {
 }
 
 async function addToInquiryCart() {
-  if (!currentInternalModel) return;
+  if (!currentInternalModel) return alert('這個產品還沒有內部型號，請先按「編輯此產品」補上');
   const quantity = document.getElementById('pd-quantity').value || '1';
   const result = await callApi('getProduct', { internalModel: currentInternalModel });
   if (!result.success) return alert(result.message);
@@ -475,3 +491,53 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   });
 });
+
+// ------------------------------------------------------------
+// 資料完整度提醒 + 上次修改日期（讓人自己判斷要不要再回原廠詢價）
+// ------------------------------------------------------------
+function productIssues(p) {
+  const issues = [];
+  if (!p.InternalModel) issues.push('缺內部型號');
+  if (!p.RefPrice) issues.push('缺底價');
+  if (!p.Supplier) issues.push('缺供應商');
+  if (!p.SupplierContactEmail) issues.push('缺詢價信箱');
+  return issues;
+}
+
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00');
+  if (isNaN(d)) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+/** 上次修改 / 上次詢價 的文字，超過 STALE_DAYS 天會標示建議重新詢價。 */
+function productFreshness(p) {
+  const upd = daysSince(p.LastUpdated);
+  const inq = daysSince(p.LastInquiryDate);
+  const updText = p.LastUpdated ? `上次修改 ${String(p.LastUpdated).slice(0, 10)}（${upd} 天前）` : '上次修改：未記錄';
+  const inqText = p.LastInquiryDate ? `上次詢價 ${p.LastInquiryDate}（${inq} 天前）` : '尚未詢過價';
+  const ages = [upd, inq].filter((x) => x !== null);
+  const newest = ages.length ? Math.min(...ages) : null;
+  const stale = newest === null || newest > STALE_DAYS;
+  return { updText, inqText, stale, newest };
+}
+
+function productAlertHtml(p, detail) {
+  const issues = productIssues(p);
+  const f = productFreshness(p);
+  let html = '';
+  if (issues.length) html += `<span class="badge-warn">⚠ ${issues.join('、')}</span> `;
+  html += `<span class="calc-hint">${f.updText}${detail ? '；' + f.inqText : ''}</span>`;
+  if (f.stale) html += ` <span class="badge-warn">${f.newest === null ? '沒有任何更新/詢價紀錄' : `已超過 ${STALE_DAYS} 天沒更新`}，建議重新向原廠詢價</span>`;
+  return html;
+}
+
+async function importCatalog() {
+  if (!confirm('要把「選型計算」型錄（相機 / FA鏡頭 / 遠心鏡頭）讀進產品資料表嗎？\n只會新增還沒有的型號，已經有的不會動。型錄沒有價格，匯入後請補底價。')) return;
+  const result = await callApi('importCatalogProducts', {});
+  if (!result.success) return alert(result.message);
+  alert(result.message);
+  clearCached('products_all');
+  searchProducts();
+}
