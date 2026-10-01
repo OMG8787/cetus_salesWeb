@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>人員管理 - AOI 業務系統</title>
+<title>個人資料 - AOI 業務系統</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -34,57 +34,48 @@
       <button class="tab-btn" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
     </div>
   </div>
-  <div class="nav-group active-group">
+  <div class="nav-group">
     <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
     <div class="nav-dropdown">
       <button class="tab-btn" onclick="location.href='devices.html'">登入紀錄</button>
-      <button class="tab-btn admin-only active" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
       <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
     </div>
   </div>
 </nav>
 
 <section class="tab-content">
-  <h2>人員管理</h2>
-  <p class="calc-hint">
-    這裡管理的是案件管理頁「業務／FAE」欄位自動完成用的人員清單，跟登入帳號（帳號管理）是分開的兩件事——
-    同一個人可能有登入帳號，也可能只是被指派在案件上但不需要登入系統。只有 <strong>管理員（admin）</strong> 能新增/修改/刪除。
-  </p>
+  <h2>個人資料設定</h2>
 
-  <h3>新增人員</h3>
-  <div id="staff-add-panel">
-    <input id="staff-name" placeholder="姓名（必填）" />
-    <select id="staff-role">
-      <option value="業務">業務</option>
-      <option value="FAE">FAE</option>
-      <option value="其他">其他</option>
-    </select>
-    <button onclick="addStaff()">新增</button>
+  <div class="home-card">
+    <h3>修改密碼 <span class="calc-hint">更新登入密碼以提升帳號安全</span></h3>
+    <div id="pw-panel">
+      <input id="pw-old" type="password" placeholder="目前的密碼" autocomplete="current-password" />
+      <input id="pw-new" type="password" placeholder="新密碼（至少 6 個字）" autocomplete="new-password" />
+      <input id="pw-new2" type="password" placeholder="再輸入一次新密碼" autocomplete="new-password" />
+      <button onclick="changePassword()">確認修改密碼</button>
+      <div id="pw-message" class="calc-hint"></div>
+    </div>
   </div>
 
-  <h3>人員列表</h3>
-  <button onclick="loadStaff()">重新整理</button>
-  <div id="staff-message" class="calc-hint"></div>
-  <table id="staff-table" style="display:none;">
-    <thead><tr><th>姓名</th><th>角色</th><th>操作</th></tr></thead>
-    <tbody></tbody>
-  </table>
-
-  <h2>軟體名稱清單</h2>
-  <p class="calc-hint">案件的「軟體名稱」是從這份清單下拉選擇。案件頁輸入清單裡沒有的名稱時，會詢問是否新增；也可以在這裡直接新增或刪除。</p>
-  <div id="software-add-panel">
-    <input id="software-name" placeholder="軟體名稱" />
-    <button onclick="addSoftwareName()">新增</button>
+  <div class="home-card" style="margin-top:14px;">
+    <h3>會員資料修改 <span class="calc-hint">更新姓名、電話、信箱等基本資料</span></h3>
+    <div id="profile-panel">
+      <label>帳號（不可修改）<input id="pf-username" disabled /></label>
+      <label>身分 <input id="pf-role" disabled /></label>
+      <label>姓名 <span style="color:#c0392b">*</span><input id="pf-name" /></label>
+      <label>電話<input id="pf-phone" /></label>
+      <label>電子郵件<input id="pf-email" type="email" /></label>
+      <label>生日<input id="pf-birthday" type="date" /></label>
+      <button onclick="saveProfile()">確認修改</button>
+      <div id="pf-message" class="calc-hint"></div>
+    </div>
   </div>
-  <table id="software-table" style="display:none;">
-    <thead><tr><th>軟體名稱</th><th>操作</th></tr></thead>
-    <tbody></tbody>
-  </table>
 </section>
 
 <script src="config.js"></script>
 <script src="demo.js"></script>
 <script src="common.js"></script>
-<script src="staff.js"></script>
+<script src="profile.js"></script>
 </body>
 </html>

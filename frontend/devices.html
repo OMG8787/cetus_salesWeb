@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>裝置管理 - AOI 業務系統</title>
+<title>登入紀錄 - AOI 業務系統</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -37,33 +37,75 @@
   <div class="nav-group active-group">
     <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
     <div class="nav-dropdown">
-      <button class="tab-btn active" onclick="location.href='devices.html'">裝置管理</button>
+      <button class="tab-btn active" onclick="location.href='devices.html'">登入紀錄</button>
       <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
       <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
     </div>
   </div>
 </nav>
 
-<section class="tab-content">
-  <h2>已記住登入的裝置</h2>
-  <p class="calc-hint">
-    每台裝置（電腦/手機的瀏覽器）第一次登入後，都會被「記住」，之後打開網頁不用再輸入密碼，除非在這裡把它移除。
-    只有 <strong>管理員（admin）</strong> 帳號看得到這裡的完整清單；其他身份的帳號打開這頁會顯示「權限不足」。
-  </p>
-  <button onclick="loadDevices()">重新整理清單</button>
-  <div id="devices-message" class="calc-hint"></div>
-  <table id="devices-table" style="display:none;">
-    <thead>
-      <tr>
-        <th>帳號</th>
-        <th>裝置</th>
-        <th>第一次登入</th>
-        <th>最後使用</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+<section class="tab-content wide">
+  <div class="home-card">
+    <h2 style="margin:0 0 6px;">登入紀錄</h2>
+    <div class="calc-hint">查看誰在什麼時間、用哪個裝置登入、最後什麼時候使用。登入綁定「帳號 + 裝置」，不會自動過期，除非本人登出或管理員強制登出。只有 <strong>管理員（admin）</strong> 看得到這頁。</div>
+  </div>
+
+  <div class="home-card" style="margin-top:14px;">
+    <h3>目前登入中 <span id="lg-active-count" class="memo-tag"></span>
+      <span class="card-actions">
+        <button class="btn-secondary" onclick="loadOverview()">重新整理</button>
+        <button class="btn-danger" onclick="forceLogoutAll()">一鍵全部登出</button>
+      </span>
+    </h3>
+    <div id="lg-message" class="calc-hint"></div>
+    <table id="lg-devices-table" style="display:none;">
+      <thead><tr><th>姓名</th><th>帳號</th><th>裝置</th><th>登入時間</th><th>最後使用</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="calc-hint">「最後使用」約每 5 分鐘更新一次。「一鍵全部登出」不會登出你目前正在用的這台裝置。</div>
+  </div>
+
+  <div class="home-card" style="margin-top:14px;">
+    <h3>紀錄保留</h3>
+    <div class="toolbar">
+      每個帳號保留最近
+      <input id="lg-keep" type="number" min="1" max="500" style="width:90px;display:inline-block;margin:0;" />
+      筆
+      <button onclick="saveKeep()">儲存並清理</button>
+      <span id="lg-keep-info" class="calc-hint"></span>
+    </div>
+    <div class="calc-hint">超過的舊紀錄會在該帳號下次登入時自動刪除（登入中的那筆一定保留），避免試算表越來越大。</div>
+  </div>
+
+  <div class="home-card" style="margin-top:14px;">
+    <div class="toolbar">
+      <label>起日 <input id="lg-from" type="date" style="display:inline-block;width:auto;margin:0;" /></label>
+      <label>迄日 <input id="lg-to" type="date" style="display:inline-block;width:auto;margin:0;" /></label>
+      <input id="lg-keyword" placeholder="帳號 / 姓名 / 裝置" style="display:inline-block;width:200px;margin:0;" />
+      <select id="lg-result"><option value="">全部結果</option><option value="成功">成功</option><option value="失敗">失敗</option></select>
+      <button onclick="loadLogs()">查詢</button>
+      <button class="btn-secondary" onclick="setRange('month')">本月</button>
+      <button class="btn-secondary" onclick="setRange('today')">今天</button>
+    </div>
+  </div>
+
+  <div class="home-card" style="margin-top:14px;">
+    <h3>各帳號使用時間（查詢區間）</h3>
+    <table id="lg-summary-table">
+      <thead><tr><th>姓名</th><th>帳號</th><th>登入次數</th><th>失敗次數</th><th>使用時間</th><th>最近登入</th><th>最近裝置</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="home-card" style="margin-top:14px;">
+    <h3>登入歷程 <span id="lg-log-count" class="calc-hint"></span>
+      <span class="card-actions"><button class="btn-danger" onclick="clearLogs()">一鍵清除歷程</button></span>
+    </h3>
+    <table id="lg-logs-table">
+      <thead><tr><th>登入時間</th><th>姓名</th><th>帳號</th><th>結果</th><th>裝置</th><th>最後活動</th><th>結束時間</th><th>結束原因</th><th>使用時間</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
 </section>
 
 <script src="config.js"></script>

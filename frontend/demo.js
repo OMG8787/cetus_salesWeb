@@ -91,6 +91,33 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
+    case 'getLoginOverview':
+      return {
+        success: true,
+        devices: (db.devices || []).map((x, i) => ({ RowIndex: i, Username: x.Username, DisplayName: '示範帳號', DeviceLabel: x.DeviceLabel, LoginTime: x.CreatedDate, LastSeenTime: x.LastSeenDate, IsCurrent: i === 0 })),
+        keep: 20,
+        logCount: 0,
+      };
+
+    case 'getLoginLogs':
+      return { success: true, logs: [], summary: [] };
+
+    case 'forceLogout':
+    case 'clearLoginLogs':
+    case 'setLoginKeep':
+      return { success: true, count: 0, deleted: 0, keep: params.keep || 20, logCount: 0 };
+
+    case 'getProfile':
+      return { success: true, profile: Object.assign({ Username: '0000', DisplayName: '0000（示範帳號）', Role: 'admin', Phone: '', Email: '', Birthday: '' }, db.profile || {}) };
+
+    case 'updateProfile':
+      db.profile = { DisplayName: params.displayName, Phone: params.phone || '', Email: params.email || '', Birthday: params.birthday || '' };
+      saveDemoDB(db);
+      return { success: true, displayName: params.displayName };
+
+    case 'changePassword':
+      return { success: true };
+
     case 'getDevices':
       return { success: true, devices: (db.devices || []).map((d, i) => Object.assign({ RowIndex: i }, d)) };
 

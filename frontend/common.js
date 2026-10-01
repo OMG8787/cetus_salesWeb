@@ -39,6 +39,35 @@ const DEVICE_ID_COOKIE = 'aoi_device_id';
 const DEVICE_TOKEN_COOKIE = 'aoi_device_token';
 const DEVICE_YEARS = 3650;
 
+const AUTH_ERROR_PATTERN = /登入已逾期|尚未登入|已被登出/;
+let refreshPromise = null;
+
+/** 用瀏覽器記住的裝置權杖換一組新的工作階段；同時多個請求失敗時只換一次。 */
+function refreshSession() {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const deviceId = getCookie(DEVICE_ID_COOKIE);
+    const deviceToken = getCookie(DEVICE_TOKEN_COOKIE);
+    if (!deviceId || !deviceToken) return false;
+    const r = await callApi('resumeSession', { deviceId, deviceToken });
+    if (!r.success) return false;
+    currentToken = r.token;
+    currentRole = r.role || '';
+    sessionStorage.setItem('token', currentToken);
+    sessionStorage.setItem('role', currentRole);
+    return true;
+  })().finally(() => {
+    setTimeout(() => (refreshPromise = null), 1000);
+  });
+  return refreshPromise;
+}
+
+function goToLogin() {
+  clearDeviceCookies();
+  sessionStorage.clear();
+  location.href = 'index.html';
+}
+
 /** 這台瀏覽器的裝置 ID，第一次使用時產生一組並記住，之後同一台裝置永遠是同一個 ID。 */
 function getOrCreateDeviceId() {
   let id = getCookie(DEVICE_ID_COOKIE);
@@ -52,9 +81,11 @@ function getOrCreateDeviceId() {
 /** 給後端看的裝置說明文字（作業系統 + 瀏覽器），方便管理員在「裝置管理」分辨是哪一台。 */
 function getDeviceLabel() {
   const ua = navigator.userAgent || '';
-  const os = /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : '其他系統';
-  const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '瀏覽器';
-  return `${os} / ${browser}`;
+  const mobile = /iPhone|iPad|Android|Mobile/.test(ua);
+  const os = /Windows/.test(ua) ? 'Windows' : /iPhone|iPad/.test(ua) ? (/iPad/.test(ua) ? 'iPad' : 'iPhone') : /Android/.test(ua) ? 'Android' : /Mac OS/.test(ua) ? 'Mac' : '其他系統';
+  const browser = /Line\//i.test(ua) ? 'LINE' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) || /CriOS/.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '瀏覽器';
+  const screenSize = typeof screen !== 'undefined' && screen.width ? `${screen.width}x${screen.height}` : '';
+  return [mobile ? '手機' : '電腦', os, browser, screenSize].filter(Boolean).join(' · ');
 }
 
 function clearDeviceCookies() {
@@ -89,13 +120,23 @@ async function callApi(action, params) {
       await new Promise((resolve) => setTimeout(resolve, 150));
       return handleDemoApi(action, params || {});
     }
-    const payload = Object.assign({ action: action, token: currentToken }, params || {});
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-    });
-    return await res.json();
+    const send = async () => {
+      const payload = Object.assign({ action: action, token: currentToken }, params || {});
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    };
+    let result = await send();
+    // 登入逾期（快取的工作階段最多 6 小時）或被登出：先悄悄用「記住的裝置」換新的登入再重送一次，
+    // 使用者完全無感；換不到（例如被管理員強制登出）才回登入頁。
+    if (result && result.success === false && AUTH_ERROR_PATTERN.test(result.message || '') && action !== 'login' && action !== 'resumeSession') {
+      if (await refreshSession()) result = await send();
+      else goToLogin();
+    }
+    return result;
   } finally {
     hideLoading();
   }
@@ -138,6 +179,15 @@ async function ensureAuth() {
 function renderHeaderUser() {
   const el = document.getElementById('current-user');
   if (el) el.textContent = currentUsername + (typeof DEMO_MODE !== 'undefined' && DEMO_MODE ? '（示範模式，資料只存在這台瀏覽器）' : '');
+  // 在「登出」前面放一個「個人資料」按鈕（每一頁共用）
+  const logoutBtn = document.querySelector('header button[onclick^="logout"]');
+  if (logoutBtn && !document.getElementById('header-profile-btn')) {
+    const b = document.createElement('button');
+    b.id = 'header-profile-btn';
+    b.textContent = '個人資料';
+    b.onclick = () => (location.href = 'profile.html');
+    logoutBtn.parentNode.insertBefore(b, logoutBtn);
+  }
 }
 
 /**

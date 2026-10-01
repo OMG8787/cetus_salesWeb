@@ -41,7 +41,8 @@
  *                    （一間公司可能對應多列，用 CompanyName 關聯，管理多個聯絡窗口）
  *   ContactLogs   - Date, CompanyName, Contact, Method, Summary, Salesperson, CaseID
  *                    （CaseID 選填，標記這筆聯繫是針對哪個案件/專案，同客戶有多案件時用來分開查）
- *   Users         - Username, PasswordHash, Role, DisplayName
+ *   Users         - Username, PasswordHash, Role, DisplayName, Phone, Email, Birthday（個人資料可由本人在「個人資料」頁修改）
+ *   LoginLogs     - LoginTime, Username, DisplayName, Result, DeviceId, DeviceLabel, LastActive, EndTime, EndReason（登入歷程）
  *                    （Role 決定權限，見 PERMISSIONS：admin 可以做任何事／sales 業務／fae 工程）
  *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
  *   Shortcuts     - Username, Title, Url, OpenOnStart, SortOrder（每人自己的首頁「常用網站」）
@@ -72,6 +73,7 @@ var SHEET_FAVORITES = 'Favorites';
 var SHEET_SHORTCUTS = 'Shortcuts';
 var SHEET_MEMOS = 'Memos';
 var SHEET_SOFTWARE = 'Software';
+var SHEET_LOGIN_LOGS = 'LoginLogs';
 
 // ------------------------------------------------------------
 // 2. 路由表
@@ -83,8 +85,14 @@ var ROUTES = {
   login:                   { auth: false, fn: handleLogin },
   resumeSession:           { auth: false, fn: handleResumeSession },
   logoutDevice:            { auth: true,  fn: handleLogoutDevice },
-  getDevices:              { auth: true,  fn: handleGetDevices },
-  removeDevice:            { auth: true,  fn: handleRemoveDevice },
+  getLoginOverview:        { auth: true,  fn: handleGetLoginOverview },
+  getLoginLogs:            { auth: true,  fn: handleGetLoginLogs },
+  forceLogout:             { auth: true,  fn: handleForceLogout },
+  clearLoginLogs:          { auth: true,  fn: handleClearLoginLogs },
+  setLoginKeep:            { auth: true,  fn: handleSetLoginKeep },
+  getProfile:              { auth: true,  fn: handleGetProfile },
+  updateProfile:           { auth: true,  fn: handleUpdateProfile },
+  changePassword:          { auth: true,  fn: handleChangePassword },
 
   // 產品(產品搜尋表)
   searchProducts:          { auth: true, fn: handleSearchProducts },
@@ -182,6 +190,7 @@ function doPost(e) {
       if (route.auth) {
         body._user = requireAuth(body); // handler 需要知道是誰在操作時用 body._user
         requirePermission_(body.action, body._user); // 依目前(即時查詢)的角色檢查這個動作能不能做
+        touchSession_(body._user); // 約每 5 分鐘更新一次「最後使用」
       }
       result = route.fn(body);
     }
@@ -218,7 +227,8 @@ SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFoll
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
-SCHEMA[SHEET_USERS] = ['Username', 'PasswordHash', 'Role', 'DisplayName'];
+SCHEMA[SHEET_USERS] = ['Username', 'PasswordHash', 'Role', 'DisplayName', 'Phone', 'Email', 'Birthday'];
+SCHEMA[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DisplayName', 'Result', 'DeviceId', 'DeviceLabel', 'LastActive', 'EndTime', 'EndReason'];
 /** 公司分類固定選項（客戶管理頁下拉選單用，"AOI同業資料" 目前沒有既有資料，先開放選項給之後手動建立）。 */
 var CUSTOMER_CATEGORIES = ['AOI同業資料', '器材原廠', '機構合作設備商', '一般客戶'];
 /** 帳號角色：admin(管理員，全部功能) / sales(業務) / fae(工程/FAE)。 */
@@ -228,7 +238,7 @@ SCHEMA[SHEET_SOFTWARE] = ['Name'];
 SCHEMA[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 SCHEMA[SHEET_SHORTCUTS] = ['Username', 'Title', 'Url', 'OpenOnStart', 'SortOrder'];
 SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated'];
-SCHEMA[SHEET_DEVICES] = ['DeviceId', 'Username', 'DeviceLabel', 'TokenHash', 'CreatedDate', 'LastSeenDate'];
+SCHEMA[SHEET_DEVICES] = ['DeviceId', 'Username', 'DeviceLabel', 'TokenHash', 'CreatedDate', 'LastSeenDate', 'LoginTime', 'LastSeenTime'];
 
 /**
  * 這些欄位強制設成「純文字」，避免試算表自動轉型：
@@ -240,8 +250,9 @@ TEXT_COLUMNS[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'AccuracyUm'];
 TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone'];
-TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash'];
-TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash'];
+TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday'];
+TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
+TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash', 'LoginTime', 'LastSeenTime'];
 TEXT_COLUMNS[SHEET_PRICE_HISTORY] = ['ProductInternalModel', 'CaseID'];
 TEXT_COLUMNS[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel'];
 TEXT_COLUMNS[SHEET_FAVORITES] = ['Username', 'InternalModel'];
@@ -269,8 +280,11 @@ PERMISSIONS['addUser'] = ['admin'];
 PERMISSIONS['updateUser'] = ['admin'];
 PERMISSIONS['deleteUser'] = ['admin'];
 PERMISSIONS['resetUserPassword'] = ['admin'];
-PERMISSIONS['getDevices'] = ['admin'];
-PERMISSIONS['removeDevice'] = ['admin'];
+PERMISSIONS['getLoginOverview'] = ['admin'];
+PERMISSIONS['getLoginLogs'] = ['admin'];
+PERMISSIONS['forceLogout'] = ['admin'];
+PERMISSIONS['clearLoginLogs'] = ['admin'];
+PERMISSIONS['setLoginKeep'] = ['admin'];
 PERMISSIONS['addStaff'] = ['admin'];
 PERMISSIONS['updateStaff'] = ['admin'];
 PERMISSIONS['deleteStaff'] = ['admin'];
@@ -637,10 +651,20 @@ function generatePasswordHash() {
 // ------------------------------------------------------------
 // 登入 / 驗證
 // ------------------------------------------------------------
-/** 發一個 6 小時的一般工作階段 token（帳密登入、裝置自動登入都用這個）。 */
-function issueSessionToken_(username, displayName) {
+/** 台灣時間 yyyy-MM-dd HH:mm。 */
+function nowStr() {
+  return Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd HH:mm');
+}
+
+/**
+ * 發一個一般工作階段 token（快取最多 6 小時，這是 Apps Script 快取的上限）。
+ * 真正「不用一直登入」靠的是 Devices 分頁記住的裝置：token 過期時前端會自動用裝置權杖換新的，使用者看不到。
+ * token 裡記下 deviceId，才能知道這是哪一台裝置、被強制登出時馬上失效。
+ */
+function issueSessionToken_(username, displayName, deviceId) {
   var token = Utilities.getUuid();
-  CacheService.getScriptCache().put('token_' + token, JSON.stringify({ username: username, displayName: displayName }), 21600); // 6 小時
+  CacheService.getScriptCache().put('token_' + token, JSON.stringify({ username: username, displayName: displayName, deviceId: deviceId || '' }), 21600);
+  if (deviceId) CacheService.getScriptCache().remove('revoked_' + deviceId);
   return token;
 }
 
@@ -655,22 +679,98 @@ function findUserRow_(username) {
   return null;
 }
 
+// ---- 登入歷程（LoginLogs）----
+var DEFAULT_LOGIN_KEEP = 20;
+
+function getLoginKeep_() {
+  var v = Number(getConfig('LoginLogKeep'));
+  return v >= 1 ? v : DEFAULT_LOGIN_KEEP;
+}
+
+/** 這台裝置、這個帳號目前「還沒結束」的那一筆登入紀錄（列號），沒有回傳 -1。 */
+function findOpenLogRow_(deviceId, username) {
+  var data = getSheet(SHEET_LOGIN_LOGS).getDataRange().getValues();
+  var h = data[0];
+  var dCol = h.indexOf('DeviceId');
+  var uCol = h.indexOf('Username');
+  var eCol = h.indexOf('EndTime');
+  var rCol = h.indexOf('Result');
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (data[i][dCol] === deviceId && data[i][uCol] === username && !data[i][eCol] && data[i][rCol] === '成功') return i + 1;
+  }
+  return -1;
+}
+
+function closeOpenLogs_(deviceId, username, reason) {
+  var row;
+  var guard = 0;
+  while ((row = findOpenLogRow_(deviceId, username)) > -1 && guard++ < 20) {
+    updateRowFields(SHEET_LOGIN_LOGS, row, { EndTime: nowStr(), EndReason: reason });
+  }
+}
+
+function appendLoginLog_(username, displayName, result, deviceId, deviceLabel) {
+  var now = nowStr();
+  appendObjectRow(SHEET_LOGIN_LOGS, {
+    LoginTime: now,
+    Username: username || '',
+    DisplayName: displayName || '',
+    Result: result,
+    DeviceId: deviceId || '',
+    DeviceLabel: deviceLabel || '',
+    LastActive: result === '成功' ? now : '',
+    EndTime: result === '成功' ? '' : now,
+    EndReason: result === '成功' ? '' : '密碼錯誤',
+  });
+}
+
+/** 每個帳號只保留最近 keep 筆歷程，超過的最舊紀錄刪掉（還在登入中的那筆一定保留）。 */
+function trimLoginLogs_(username) {
+  var keep = getLoginKeep_();
+  var sheet = getSheet(SHEET_LOGIN_LOGS);
+  var data = sheet.getDataRange().getValues();
+  var h = data[0];
+  var uCol = h.indexOf('Username');
+  var eCol = h.indexOf('EndTime');
+  var rows = [];
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][uCol] === username) rows.push({ row: i + 1, open: !data[i][eCol] });
+  }
+  var excess = rows.length - keep;
+  if (excess <= 0) return 0;
+  var toDelete = [];
+  for (var k = 0; k < rows.length && toDelete.length < excess; k++) {
+    if (!rows[k].open) toDelete.push(rows[k].row);
+  }
+  toDelete.sort(function (a, b) {
+    return b - a;
+  });
+  toDelete.forEach(function (r) {
+    sheet.deleteRow(r);
+  });
+  return toDelete.length;
+}
+
 function handleLogin(body) {
   var username = body.username;
   var password = body.password;
   var user = findUserRow_(username);
   if (!user || user['PasswordHash'] !== sha256(password)) {
+    if (username) appendLoginLog_(String(username), '', '失敗', body.deviceId, body.deviceLabel);
     return { success: false, message: '帳號或密碼錯誤' };
   }
 
   var displayName = user['DisplayName'] || username;
-  var token = issueSessionToken_(username, displayName);
+  var token = issueSessionToken_(username, displayName, body.deviceId);
   var result = { success: true, token: token, username: username, displayName: displayName, role: user['Role'] || '' };
 
   // 前端有傳裝置 ID 的話（「記住這台裝置」），額外發一組長效裝置權杖，讓下次自動登入不用再打密碼
   if (body.deviceId) {
+    closeOpenLogs_(body.deviceId, username, '重新登入');
     result.deviceToken = rememberDevice_(body.deviceId, username, body.deviceLabel);
   }
+  appendLoginLog_(username, displayName, '成功', body.deviceId, body.deviceLabel);
+  trimLoginLogs_(username);
   return result;
 }
 
@@ -681,6 +781,7 @@ function handleLogin(body) {
 function rememberDevice_(deviceId, username, deviceLabel) {
   var deviceToken = Utilities.getUuid() + Utilities.getUuid();
   var today = todayStr();
+  var now = nowStr();
   var sheet = getSheet(SHEET_DEVICES);
   var data = sheet.getDataRange().getValues();
   var header = data[0];
@@ -689,15 +790,15 @@ function rememberDevice_(deviceId, username, deviceLabel) {
 
   for (var i = 1; i < data.length; i++) {
     if (data[i][idCol] === deviceId && data[i][userCol] === username) {
-      updateRowFields(SHEET_DEVICES, i + 1, { TokenHash: sha256(deviceToken), DeviceLabel: deviceLabel || data[i][header.indexOf('DeviceLabel')], LastSeenDate: today });
+      updateRowFields(SHEET_DEVICES, i + 1, { TokenHash: sha256(deviceToken), DeviceLabel: deviceLabel || data[i][header.indexOf('DeviceLabel')], LastSeenDate: today, LoginTime: now, LastSeenTime: now });
       return deviceToken;
     }
   }
-  appendObjectRow(SHEET_DEVICES, { DeviceId: deviceId, Username: username, DeviceLabel: deviceLabel || '', TokenHash: sha256(deviceToken), CreatedDate: today, LastSeenDate: today });
+  appendObjectRow(SHEET_DEVICES, { DeviceId: deviceId, Username: username, DeviceLabel: deviceLabel || '', TokenHash: sha256(deviceToken), CreatedDate: today, LastSeenDate: today, LoginTime: now, LastSeenTime: now });
   return deviceToken;
 }
 
-/** 前端帶著瀏覽器 cookie 存的 deviceId + deviceToken 來，不用打密碼就換一個新的 6 小時工作階段 token。 */
+/** 前端帶著瀏覽器 cookie 存的 deviceId + deviceToken 來，不用打密碼就換一個新的工作階段 token（使用者完全無感）。 */
 function handleResumeSession(body) {
   if (!body.deviceId || !body.deviceToken) return { success: false, message: '缺少裝置資訊' };
 
@@ -714,15 +815,25 @@ function handleResumeSession(body) {
       var username = data[i][userCol];
       var user = findUserRow_(username);
       if (!user) return { success: false, message: '帳號不存在，請重新登入' }; // 帳號被刪除
-      sheet.getRange(i + 1, header.indexOf('LastSeenDate') + 1).setValue(todayStr());
+      updateRowFields(SHEET_DEVICES, i + 1, { LastSeenDate: todayStr(), LastSeenTime: nowStr() });
+      var logRow = findOpenLogRow_(body.deviceId, username);
+      if (logRow > -1) updateRowFields(SHEET_LOGIN_LOGS, logRow, { LastActive: nowStr() });
       var displayName = user['DisplayName'] || username;
-      return { success: true, token: issueSessionToken_(username, displayName), username: username, displayName: displayName, role: user['Role'] || '' };
+      return { success: true, token: issueSessionToken_(username, displayName, body.deviceId), username: username, displayName: displayName, role: user['Role'] || '' };
     }
   }
   return { success: false, message: '這台裝置的登入紀錄已被移除，請重新輸入帳密登入' };
 }
 
-/** 登入頁按「登出」：把這台裝置從 Devices 分頁刪掉，下次要重新輸入帳密。 */
+/** 結束一台裝置的登入：關掉歷程、讓這台裝置還在用的 token 馬上失效、刪掉記住的裝置。 */
+function endDeviceRow_(sheet, rowNum, reason) {
+  var obj = readRowAsObject(SHEET_DEVICES, rowNum);
+  closeOpenLogs_(obj['DeviceId'], obj['Username'], reason);
+  CacheService.getScriptCache().put('revoked_' + obj['DeviceId'], '1', 21600);
+  sheet.deleteRow(rowNum);
+}
+
+/** 按「登出」：把這台裝置結束掉，下次要重新輸入帳密。 */
 function handleLogoutDevice(body) {
   if (!body.deviceId) return { success: true };
   var sheet = getSheet(SHEET_DEVICES);
@@ -731,50 +842,227 @@ function handleLogoutDevice(body) {
   var idCol = header.indexOf('DeviceId');
   var userCol = header.indexOf('Username');
   for (var i = data.length - 1; i >= 1; i--) {
-    if (data[i][idCol] === body.deviceId && data[i][userCol] === body._user.username) sheet.deleteRow(i + 1);
+    if (data[i][idCol] === body.deviceId && data[i][userCol] === body._user.username) endDeviceRow_(sheet, i + 1, '本人登出');
   }
+  closeOpenLogs_(body.deviceId, body._user.username, '本人登出');
   return { success: true };
 }
 
-/** 只有 admin 角色能管理裝置清單，其他角色一律拒絕。 */
+/** 只有 admin 角色能用的管理功能。 */
 function requireAdmin_(body) {
   var user = findUserRow_(body._user.username);
   if (!user || user['Role'] !== 'admin') throw new Error('權限不足，只有管理員可以使用這個功能');
 }
 
-/** 管理員頁面：列出所有人記住的裝置，方便踢除遺失的手機/電腦。不回傳權杖雜湊，避免外洩。 */
-function handleGetDevices(body) {
-  requireAdmin_(body);
-  var data = sheetToObjects(SHEET_DEVICES);
-  var devices = data.rows.map(function (r, i) {
-    return { RowIndex: i + 2, DeviceId: r['DeviceId'], Username: r['Username'], DeviceLabel: r['DeviceLabel'], CreatedDate: r['CreatedDate'], LastSeenDate: r['LastSeenDate'] };
-  });
-  devices.sort(function (a, b) {
-    return new Date(b['LastSeenDate']) - new Date(a['LastSeenDate']);
-  });
-  return { success: true, devices: devices };
-}
-
-/** 管理員頁面：移除一台裝置，該裝置下次打開網頁會被踢回登入頁。 */
-function handleRemoveDevice(body) {
-  requireAdmin_(body);
-  if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
-  getSheet(SHEET_DEVICES).deleteRow(body.rowIndex);
-  return { success: true };
-}
-
-/** 驗證 token，回傳 { username, displayName }。 */
+/** 驗證 token，回傳 { username, displayName, deviceId }；這台裝置被強制登出的話直接擋掉。 */
 function requireAuth(body) {
   var token = body.token;
   if (!token) throw new Error('尚未登入');
-  var cached = CacheService.getScriptCache().get('token_' + token);
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('token_' + token);
   if (!cached) throw new Error('登入已逾期，請重新登入');
+  var user;
   try {
-    return JSON.parse(cached);
+    user = JSON.parse(cached);
   } catch (e) {
     // 舊版登入時快取裡只存帳號字串
-    return { username: cached, displayName: cached };
+    user = { username: cached, displayName: cached };
   }
+  if (user.deviceId && cache.get('revoked_' + user.deviceId)) throw new Error('這台裝置已被登出，請重新登入');
+  return user;
+}
+
+/** 約每 5 分鐘（有操作時）更新這台裝置的「最後使用」，避免每個動作都寫試算表。 */
+function touchSession_(user) {
+  if (!user || !user.deviceId) return;
+  var cache = CacheService.getScriptCache();
+  var key = 'touch_' + user.deviceId;
+  if (cache.get(key)) return;
+  cache.put(key, '1', 300);
+  try {
+    var now = nowStr();
+    var sheet = getSheet(SHEET_DEVICES);
+    var data = sheet.getDataRange().getValues();
+    var h = data[0];
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][h.indexOf('DeviceId')] === user.deviceId && data[i][h.indexOf('Username')] === user.username) {
+        updateRowFields(SHEET_DEVICES, i + 1, { LastSeenDate: todayStr(), LastSeenTime: now });
+        break;
+      }
+    }
+    var logRow = findOpenLogRow_(user.deviceId, user.username);
+    if (logRow > -1) updateRowFields(SHEET_LOGIN_LOGS, logRow, { LastActive: now });
+  } catch (e) {
+    // 更新「最後使用」失敗不影響正常操作
+  }
+}
+
+// ---- 登入紀錄管理頁（僅 admin）----
+function parseTime_(str) {
+  var t = String(str || '');
+  if (t.length < 16) return null;
+  var d = new Date(t.slice(0, 10) + 'T' + t.slice(11, 16) + ':00+08:00');
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function minutesBetween_(a, b) {
+  var x = parseTime_(a);
+  var y = parseTime_(b);
+  if (!x || !y) return 0;
+  return Math.max(0, Math.round((y.getTime() - x.getTime()) / 60000));
+}
+
+function handleGetLoginOverview(body) {
+  var names = {};
+  sheetToObjects(SHEET_USERS).rows.forEach(function (u) {
+    names[u['Username']] = u['DisplayName'] || u['Username'];
+  });
+  var data = sheetToObjects(SHEET_DEVICES);
+  var devices = data.rows.map(function (r, i) {
+    return {
+      RowIndex: i + 2,
+      Username: r['Username'],
+      DisplayName: names[r['Username']] || r['Username'],
+      DeviceLabel: r['DeviceLabel'],
+      LoginTime: r['LoginTime'] || r['CreatedDate'],
+      LastSeenTime: r['LastSeenTime'] || r['LastSeenDate'],
+      IsCurrent: r['DeviceId'] === body._user.deviceId,
+    };
+  });
+  devices.sort(function (a, b) {
+    return String(b.LastSeenTime).localeCompare(String(a.LastSeenTime));
+  });
+  return { success: true, devices: devices, keep: getLoginKeep_(), logCount: sheetToObjects(SHEET_LOGIN_LOGS).rows.length };
+}
+
+function handleGetLoginLogs(body) {
+  var from = body.from || '0000-00-00';
+  var to = body.to || '9999-99-99';
+  var kw = String(body.keyword || '').toLowerCase();
+  var logs = [];
+  sheetToObjects(SHEET_LOGIN_LOGS).rows.forEach(function (r, i) {
+    var day = String(r['LoginTime']).slice(0, 10);
+    if (day < from || day > to) return;
+    if (body.result && r['Result'] !== body.result) return;
+    if (kw && [r['Username'], r['DisplayName'], r['DeviceLabel']].join(' ').toLowerCase().indexOf(kw) === -1) return;
+    var end = r['EndTime'] || r['LastActive'];
+    logs.push({
+      RowIndex: i + 2,
+      LoginTime: r['LoginTime'],
+      Username: r['Username'],
+      DisplayName: r['DisplayName'],
+      Result: r['Result'],
+      DeviceLabel: r['DeviceLabel'],
+      LastActive: r['LastActive'],
+      EndTime: r['EndTime'],
+      EndReason: r['EndReason'],
+      Minutes: r['Result'] === '成功' ? minutesBetween_(r['LoginTime'], r['LastActive'] || end) : 0,
+      Active: r['Result'] === '成功' && !r['EndTime'],
+    });
+  });
+  logs.sort(function (a, b) {
+    return String(b.LoginTime).localeCompare(String(a.LoginTime));
+  });
+
+  var summary = {};
+  logs.forEach(function (l) {
+    var u = summary[l.Username] || (summary[l.Username] = { Username: l.Username, DisplayName: l.DisplayName, Logins: 0, Fails: 0, Minutes: 0, LastLogin: '', LastDevice: '' });
+    if (l.DisplayName) u.DisplayName = l.DisplayName;
+    if (l.Result === '成功') {
+      u.Logins++;
+      u.Minutes += l.Minutes;
+      if (!u.LastLogin || l.LoginTime > u.LastLogin) {
+        u.LastLogin = l.LoginTime;
+        u.LastDevice = l.DeviceLabel;
+      }
+    } else {
+      u.Fails++;
+    }
+  });
+  var summaryList = Object.keys(summary).map(function (k) {
+    return summary[k];
+  });
+  summaryList.sort(function (a, b) {
+    return b.Minutes - a.Minutes;
+  });
+  return { success: true, logs: logs, summary: summaryList };
+}
+
+/** scope: device(rowIndex) / user(username) / all。永遠不會把「目前正在操作的這台裝置」登出，避免把自己鎖在外面。 */
+function handleForceLogout(body) {
+  var sheet = getSheet(SHEET_DEVICES);
+  var data = sheet.getDataRange().getValues();
+  var h = data[0];
+  var count = 0;
+  for (var i = data.length - 1; i >= 1; i--) {
+    var isSelf = data[i][h.indexOf('DeviceId')] === body._user.deviceId;
+    var match = body.scope === 'all' || (body.scope === 'user' && data[i][h.indexOf('Username')] === body.username) || (body.scope === 'device' && i + 1 === Number(body.rowIndex));
+    if (match && !isSelf) {
+      endDeviceRow_(sheet, i + 1, '管理員強制登出');
+      count++;
+    }
+  }
+  return { success: true, count: count };
+}
+
+/** 一鍵清除歷程：刪掉已結束的紀錄與失敗紀錄，還在登入中的保留。 */
+function handleClearLoginLogs(body) {
+  var sheet = getSheet(SHEET_LOGIN_LOGS);
+  var data = sheet.getDataRange().getValues();
+  var eCol = data[0].indexOf('EndTime');
+  var n = 0;
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (data[i][eCol]) {
+      sheet.deleteRow(i + 1);
+      n++;
+    }
+  }
+  return { success: true, deleted: n };
+}
+
+function handleSetLoginKeep(body) {
+  var keep = Math.min(Math.max(Math.floor(Number(body.keep)) || DEFAULT_LOGIN_KEEP, 1), 500);
+  setConfig('LoginLogKeep', keep);
+  var seen = {};
+  sheetToObjects(SHEET_LOGIN_LOGS).rows.forEach(function (r) {
+    seen[r['Username']] = true;
+  });
+  Object.keys(seen).forEach(function (u) {
+    trimLoginLogs_(u);
+  });
+  return { success: true, keep: keep, logCount: sheetToObjects(SHEET_LOGIN_LOGS).rows.length };
+}
+
+// ---- 個人資料（只能改自己的）----
+function handleGetProfile(body) {
+  var u = findUserRow_(body._user.username);
+  if (!u) return { success: false, message: '帳號不存在' };
+  return { success: true, profile: { Username: u['Username'], DisplayName: u['DisplayName'] || u['Username'], Role: u['Role'], Phone: u['Phone'] || '', Email: u['Email'] || '', Birthday: u['Birthday'] || '' } };
+}
+
+function handleUpdateProfile(body) {
+  var name = String(body.displayName || '').trim();
+  if (!name) return { success: false, message: '姓名不能空白' };
+  var email = String(body.email || '').trim();
+  if (email && (email.indexOf('@') < 1 || email.indexOf('.', email.indexOf('@')) < 0 || email.indexOf(' ') > -1)) return { success: false, message: 'Email 格式不正確' };
+  var birthday = String(body.birthday || '').trim();
+  if (birthday && !isDateStr(birthday)) return { success: false, message: '生日格式要是 YYYY-MM-DD' };
+  var row = findUserRowIndex_(body._user.username);
+  if (row === -1) return { success: false, message: '帳號不存在' };
+  updateRowFields(SHEET_USERS, row, { DisplayName: name, Phone: String(body.phone || '').trim(), Email: email, Birthday: birthday });
+  // 登入中的 token 也換成新姓名，畫面與之後新增的資料才會用新名字
+  var cache = CacheService.getScriptCache();
+  cache.put('token_' + body.token, JSON.stringify({ username: body._user.username, displayName: name, deviceId: body._user.deviceId || '' }), 21600);
+  return { success: true, displayName: name };
+}
+
+function handleChangePassword(body) {
+  var u = findUserRow_(body._user.username);
+  if (!u || u['PasswordHash'] !== sha256(String(body.oldPassword || ''))) return { success: false, message: '目前的密碼不正確' };
+  var np = String(body.newPassword || '');
+  if (np.length < 6) return { success: false, message: '新密碼至少要 6 個字' };
+  updateRowFields(SHEET_USERS, findUserRowIndex_(body._user.username), { PasswordHash: sha256(np) });
+  return { success: true };
 }
 
 // ------------------------------------------------------------
