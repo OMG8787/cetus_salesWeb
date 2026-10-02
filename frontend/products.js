@@ -665,6 +665,45 @@ async function importFlir() {
   searchProducts();
 }
 
+async function importBasler() {
+  if (!confirm('要從 Basler 官方文件站（docs.baslerweb.com）抓相機的型號與規格嗎？約 430 款（ace / ace 2 / dart / boost / pulse 等），同時寫進選型計算的 GigE / USB3 分頁。baslerweb.com 主站有防爬蟲，鏡頭與光源抓不到，且不含價格。只會新增還沒有的型號，分段執行約需 3～6 分鐘，請不要關閉頁面。')) return;
+  const NL = String.fromCharCode(10);
+  let added = 0;
+  let enriched = 0;
+  let camAdded = 0;
+  let skipped = 0;
+  let step = 0;
+  let offset = 0;
+  const notes = [];
+  try {
+    while (true) {
+      step++;
+      setLoadingText('匯入 Basler：第 ' + step + ' 段（已新增 ' + added + ' 筆）...');
+      const r = await callApi('importBaslerProducts', { offset });
+      if (!r.success) throw new Error(r.message || '匯入失敗');
+      added += r.added;
+      enriched += r.enriched || 0;
+      camAdded += r.camAdded || 0;
+      skipped += r.skippedNoPixel || 0;
+      if (r.errors && r.errors.length) notes.push(...r.errors);
+      if (r.done || step > 60) break;
+      offset = r.nextOffset;
+      setLoadingText('匯入 Basler：已讀 ' + offset + ' / ' + r.total + ' 頁...');
+    }
+    const lines = ['匯入完成：新增 ' + added + ' 筆產品、替既有產品補上 ' + enriched + ' 筆規格。', '選型計算相機分頁 +' + camAdded + '。'];
+    if (skipped) lines.push(skipped + ' 款相機缺像元尺寸，選型計算會略過。');
+    if (notes.length) lines.push('部分頁面讀取失敗：' + notes.slice(0, 6).join('、') + '（可以再按一次匯入補抓）');
+    alert(lines.join(NL));
+  } catch (e) {
+    alert('匯入中斷：' + (e.message || e) + NL + '已經匯入的資料會保留，再按一次「匯入 Basler 官網」會接著補。');
+  } finally {
+    setLoadingText('處理中，請稍候...');
+  }
+  clearCached('products_all');
+  clearCached('visionCatalog_v3');
+  searchProducts();
+}
+
 async function dedupeData() {
   const NL = String.fromCharCode(10);
   const preview = await callApi('dedupeData', { apply: false });

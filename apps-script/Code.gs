@@ -107,6 +107,7 @@ var ROUTES = {
   importDehongProducts:    { auth: true, fn: handleImportDehongProducts },
   dedupeData:              { auth: true, fn: handleDedupeData },
   importFlirProducts:      { auth: true, fn: handleImportFlirProducts },
+  importBaslerProducts:    { auth: true, fn: handleImportBaslerProducts },
   getCalcCatalog:          { auth: true, fn: handleGetCalcCatalog },
   syncCalcCatalog:         { auth: true, fn: handleSyncCalcCatalog },
 
@@ -302,6 +303,7 @@ PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
 PERMISSIONS['importDehongProducts'] = ['admin', 'sales'];
 PERMISSIONS['dedupeData'] = ['admin'];
 PERMISSIONS['importFlirProducts'] = ['admin', 'sales'];
+PERMISSIONS['importBaslerProducts'] = ['admin', 'sales'];
 PERMISSIONS['syncCalcCatalog'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
@@ -2727,6 +2729,142 @@ function handleImportFlirProducts(body) {
   var r = body.stage === 'visible' ? importFlirVisible_(Number(body.offset) || 0) : importFlirThermal_();
   r.success = true;
   if (r.done === undefined) r.done = true;
+  return r;
+}
+
+// ------------------------------------------------------------
+// Basler 相機規格匯入
+// baslerweb.com 主站有防爬蟲機制（程式請求一律回 403），所以改讀 Basler 官方的產品文件站
+// docs.baslerweb.com：sitemap 列出所有相機型號頁，每頁第一個表格就是完整規格（解析度、感測器、像元尺寸、介面…）。
+// 文件站只有相機（ace / ace 2 / dart / boost / pulse 等），沒有鏡頭、光源、價格，這些請到主站手動查。
+// ------------------------------------------------------------
+var BASLER_DOCS = 'https://docs.baslerweb.com';
+var BASLER_MODEL_SLUG = /^(a2a|aca|boa|daa|dma|pua|ral|rac|ela|elb|pia|sca)\d/i;
+var BASLER_CHUNK_MS = 150 * 1000;
+
+function baslerCellText_(raw) {
+  var t = String(raw).replace(/<\/(p|li|div|tr)>|<br\s*\/?>/gi, ' ; ');
+  return htmlDecode_(t).replace(/\s+/g, ' ').replace(/(\s*;\s*)+/g, '; ').replace(/^;\s*|;\s*$/g, '').trim();
+}
+
+/** 型號頁的規格表 → {欄位: 值}。 */
+function parseBaslerSpecs_(html) {
+  var out = {};
+  var tm = html.match(/<table[\s\S]*?<\/table>/i);
+  if (!tm) return out;
+  var rre = /<tr[\s\S]*?<\/tr>/gi;
+  var r;
+  while ((r = rre.exec(tm[0])) !== null) {
+    var cells = [];
+    var cre = /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi;
+    var c;
+    while ((c = cre.exec(r[0])) !== null) cells.push(baslerCellText_(c[1]));
+    if (cells.length === 2 && cells[0] && cells[1] && !out.hasOwnProperty(cells[0])) out[cells[0]] = cells[1];
+  }
+  return out;
+}
+
+function baslerInterface_(text) {
+  var t = String(text || '');
+  if (/usb/i.test(t)) return 'USB3.0';
+  if (/gigabit ethernet|gige|ethernet/i.test(t)) return 'GigE';
+  return '';
+}
+
+function importBaslerProducts_(offset) {
+  var started = new Date().getTime();
+  var errors = [];
+  var tasks = [];
+  var sm = fetchUrl_(BASLER_DOCS + '/sitemap.xml');
+  var re = /<loc>([^<]+)<\/loc>/g;
+  var m;
+  while ((m = re.exec(sm)) !== null) {
+    var slug = m[1].replace(BASLER_DOCS + '/', '');
+    if (BASLER_MODEL_SLUG.test(slug)) tasks.push(slug);
+  }
+  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var byModel = {};
+  existing.forEach(function (r, i) {
+    [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+    });
+  });
+  var newRows = [];
+  var cams = [];
+  var enriched = 0;
+  var pages = 1;
+  var i = offset;
+  for (; i < tasks.length; i++) {
+    if (i > offset && new Date().getTime() - started > BASLER_CHUNK_MS) break;
+    var link = BASLER_DOCS + '/' + tasks[i];
+    var html;
+    try {
+      html = fetchUrl_(link);
+      pages++;
+    } catch (e) {
+      errors.push(tasks[i] + '（' + e.message + '）');
+      continue;
+    }
+    var specs = parseBaslerSpecs_(html);
+    var tm = html.match(/<title>([\s\S]*?)<\/title>/);
+    var model = tm ? htmlDecode_(tm[1]).replace(/\s*\|.*$/, '').trim() : tasks[i];
+    var resMatch = String(specs['Resolution (H x V Pixels)'] || '').match(/(\d{3,5})\s*x\s*(\d{3,5})/i);
+    if (!resMatch || !specs['Pixel Size (H x V)']) continue; // 不是相機規格頁
+    var key = model.toUpperCase();
+    var specsJson = JSON.stringify(specs);
+    var iface = baslerInterface_(specs['Image Data Interface']);
+    var pixel = (String(specs['Pixel Size (H x V)']).match(/[\d.]+/) || [''])[0];
+    var sensorType = String(specs['Sensor Type'] || '');
+    var sensorModel = sensorType.split(';')[0].trim();
+    var spec = [specs['Product Family'], specs['Mono / Color'], specs['Image Data Interface'], resMatch[1] + '×' + resMatch[2], specs['Resolution'], specs['Frame Rate (at Default Settings)'] && String(specs['Frame Rate (at Default Settings)']).split(';')[0], sensorModel && '感測器 ' + sensorModel, pixel && '像元 ' + pixel + 'μm', specs['Sensor Format'] && '靶面 ' + specs['Sensor Format'], specs['Lens Mount']].filter(Boolean).join('，');
+    var hit = byModel[key];
+    if (hit) {
+      if (!hit.specs && hit.row > 0) {
+        updateRowFields(SHEET_PRODUCTS, hit.row, { Specs: specsJson, SourceUrl: link });
+        hit.specs = specsJson;
+        enriched++;
+      }
+    } else {
+      newRows.push({
+        InternalModel: model,
+        SupplierModel: model,
+        Supplier: 'Basler',
+        Origin: '德國',
+        Category: '相機',
+        Notes: 'Basler 官方文件站；' + spec,
+        LastUpdated: todayStr(),
+        SourceUrl: link,
+        Specs: specsJson,
+      });
+      byModel[key] = { row: -1, specs: specsJson };
+    }
+    if (iface) {
+      cams.push({
+        model: model,
+        brand: 'Basler',
+        sourceName: 'Basler 官網文件',
+        link: link,
+        w: Number(resMatch[1]),
+        h: Number(resMatch[2]),
+        fps: parseFloat(specs['Frame Rate (at Default Settings)']) || '',
+        sensor: sensorModel,
+        iface: iface,
+        color: /color/i.test(specs['Mono / Color'] || '') ? '彩色' : /mono/i.test(specs['Mono / Color'] || '') ? '黑白' : '',
+        shutter: /global/i.test(sensorType) ? '全局' : /rolling/i.test(sensorType) ? '卷簾' : '',
+        pixel: pixel,
+        size: String(specs['Sensor Format'] || ''),
+        type: /CCD/.test(sensorType) ? 'CCD' : 'CMOS',
+      });
+    }
+  }
+  var added = writeProductRows_(newRows);
+  var camRes = appendDehongCamerasToSheets_(cams);
+  return { added: added, enriched: enriched, camAdded: camRes.added, skippedNoPixel: camRes.skippedNoPixel.length, done: i >= tasks.length, nextOffset: i, total: tasks.length, pages: pages, errors: errors.slice(0, 3) };
+}
+
+function handleImportBaslerProducts(body) {
+  var r = importBaslerProducts_(Number(body.offset) || 0);
+  r.success = true;
   return r;
 }
 
