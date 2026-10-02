@@ -19,7 +19,7 @@
 const STANDARD_FOCAL_LENGTHS = [8, 12, 16, 25, 35, 50, 75];
 const TOL_SYMBOLS = { pm: '±', p: '+', m: '-' };
 const CALC_STATE_KEY = 'aoi_calc_state';
-const CATALOG_CACHE_KEY = 'visionCatalog_v4';
+const CATALOG_CACHE_KEY = 'visionCatalog_v5';
 const CALC_INPUT_IDS = [
   'c-fov-l', 'c-fov-s', 'c-acc-tol', 'c-acc', 'c-acc-unit', 'c-ppf', 'c-wd',
   'c-cam-source', 'c-cam-iface', 'c-brand', 'c-origin', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
@@ -877,6 +877,7 @@ async function loadCatalogs() {
     cameraCatalog = cached.cameras;
     lensCatalog = cached.lenses;
     missingPixelCameras = cached.missing || 0;
+    incompleteInfo = cached.incomplete || { count: 0, names: [] };
     onCatalogReady();
     return;
   }
@@ -888,8 +889,9 @@ async function loadCatalogs() {
       const c = r.catalog;
       cameraCatalog = [...parseCameraTable(sheetToGvizTable(c['GigE']), 'GigE'), ...parseCameraTable(sheetToGvizTable(c['USB3']), 'USB 3.0')];
       lensCatalog = { fa: parseLensTable(sheetToGvizTable(c['FA鏡頭']), false), tele: parseLensTable(sheetToGvizTable(c['遠心鏡頭']), true) };
+      incompleteInfo = { count: r.incomplete || 0, names: r.incompleteNames || [] };
       if (cameraCatalog.length) {
-        setCached(CATALOG_CACHE_KEY, { cameras: cameraCatalog, lenses: lensCatalog, missing: missingPixelCameras });
+        setCached(CATALOG_CACHE_KEY, { cameras: cameraCatalog, lenses: lensCatalog, missing: missingPixelCameras, incomplete: incompleteInfo });
         onCatalogReady();
         return;
       }
@@ -914,9 +916,11 @@ async function syncCatalog() {
 function reloadCatalog() {
   clearCached(CATALOG_CACHE_KEY);
   clearCached('visionCatalog_v2');
+  clearCached('visionCatalog_v4');
   cameraCatalog = [];
   lensCatalog = { fa: [], tele: [] };
   missingPixelCameras = 0;
+  incompleteInfo = { count: 0, names: [] };
   loadCatalogs();
 }
 
@@ -1011,7 +1015,7 @@ function onCatalogReady() {
   rebuildBrandOriginOptions();
   renderCamModelOptions(savedSelects['c-cam-model']);
   status.textContent = cameraCatalog.length
-    ? `型錄：相機 ${cameraCatalog.length} 款、FA 鏡頭 ${lensCatalog.fa.length} 款、遠心鏡頭 ${lensCatalog.tele.length} 款${missingPixelCameras ? `（另有 ${missingPixelCameras} 款相機缺像元尺寸，沒有納入計算，請到試算表相機分頁補上）` : ''}`
+    ? `型錄：相機 ${cameraCatalog.length} 款、FA 鏡頭 ${lensCatalog.fa.length} 款、遠心鏡頭 ${lensCatalog.tele.length} 款${missingPixelCameras ? `（另有 ${missingPixelCameras} 款相機缺像元尺寸，沒有納入計算，請到產品頁補上）` : ''}${incompleteInfo.count ? `（產品資料庫另有 ${incompleteInfo.count} 筆相機/鏡頭選型規格沒填完整，不會被推薦：${incompleteInfo.names.slice(0, 5).join('、')}${incompleteInfo.count > 5 ? '…' : ''}，到「產品搜尋」勾「只看資料不完整的」補上）` : ''}`
     : '讀不到相機型錄，請改用手動輸入規格';
   document.getElementById('c-lens-model').dataset.type = ''; // 強制重建鏡頭下拉
   recalc();
@@ -1041,6 +1045,7 @@ function cellValue(row, i) {
 const isNameHeader = (l) => (l.includes('公司型號') || l === 'Name') && !l.includes('原廠型號');
 
 let missingPixelCameras = 0; // 型錄裡缺像元尺寸、因此沒有納入選型的相機數
+let incompleteInfo = { count: 0, names: [] }; // 產品資料庫裡相機/鏡頭但選型規格沒填完整、因此永遠不會被推薦的
 
 function parseCameraTable(table, iface) {
   if (!table || !table.rows || !table.rows.length) return [];

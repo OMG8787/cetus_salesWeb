@@ -35,12 +35,24 @@ async function addProduct() {
     compatibleGroup: document.getElementById('np-compatible-group').value,
     refPrice: document.getElementById('np-ref-price').value,
     notes: document.getElementById('np-notes').value,
+    brand: document.getElementById('np-brand').value,
+    interface: document.getElementById('np-interface').value,
+    resolution: document.getElementById('np-resolution').value,
+    pixelSize: document.getElementById('np-pixel').value,
+    sensorSize: document.getElementById('np-sensor').value,
+    fps: document.getElementById('np-fps').value,
+    mount: document.getElementById('np-mount').value,
+    focalLength: document.getElementById('np-focal').value,
+    magnification: document.getElementById('np-mag').value,
+    wd: document.getElementById('np-wd').value,
+    dof: document.getElementById('np-dof').value,
+    focusWd: document.getElementById('np-focuswd').value,
   });
   if (!result.success) return alert(result.message);
   clearCached('products_all');
   alert('已新增產品');
   document.getElementById('new-product-form').style.display = 'none';
-  ['np-internal-model', 'np-supplier-model', 'np-supplier', 'np-supplier-contact', 'np-supplier-email', 'np-origin', 'np-compatible-group', 'np-ref-price', 'np-list-price', 'np-notes'].forEach(
+  ['np-internal-model', 'np-supplier-model', 'np-supplier', 'np-supplier-contact', 'np-supplier-email', 'np-origin', 'np-compatible-group', 'np-ref-price', 'np-list-price', 'np-notes', 'np-brand', 'np-interface', 'np-resolution', 'np-pixel', 'np-sensor', 'np-fps', 'np-mount', 'np-focal', 'np-mag', 'np-wd', 'np-dof', 'np-focuswd'].forEach(
     (id) => (document.getElementById(id).value = '')
   );
   searchProducts();
@@ -260,6 +272,18 @@ async function viewProduct(internalModel, rowIndex) {
   document.getElementById('ep-ref-price').value = result.product.RefPrice || '';
   document.getElementById('ep-list-price').value = result.product.RefPrice ? (parseFloat(result.product.RefPrice) * 2).toFixed(2) : '';
   document.getElementById('ep-notes').value = result.product.Notes || '';
+  document.getElementById('ep-brand').value = result.product.Brand || '';
+  document.getElementById('ep-interface').value = result.product.Interface || '';
+  document.getElementById('ep-resolution').value = result.product.Resolution || '';
+  document.getElementById('ep-pixel').value = result.product.PixelSize || '';
+  document.getElementById('ep-sensor').value = result.product.SensorSize || '';
+  document.getElementById('ep-fps').value = result.product.FPS || '';
+  document.getElementById('ep-mount').value = result.product.Mount || '';
+  document.getElementById('ep-focal').value = result.product.FocalLength || '';
+  document.getElementById('ep-mag').value = result.product.Magnification || '';
+  document.getElementById('ep-wd').value = result.product.WD || '';
+  document.getElementById('ep-dof').value = result.product.DOF || '';
+  document.getElementById('ep-focuswd').value = result.product.FocusWD || '';
 
   renderPriceHistoryTable(result.priceHistory || []);
 }
@@ -319,6 +343,18 @@ async function saveProductEdit() {
     CompatibleGroup: document.getElementById('ep-compatible-group').value,
     RefPrice: document.getElementById('ep-ref-price').value,
     Notes: document.getElementById('ep-notes').value,
+    Brand: document.getElementById('ep-brand').value,
+    Interface: document.getElementById('ep-interface').value,
+    Resolution: document.getElementById('ep-resolution').value,
+    PixelSize: document.getElementById('ep-pixel').value,
+    SensorSize: document.getElementById('ep-sensor').value,
+    FPS: document.getElementById('ep-fps').value,
+    Mount: document.getElementById('ep-mount').value,
+    FocalLength: document.getElementById('ep-focal').value,
+    Magnification: document.getElementById('ep-mag').value,
+    WD: document.getElementById('ep-wd').value,
+    DOF: document.getElementById('ep-dof').value,
+    FocusWD: document.getElementById('ep-focuswd').value,
   };
   const result = await callApi('updateProduct', { rowIndex: currentProductRow, internalModel: currentInternalModel, fields });
   if (result.success) {
@@ -509,12 +545,29 @@ window.addEventListener('DOMContentLoaded', async () => {
 // ------------------------------------------------------------
 // 資料完整度提醒 + 上次修改日期（讓人自己判斷要不要再回原廠詢價）
 // ------------------------------------------------------------
+/** 相機 / 鏡頭的選型規格有沒有填完整（沒填完整的，選型計算不會推薦它）。 */
+function specIssue(p) {
+  if (p.Category !== '相機' && p.Category !== '鏡頭') return '';
+  const iface = String(p.Interface || '');
+  const isNum = (v) => parseFloat(v) > 0;
+  if (p.Category === '相機') {
+    if (!iface) return '缺選型規格（介面）：選型不會推薦';
+    if (!/gige|usb/i.test(iface) || (/usb\s*2/i.test(iface) && !/3/.test(iface))) return ''; // 不在選型範圍
+    if (!p.Resolution || !isNum(p.PixelSize)) return '缺解析度/像元尺寸：選型不會推薦';
+    return '';
+  }
+  if (isNum(p.Magnification) || isNum(p.FocalLength)) return '';
+  return iface ? '' : '缺焦距/倍率：選型不會推薦';
+}
+
 function productIssues(p) {
   const issues = [];
   if (!p.InternalModel) issues.push('缺內部型號');
   if (!p.RefPrice) issues.push('缺底價');
   if (!p.Supplier) issues.push('缺供應商');
   if (!p.SupplierContactEmail) issues.push('缺詢價信箱');
+  const spec = specIssue(p);
+  if (spec) issues.push(spec);
   return issues;
 }
 
@@ -616,7 +669,7 @@ async function importDehong() {
     setLoadingText('處理中，請稍候...');
   }
   clearCached('products_all');
-  clearCached('visionCatalog_v4');
+  clearCached('visionCatalog_v5');
   searchProducts();
 }
 
@@ -661,7 +714,7 @@ async function importFlir() {
     setLoadingText('處理中，請稍候...');
   }
   clearCached('products_all');
-  clearCached('visionCatalog_v4');
+  clearCached('visionCatalog_v5');
   searchProducts();
 }
 
@@ -700,7 +753,46 @@ async function importBasler() {
     setLoadingText('處理中，請稍候...');
   }
   clearCached('products_all');
-  clearCached('visionCatalog_v4');
+  clearCached('visionCatalog_v5');
+  searchProducts();
+}
+
+async function importMindvision() {
+  if (!confirm('要從邁德威視官網（mindvision.com.cn）抓全系列產品嗎？約 665 筆（面陣/線陣/智能/3D 相機、鏡頭、光源、光源控制器、圖像採集卡），面陣相機會同時寫進選型規格。只會新增還沒有的型號，分段執行約需 5～10 分鐘，請不要關閉頁面，不含價格。')) return;
+  const NL = String.fromCharCode(10);
+  let added = 0;
+  let enriched = 0;
+  let camAdded = 0;
+  let skipped = 0;
+  let step = 0;
+  let offset = 0;
+  const notes = [];
+  try {
+    while (true) {
+      step++;
+      setLoadingText('匯入邁德威視：第 ' + step + ' 段（已新增 ' + added + ' 筆）...');
+      const r = await callApi('importMindvisionProducts', { offset });
+      if (!r.success) throw new Error(r.message || '匯入失敗');
+      added += r.added;
+      enriched += r.enriched || 0;
+      camAdded += r.camAdded || 0;
+      skipped += r.skippedNoPixel || 0;
+      if (r.errors && r.errors.length) notes.push(...r.errors);
+      if (r.done || step > 60) break;
+      offset = r.nextOffset;
+      setLoadingText('匯入邁德威視：已讀 ' + offset + ' / ' + r.total + ' 頁...');
+    }
+    const lines = ['匯入完成：新增 ' + added + ' 筆產品、替既有產品補上 ' + enriched + ' 筆規格。', '面陣相機選型規格 +' + camAdded + '。'];
+    if (skipped) lines.push(skipped + ' 款相機缺像元尺寸，選型計算會略過，請到產品頁補上。');
+    if (notes.length) lines.push('部分頁面讀取失敗：' + notes.slice(0, 6).join('、') + '（可以再按一次匯入補抓）');
+    alert(lines.join(NL));
+  } catch (e) {
+    alert('匯入中斷：' + (e.message || e) + NL + '已經匯入的資料會保留，再按一次「匯入邁德威視官網」會接著補。');
+  } finally {
+    setLoadingText('處理中，請稍候...');
+  }
+  clearCached('products_all');
+  clearCached('visionCatalog_v5');
   searchProducts();
 }
 
@@ -718,6 +810,6 @@ async function dedupeData() {
   if (!done.success) return alert(done.message);
   alert(`已合併，刪除 ${done.removed} 筆重複資料。`);
   clearCached('products_all');
-  clearCached('visionCatalog_v4');
+  clearCached('visionCatalog_v5');
   searchProducts();
 }

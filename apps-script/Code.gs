@@ -20,8 +20,11 @@
  * 試算表分頁與欄位(詳見 README.md)：
  *   Products      - InternalModel, SupplierModel, Supplier, SupplierContact,
  *                    SupplierContactEmail, Origin, Category, CompatibleGroup, RefPrice, Notes, LastUpdated, SourceUrl, Specs
+ *                    Brand, Interface, Resolution, PixelSize, SensorSize, FPS, Mount, FocalLength, Magnification, WD, DOF, FocusWD
  *                    （LastUpdated=上次修改日期，前端用來提醒資料多久沒更新、要不要重新詢價；
- *                    SourceUrl=資料來源網址，Specs=官網抓到的完整規格(JSON)，之後選型計算可以直接用）
+ *                    SourceUrl=資料來源網址，Specs=官網抓到的完整規格(JSON)；
+ *                    後 12 欄是「選型規格」：相機/鏡頭的型號、價格、規格都放在 Products 這一張表，選型計算直接從這裡讀，
+ *                    不再另外維護 GigE/USB3/FA鏡頭/遠心鏡頭 分頁（舊分頁只在 setup 時併進來一次））
  *   PriceHistory  - Date, ProductInternalModel, Supplier, Price, Currency, CaseID, Notes
  *   Cases         - CaseID, CustomerName, EndCustomerName, ProjectContact, ContactPhone,
  *                    Salesperson, FAE, ProductApplication, TestObject, SoftwareName,
@@ -48,8 +51,7 @@
  *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
  *   Shortcuts     - Username, Title, Url, OpenOnStart, SortOrder（每人自己的首頁「常用網站」）
  *   Memos         - Owner, OwnerName, Title, Content, Shared, CreatedDate, LastUpdated（備忘錄，預設只有自己看，Shared=是 全站可看）
- *   GigE / USB3 / FA鏡頭 / 遠心鏡頭 - 選型計算用的相機與鏡頭型錄（完整複製自原本的公開型錄，欄位一模一樣，之後直接在這裡編修；
- *                    遠心鏡頭另外多出德鴻官網規格欄位）。標題列由 setup 從型錄複製，不在 SCHEMA 內
+ *   GigE / USB3 / FA鏡頭 / 遠心鏡頭 - 【舊分頁，已停用】選型計算改讀 Products；setup 會把這些分頁裡的資料併進 Products（只補空欄位），之後可自行刪除
  *   Software      - Name（案件「軟體名稱」下拉選單的選項，公司準系統只有幾套；新名稱在案件頁會詢問是否新增）
  *   Config        - Key, Value
  *   Devices       - DeviceId, Username, DeviceLabel, TokenHash, CreatedDate, LastSeenDate
@@ -108,6 +110,7 @@ var ROUTES = {
   dedupeData:              { auth: true, fn: handleDedupeData },
   importFlirProducts:      { auth: true, fn: handleImportFlirProducts },
   importBaslerProducts:    { auth: true, fn: handleImportBaslerProducts },
+  importMindvisionProducts: { auth: true, fn: handleImportMindvisionProducts },
   getCalcCatalog:          { auth: true, fn: handleGetCalcCatalog },
   syncCalcCatalog:         { auth: true, fn: handleSyncCalcCatalog },
 
@@ -227,7 +230,7 @@ function jsonOutput(obj) {
  * 之後要加新欄位，改這裡再重新執行一次 setup 就好。
  */
 var SCHEMA = {};
-SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated', 'SourceUrl', 'Specs'];
+SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated', 'SourceUrl', 'Specs', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD'];
 SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Price', 'Currency', 'CaseID', 'Notes'];
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
@@ -263,7 +266,7 @@ TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday'];
 TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
 TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash', 'LoginTime', 'LastSeenTime'];
 TEXT_COLUMNS[SHEET_PRICE_HISTORY] = ['ProductInternalModel', 'CaseID'];
-TEXT_COLUMNS[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel'];
+TEXT_COLUMNS[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD'];
 TEXT_COLUMNS[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 TEXT_COLUMNS[SHEET_SHORTCUTS] = ['Username'];
 TEXT_COLUMNS[SHEET_MEMOS] = ['Owner'];
@@ -304,6 +307,7 @@ PERMISSIONS['importDehongProducts'] = ['admin', 'sales'];
 PERMISSIONS['dedupeData'] = ['admin'];
 PERMISSIONS['importFlirProducts'] = ['admin', 'sales'];
 PERMISSIONS['importBaslerProducts'] = ['admin', 'sales'];
+PERMISSIONS['importMindvisionProducts'] = ['admin', 'sales'];
 PERMISSIONS['syncCalcCatalog'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
@@ -392,9 +396,9 @@ function setup() {
   importLegacyCustomers_(log);
   seedSoftwareFromCases_(log);
   try {
-    copyCalcCatalog_(log);
+    migrateLegacyCalcSheets_(log);
   } catch (e) {
-    log.push('選型計算型錄複製失敗（之後可在選型計算頁按「同步型錄」重試）：' + e.message);
+    log.push('舊型錄分頁整併失敗（之後可在選型計算頁按「同步型錄」重試）：' + e.message);
   }
   try {
     importCatalogProducts_(log);
@@ -1250,6 +1254,18 @@ function handleAddProduct(body) {
     RefPrice: body.refPrice || '',
     Notes: body.notes || '',
     LastUpdated: todayStr(),
+    Brand: body.brand || '',
+    Interface: body.interface || '',
+    Resolution: body.resolution || '',
+    PixelSize: body.pixelSize || '',
+    SensorSize: body.sensorSize || '',
+    FPS: body.fps || '',
+    Mount: body.mount || '',
+    FocalLength: body.focalLength || '',
+    Magnification: body.magnification || '',
+    WD: body.wd || '',
+    DOF: body.dof || '',
+    FocusWD: body.focusWd || '',
   });
   return { success: true };
 }
@@ -1287,10 +1303,10 @@ function handleDeleteProduct(body) {
 // ------------------------------------------------------------
 var DEFAULT_CATALOG_SHEET_ID = '1Enn6Yr6bOtlpWUSoy_Hd00VKWQh-0m4x';
 var CATALOG_TABS = [
-  { tab: 'GigE', category: '相機', kind: 'camera', label: 'GigE' },
-  { tab: 'USB3', category: '相機', kind: 'camera', label: 'USB3.0' },
-  { tab: 'FA鏡頭', category: '鏡頭', kind: 'fa', label: 'FA鏡頭' },
-  { tab: '遠心鏡頭', category: '鏡頭', kind: 'tele', label: '遠心鏡頭' },
+  { tab: 'GigE', category: '相機', kind: 'camera', label: 'GigE', iface: 'GigE' },
+  { tab: 'USB3', category: '相機', kind: 'camera', label: 'USB3.0', iface: 'USB3.0' },
+  { tab: 'FA鏡頭', category: '鏡頭', kind: 'fa', label: 'FA鏡頭', iface: '' },
+  { tab: '遠心鏡頭', category: '鏡頭', kind: 'tele', label: '遠心鏡頭', iface: '' },
 ];
 
 function fetchCatalogTab_(sheetId, tab) {
@@ -1337,19 +1353,93 @@ function catalogSpec_(kind, header, row) {
   return parts.join('，');
 }
 
+/** 欄名關鍵字（依序嘗試）找欄位，找不到回傳 -1。 */
+function catalogColAny_(header, keywords) {
+  for (var k = 0; k < keywords.length; k++) {
+    var i = catalogCol_(header, keywords[k]);
+    if (i > -1) return i;
+  }
+  return -1;
+}
+
+/** 「1920X1200」「1920*1200」之類 → 「1920X1200」；解析不出來回傳空字串。 */
+function hwResolution_(v) {
+  var m = String(v == null ? '' : v).match(/(\d{3,5})\s*[xX*×]\s*(\d{3,5})/);
+  return m ? m[1] + 'X' + m[2] : '';
+}
+
+/** 把一張型錄表格（標題列 + 資料列，欄名中英文連在一起）轉成硬體紀錄，之後寫進 Products。 */
+function hwRecordsFromTable_(tab, header, rows) {
+  header = header.map(String);
+  var iBrand = catalogCol_(header, '原廠名稱');
+  var iOrig = catalogCol_(header, '原廠型號');
+  var iName = catalogCol_(header, '公司型號');
+  var iRes = catalogColAny_(header, ['解析度', 'Resolution']);
+  var iSize = catalogColAny_(header, ['感測器尺寸', '靶面', 'SensorSize']);
+  var iPix = catalogColAny_(header, ['像元尺寸', 'PixelSize']);
+  var iFps = catalogColAny_(header, ['偵率', '幀率', 'FPS']);
+  var iGain = catalogCol_(header, '最大增益');
+  var iFocal = catalogColAny_(header, ['焦距', 'FocusLength']);
+  var iFocusWd = catalogColAny_(header, ['最低對焦距離', '最近對焦', 'FocusWD']);
+  var iMount = catalogColAny_(header, ['LensType', '鏡頭類型']);
+  var iMag = catalogColAny_(header, ['放大倍率', 'MAG']);
+  var iWd = catalogColAny_(header, ['工作距離']);
+  var iDof = catalogColAny_(header, ['景深', 'DOF']);
+  function cell(row, i) {
+    return i > -1 ? String(row[i] == null ? '' : row[i]).trim() : '';
+  }
+  var out = [];
+  rows.forEach(function (row) {
+    var name = cell(row, iName);
+    var orig = cell(row, iOrig);
+    var brand = cell(row, iBrand);
+    if (!name && !orig) return; // 空白列
+    var rec = {
+      model: name || orig,
+      brand: brand,
+      note: '',
+      base: {
+        InternalModel: name,
+        SupplierModel: orig,
+        Supplier: brand,
+        Category: tab.category,
+        Notes: tab.label + '；' + catalogSpec_(tab.kind, header, row),
+      },
+    };
+    if (tab.kind === 'camera') {
+      rec.interface = tab.iface;
+      rec.resolution = hwResolution_(cell(row, iRes));
+      rec.pixel = cell(row, iPix);
+      rec.fps = cell(row, iFps);
+      var size = cell(row, iSize);
+      if (tab.tab === 'USB3') {
+        // USB3 分頁的靶面尺寸欄位有位移，會落在「最大增益」欄
+        var alt = cell(row, iGain);
+        if (alt.indexOf('"') > -1) size = alt;
+      }
+      rec.sensorSize = size;
+    } else if (tab.kind === 'fa') {
+      rec.resolution = cell(row, iRes);
+      rec.sensorSize = cell(row, iSize);
+      rec.focal = cell(row, iFocal);
+      rec.focusWd = cell(row, iFocusWd);
+      rec.mount = cell(row, iMount);
+    } else {
+      rec.resolution = cell(row, iRes);
+      rec.sensorSize = cell(row, iSize);
+      rec.mag = cell(row, iMag);
+      rec.wd = cell(row, iWd);
+      rec.dof = cell(row, iDof);
+    }
+    out.push(rec);
+  });
+  return out;
+}
+
+/** 從公開型錄把相機/鏡頭型號與規格寫進 Products：沒有的新增，已有的只補空白的選型規格欄，不動你填過的資料。 */
 function importCatalogProducts_(log) {
   var sheetId = getConfig('CatalogSheetId') || DEFAULT_CATALOG_SHEET_ID;
-  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
-  var byInternal = {};
-  var bySupplierModel = {};
-  existing.forEach(function (r) {
-    if (r['InternalModel']) byInternal[String(r['InternalModel'])] = true;
-    if (r['SupplierModel']) bySupplierModel[r['Supplier'] + '|' + r['SupplierModel']] = true;
-  });
-
-  var today = todayStr();
-  var added = 0;
-  var missingInternal = 0;
+  var records = [];
   var skippedTabs = [];
   CATALOG_TABS.forEach(function (t) {
     var rows;
@@ -1360,36 +1450,16 @@ function importCatalogProducts_(log) {
       return;
     }
     if (rows.length < 2) return;
-    var header = rows[0];
-    var iSupplier = catalogCol_(header, '原廠名稱');
-    var iOrigModel = catalogCol_(header, '原廠型號');
-    var iName = catalogCol_(header, '公司型號');
-    rows.slice(1).forEach(function (row) {
-      var supplier = iSupplier > -1 ? String(row[iSupplier] || '').trim() : '';
-      var origModel = iOrigModel > -1 ? String(row[iOrigModel] || '').trim() : '';
-      var internal = iName > -1 ? String(row[iName] || '').trim() : '';
-      if (!internal && !origModel) return; // 空白列
-      if (internal && byInternal[internal]) return;
-      if (origModel && bySupplierModel[supplier + '|' + origModel]) return;
-      appendObjectRow(SHEET_PRODUCTS, {
-        InternalModel: internal,
-        SupplierModel: origModel,
-        Supplier: supplier,
-        Category: t.category,
-        Notes: t.label + '；' + catalogSpec_(t.kind, header, row),
-        LastUpdated: today,
-      });
-      if (internal) byInternal[internal] = true;
-      if (origModel) bySupplierModel[supplier + '|' + origModel] = true;
-      if (!internal) missingInternal++;
-      added++;
-    });
+    records = records.concat(hwRecordsFromTable_(t, rows[0], rows.slice(1)));
   });
-
-  var msg = '型錄匯入：新增 ' + added + ' 筆產品（型錄沒有價格與供應商聯絡資料；其中 ' + missingInternal + ' 筆缺內部型號，產品頁會提醒補資料）';
+  var missingInternal = records.filter(function (r) {
+    return !r.base.InternalModel;
+  }).length;
+  var r = upsertHardware_(records);
+  var msg = '型錄匯入：新增 ' + r.created + ' 筆產品、補上 ' + r.updated + ' 筆選型規格（型錄沒有價格與供應商聯絡資料；其中 ' + missingInternal + ' 筆缺內部型號，產品頁會提醒補資料）';
   if (skippedTabs.length) msg += '；略過：' + skippedTabs.join('、');
   if (log) log.push(msg);
-  return { added: added, missingInternal: missingInternal, skipped: skippedTabs, message: msg };
+  return { added: r.created, updated: r.updated, missingInternal: missingInternal, skipped: skippedTabs, message: msg };
 }
 
 function handleImportCatalogProducts(body) {
@@ -1398,9 +1468,12 @@ function handleImportCatalogProducts(body) {
 }
 
 // ------------------------------------------------------------
-// 選型計算型錄：把原本公開型錄的 4 個分頁（GigE / USB3 / FA鏡頭 / 遠心鏡頭）完整複製到自己的試算表，
-// 欄位與內容一模一樣；之後選型計算改讀這 4 個分頁，可以自己直接補資料、修改。
-// 只補缺的：公司型號已存在的列完全不動，所以自己改過的內容不會被覆蓋。
+// 硬體資料單一來源 = Products
+// 相機/鏡頭的型號、價格、供應商、規格都在 Products 同一張表：詢價、查產品直接找它，
+// 選型計算也直接讀它的「選型規格」欄位（Brand / Interface / Resolution / PixelSize / SensorSize / FPS /
+// FocalLength / Magnification / WD / DOF / FocusWD …）。這樣不會發生「產品資料庫有、選型卻永遠推薦不到」。
+// 規格欄位沒填完整的相機/鏡頭，選型計算頁與產品頁都會提醒。
+// 舊的 GigE / USB3 / FA鏡頭 / 遠心鏡頭 分頁只在 setup 時併進來一次（只補空欄位），之後不再使用。
 // ------------------------------------------------------------
 var CALC_SHEETS = [
   { name: 'GigE', kind: 'camera' },
@@ -1408,120 +1481,204 @@ var CALC_SHEETS = [
   { name: 'FA鏡頭', kind: 'fa' },
   { name: '遠心鏡頭', kind: 'tele' },
 ];
+var HW_NO_SELECT = '不納入選型';
 
-/** 遠心鏡頭分頁在原本 12 欄之後多出來的德鴻官網規格欄位。 */
-var TELE_EXTRA_COLS = ['遠心度', '光學畸變', '光圈', 'MTF>0.3 (LP/MM)', '相機接口', '分辨率(um)', '視野 2/3"', '視野 1"', '視野 1.1"', '視野 1/2"', '視野 1/3"', '資料來源'];
-
-function calcSheetKeyCol_(header) {
-  return catalogCol_(header, '公司型號');
+function hwNum_(v) {
+  var m = String(v == null ? '' : v).match(/\d+(?:\.\d+)?/);
+  return m ? m[0] : '';
 }
 
-/** 取得分頁（沒有就建立），確保標題列有 needed 這些欄位（缺的補在最後面）。回傳最新標題列。 */
-function ensureCalcSheetColumns_(sheet, needed) {
-  var lastCol = sheet.getLastColumn();
-  var header = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
-  var missing = needed.filter(function (c) {
-    return header.indexOf(c) === -1;
+function hwKey_(v) {
+  return String(v == null ? '' : v).trim().toUpperCase();
+}
+
+/**
+ * 把硬體紀錄寫進 Products（以內部型號或供應商型號對應）：
+ *  - 已有這個型號：只補「還是空白」的選型規格欄，你填過的不會被覆蓋；
+ *  - 沒有：新增一列（rec.base 放要一起寫的欄位，例如 Supplier / Category / Notes / SourceUrl）。
+ * rec = { model, brand, interface, resolution, pixel, sensorSize, fps, mount, focal, mag, wd, dof, focusWd, note, base }
+ * 回傳 { updated, created }。
+ */
+function upsertHardware_(records) {
+  var fieldMap = { Brand: 'brand', Interface: 'interface', Resolution: 'resolution', PixelSize: 'pixel', SensorSize: 'sensorSize', FPS: 'fps', Mount: 'mount', FocalLength: 'focal', Magnification: 'mag', WD: 'wd', DOF: 'dof', FocusWD: 'focusWd' };
+  var numeric = { PixelSize: 1, FPS: 1, FocalLength: 1, Magnification: 1, FocusWD: 1 };
+  var sheet = getSheet(SHEET_PRODUCTS);
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var col = {};
+  header.forEach(function (h, i) {
+    col[h] = i;
   });
-  if (missing.length) {
-    sheet.getRange(1, header.length + 1, 1, missing.length).setValues([missing]);
-    sheet.getRange(1, header.length + 1, 1, missing.length).setNumberFormat('@');
-    header = header.concat(missing);
-  }
-  sheet.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#eef2f7');
-  if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1);
-  return header;
-}
-
-function writeCalcRows_(sheet, header, rows) {
-  if (!rows.length) return;
-  var values = rows.map(function (r) {
-    var out = [];
-    for (var i = 0; i < header.length; i++) out.push(r[i] === undefined || r[i] === null ? '' : String(r[i]));
-    return out;
+  var lastRow = sheet.getLastRow();
+  var data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, header.length).getValues() : [];
+  var rowByKey = {};
+  data.forEach(function (r, i) {
+    [r[col['InternalModel']], r[col['SupplierModel']]].forEach(function (x) {
+      if (x !== '' && x != null) rowByKey[hwKey_(x)] = i;
+    });
   });
-  var range = sheet.getRange(sheet.getLastRow() + 1, 1, values.length, header.length);
-  range.setNumberFormat('@'); // 文字格式：避免 1/2" 之類被轉成日期、640X480 被亂轉型
-  range.setValues(values);
-}
 
-/** 從公開型錄複製（只補缺的列）。回傳每個分頁新增的筆數。 */
-function copyCalcCatalog_(log) {
-  var sheetId = getConfig('CatalogSheetId') || DEFAULT_CATALOG_SHEET_ID;
-  var ss = getDb_(false);
-  var summary = [];
-  CALC_SHEETS.forEach(function (cs) {
-    var rows;
-    try {
-      rows = fetchCatalogTab_(sheetId, cs.name);
-    } catch (e) {
-      summary.push(cs.name + '失敗：' + e.message);
+  var updated = 0;
+  var changed = false;
+  var notesChanged = false;
+  var pending = {};
+  var newRows = [];
+  records.forEach(function (rec) {
+    var key = hwKey_(rec.model);
+    if (!key) return;
+    var vals = {};
+    Object.keys(fieldMap).forEach(function (c) {
+      var v = rec[fieldMap[c]];
+      v = numeric[c] ? hwNum_(v) : String(v == null ? '' : v).trim();
+      if (v) vals[c] = v;
+    });
+    var idx = rowByKey[key];
+    if (idx !== undefined) {
+      var row = data[idx];
+      var did = false;
+      Object.keys(vals).forEach(function (c) {
+        if (col[c] !== undefined && String(row[col[c]]).trim() === '') {
+          row[col[c]] = vals[c];
+          did = true;
+        }
+      });
+      if (did) {
+        updated++;
+        changed = true;
+        if (rec.note && col['Notes'] !== undefined) {
+          var cur = String(row[col['Notes']] || '');
+          row[col['Notes']] = cur + (cur ? '；' : '') + rec.note;
+          notesChanged = true;
+        }
+      }
       return;
     }
-    if (rows.length < 2) return;
-    var sheet = ss.getSheetByName(cs.name) || ss.insertSheet(cs.name);
-    var srcHeader = rows[0].map(String);
-    while (srcHeader.length && !String(srcHeader[srcHeader.length - 1]).trim()) srcHeader.pop(); // 去掉來源標題列尾端的空白欄
-    var existingCols = sheet.getLastColumn();
-    var header = existingCols > 0 ? sheet.getRange(1, 1, 1, existingCols).getValues()[0].map(String) : [];
-    var fresh = header.join('') === '';
-    if (fresh) {
-      sheet.getRange(1, 1, 1, srcHeader.length).setValues([srcHeader]);
-      sheet.getRange(1, 1, 1, srcHeader.length).setNumberFormat('@');
-      header = srcHeader;
-    }
-    header = ensureCalcSheetColumns_(sheet, cs.kind === 'tele' ? srcHeader.concat(TELE_EXTRA_COLS) : srcHeader);
-
-    var keyCol = calcSheetKeyCol_(header);
-    var have = {};
-    if (sheet.getLastRow() > 1 && keyCol > -1) {
-      sheet.getRange(2, keyCol + 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (r) {
-        have[String(r[0]).trim().toUpperCase()] = true;
+    if (pending[key]) {
+      Object.keys(vals).forEach(function (c) {
+        if (!pending[key][c]) pending[key][c] = vals[c];
       });
+      return;
     }
-    var srcKey = calcSheetKeyCol_(srcHeader);
-    var toAdd = [];
-    rows.slice(1).forEach(function (r) {
-      var key = srcKey > -1 ? String(r[srcKey]).trim().toUpperCase() : '';
-      if (!key || have[key]) return; // 沒有公司型號的列（空白列或雜訊）不複製，已存在的不重複
-      // 來源欄位 → 我的分頁欄位（用欄名對應，我的分頁欄位順序被改過也不會錯位）
-      var out = [];
-      srcHeader.forEach(function (h, i) {
-        var idx = header.indexOf(h);
-        if (idx > -1) out[idx] = r[i];
-      });
-      if (key) have[key] = true;
-      toAdd.push(out);
-    });
-    writeCalcRows_(sheet, header, toAdd);
-    summary.push(cs.name + ' +' + toAdd.length);
+    var obj = Object.assign({ InternalModel: rec.model, SupplierModel: rec.model, LastUpdated: todayStr() }, rec.base || {}, vals);
+    if (rec.note) obj.Notes = (obj.Notes ? obj.Notes + '；' : '') + rec.note;
+    pending[key] = obj;
+    newRows.push(obj);
   });
-  if (log) log.push('選型計算型錄複製到自己的試算表（' + summary.join('、') + '）；之後選型計算讀這 4 個分頁，可直接編修');
-  return summary;
+
+  if (changed) {
+    var idxs = Object.keys(fieldMap)
+      .map(function (c) {
+        return col[c];
+      })
+      .filter(function (i) {
+        return i !== undefined;
+      });
+    var first = Math.min.apply(null, idxs);
+    var last = Math.max.apply(null, idxs);
+    var block = sheet.getRange(2, first + 1, data.length, last - first + 1);
+    block.setNumberFormat('@');
+    block.setValues(
+      data.map(function (r) {
+        return r.slice(first, last + 1).map(function (v) {
+          return v === '' || v == null ? '' : String(v);
+        });
+      })
+    );
+    if (notesChanged) {
+      sheet.getRange(2, col['Notes'] + 1, data.length, 1).setValues(
+        data.map(function (r) {
+          return [r[col['Notes']]];
+        })
+      );
+    }
+  }
+  var created = writeProductRows_(newRows);
+  return { updated: updated, created: created };
+}
+
+/** 官網沒有規格、本來就不適合選型的相機/鏡頭（熱像、讀碼器、液態鏡頭、FA 系列頁）標上「不納入選型」，才不會被當成資料漏填。 */
+function markExcludedHardware_() {
+  var sheet = getSheet(SHEET_PRODUCTS);
+  if (sheet.getLastRow() < 2) return 0;
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var iCat = header.indexOf('Category');
+  var iInt = header.indexOf('Interface');
+  var iNotes = header.indexOf('Notes');
+  if (iInt < 0) return 0;
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues();
+  var n = 0;
+  var out = data.map(function (r) {
+    var v = r[iInt];
+    if ((r[iCat] === '相機' || r[iCat] === '鏡頭') && String(v).trim() === '') {
+      var notes = String(r[iNotes] || '');
+      if (/^德鴻官網 海康讀碼器/.test(notes)) v = '讀碼器（' + HW_NO_SELECT + '）';
+      else if (/^FLIR 官網/.test(notes)) v = HW_NO_SELECT + '（熱像）';
+      else if (/液態鏡頭|DHC FA 鏡頭系列|LED额定功率|LED額定功率|官網只有型號與圖片/.test(notes)) v = HW_NO_SELECT;
+      if (v !== '') n++;
+    }
+    return [v];
+  });
+  if (n) sheet.getRange(2, iInt + 1, data.length, 1).setNumberFormat('@').setValues(out);
+  return n;
+}
+
+/** 舊的 4 個選型分頁（GigE / USB3 / FA鏡頭 / 遠心鏡頭）裡的資料併進 Products（只補空欄位）；分頁不存在就略過。 */
+function migrateLegacyCalcSheets_(log) {
+  var ss = getDb_(false);
+  var records = [];
+  CATALOG_TABS.forEach(function (t) {
+    var sh = ss.getSheetByName(t.tab);
+    if (!sh || sh.getLastRow() < 2) return;
+    var data = sh.getDataRange().getValues();
+    records = records.concat(hwRecordsFromTable_(t, data[0].map(String), data.slice(1)));
+  });
+  var r = records.length ? upsertHardware_(records) : { updated: 0, created: 0 };
+  var marked = markExcludedHardware_();
+  if (log && (records.length || marked)) log.push('硬體資料整併：舊型錄分頁併進 Products（新增 ' + r.created + ' 筆、補上 ' + r.updated + ' 筆選型規格）；標記 ' + marked + ' 筆不納入選型的相機/鏡頭');
+  return r;
 }
 
 function handleSyncCalcCatalog(body) {
-  var summary = copyCalcCatalog_(null);
-  return { success: true, message: '已同步選型計算型錄（' + summary.join('、') + '）' };
+  var m = migrateLegacyCalcSheets_(null);
+  var c = importCatalogProducts_(null);
+  return { success: true, message: '已整併硬體資料：舊分頁 +' + m.created + '/補 ' + m.updated + '；公開型錄 +' + c.added + '/補 ' + c.updated };
 }
 
-/** 選型計算頁用：回傳 4 個分頁的標題列與全部資料列（純文字）。分頁還沒建立就是空的。 */
+/**
+ * 選型計算頁用：從 Products 組出跟舊分頁同格式的 4 張表（標題列 + 資料列），前端解析程式不用改。
+ * 同時回傳 incomplete：相機/鏡頭產品但選型規格沒填完整（永遠不會被推薦）的數量與前幾個型號。
+ */
 function handleGetCalcCatalog(body) {
-  var ss = getDb_(false);
-  var out = {};
-  CALC_SHEETS.forEach(function (cs) {
-    var sheet = ss.getSheetByName(cs.name);
-    var data = sheet && sheet.getLastRow() > 0 ? sheet.getDataRange().getValues() : [];
-    out[cs.name] = {
-      header: data.length ? data[0].map(String) : [],
-      rows: data.slice(1).filter(function (r) {
-        return r.join('').trim() !== '';
-      }).map(function (r) {
-        return r.map(String);
-      }),
-    };
+  var tables = {
+    GigE: { header: ['原廠名稱', '公司型號', '解析度', '像元尺寸', '感測器尺寸', '偵率'], rows: [] },
+    USB3: { header: ['原廠名稱', '公司型號', '解析度', '像元尺寸', '感測器尺寸', '偵率'], rows: [] },
+    'FA鏡頭': { header: ['原廠名稱', '公司型號', '解析度', '感測器尺寸', '焦距', '最低對焦距離'], rows: [] },
+    '遠心鏡頭': { header: ['原廠名稱', '公司型號', '解析度', '感測器尺寸', '放大倍率', '工作距離', '景深'], rows: [] },
+  };
+  var incomplete = [];
+  sheetToObjects(SHEET_PRODUCTS).rows.forEach(function (r) {
+    var cat = r['Category'];
+    if (cat !== '相機' && cat !== '鏡頭') return;
+    var name = String(r['InternalModel'] || r['SupplierModel'] || '').trim();
+    if (!name) return;
+    var iface = String(r['Interface'] || '');
+    var brand = String(r['Brand'] || '');
+    if (cat === '相機') {
+      if (!iface) return incomplete.push(name);
+      var tab = /usb/i.test(iface) ? (/usb\s*2/i.test(iface) && !/3/.test(iface) ? '' : 'USB3') : /gige/i.test(iface) ? 'GigE' : '';
+      if (!tab) return; // Camera Link / 熱像 / 讀碼器等，本來就不在選型範圍
+      if (!r['Resolution']) return incomplete.push(name);
+      tables[tab].rows.push([brand, name, r['Resolution'], r['PixelSize'], r['SensorSize'], r['FPS']].map(String));
+      return;
+    }
+    if (hwNum_(r['Magnification']) && Number(hwNum_(r['Magnification'])) > 0) {
+      tables['遠心鏡頭'].rows.push([brand, name, r['Resolution'], r['SensorSize'], r['Magnification'], r['WD'], r['DOF']].map(String));
+    } else if (Number(hwNum_(r['FocalLength'])) > 0) {
+      tables['FA鏡頭'].rows.push([brand, name, r['Resolution'], r['SensorSize'], r['FocalLength'], r['FocusWD']].map(String));
+    } else if (!iface) {
+      incomplete.push(name);
+    }
   });
-  return { success: true, catalog: out };
+  return { success: true, catalog: tables, incomplete: incomplete.length, incompleteNames: incomplete.slice(0, 8) };
 }
 
 /** 德鴻官網欄位 → 遠心鏡頭分頁的一列。解析度欄位官網沒有 MP 值，依支援的最大靶面估算（1.1"→20、1"→12、其他→5）。 */
@@ -1574,50 +1731,26 @@ function dehongToTeleRecord_(it) {
   };
 }
 
-/** 把德鴻遠心鏡頭規格寫進「遠心鏡頭」分頁（公司型號沒有才新增；已有的列只補空白的德鴻欄位）。 */
+/** 把德鴻遠心鏡頭規格寫進 Products 的選型規格欄（沒有倍率的沒辦法選型，略過）。 */
 function appendDehongToTeleSheet_(items) {
-  if (!items.length) return 0;
-  var ss = getDb_(false);
-  var sheet = ss.getSheetByName('遠心鏡頭') || ss.insertSheet('遠心鏡頭');
-  var base = ['原廠名稱', '原廠型號', '鏡頭系列', '公司型號', '解析度', '放大倍率', '工作距離', '景深', '軸', '感測器尺寸', '鏡頭類型', '購物連結'];
-  var header = ensureCalcSheetColumns_(sheet, sheet.getLastColumn() > 0 ? TELE_EXTRA_COLS : base.concat(TELE_EXTRA_COLS));
-  // 欄名可能是「原廠名稱\nOriginal Company」這種中英文連在一起，用關鍵字找欄
-  function colOf(name) {
-    var exact = header.indexOf(name);
-    return exact > -1 ? exact : catalogCol_(header, name);
-  }
-  var keyCol = colOf('公司型號');
-  var rowByKey = {};
-  if (sheet.getLastRow() > 1) {
-    sheet.getRange(2, keyCol + 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (r, i) {
-      rowByKey[String(r[0]).trim().toUpperCase()] = i + 2;
-    });
-  }
-  var toAdd = [];
-  var added = 0;
+  var recs = [];
   items.forEach(function (it) {
     var rec = dehongToTeleRecord_(it);
-    if (!(Number(rec['放大倍率']) > 0)) return; // 沒有倍率就沒辦法拿來選型
-    var key = it.title.toUpperCase();
-    if (rowByKey[key] === -1) return; // 這次已經加過同型號
-    if (rowByKey[key]) {
-      TELE_EXTRA_COLS.forEach(function (c) {
-        var col = colOf(c);
-        if (col > -1 && rec[c] && !sheet.getRange(rowByKey[key], col + 1).getValue()) sheet.getRange(rowByKey[key], col + 1).setValue(rec[c]);
-      });
-      return;
-    }
-    var out = [];
-    Object.keys(rec).forEach(function (k) {
-      var col = colOf(k);
-      if (col > -1) out[col] = rec[k];
+    if (!(Number(hwNum_(rec['放大倍率'])) > 0)) return;
+    recs.push({
+      model: it.title,
+      brand: '德鴻',
+      resolution: rec['解析度'],
+      sensorSize: rec['感測器尺寸'],
+      mag: rec['放大倍率'],
+      wd: rec['工作距離'],
+      dof: rec['景深'],
+      mount: rec['相機接口'],
+      base: { Category: '鏡頭', Supplier: '德鴻' },
     });
-    rowByKey[key] = -1;
-    toAdd.push(out);
-    added++;
   });
-  writeCalcRows_(sheet, header, toAdd);
-  return added;
+  var r = upsertHardware_(recs);
+  return r.created + r.updated;
 }
 
 // ------------------------------------------------------------
@@ -1790,6 +1923,11 @@ function cameraBrand_(model) {
   return '德鴻代理品牌';
 }
 
+function hwIsSelectIface_(v) {
+  v = String(v || '');
+  return /gige/i.test(v) || (/usb/i.test(v) && !(/usb\s*2/i.test(v) && !/3/.test(v)));
+}
+
 function normSensor_(name) {
   return String(name || '').toUpperCase().replace(/SONY|ON\s*SEMI|ONSEMI|CMOSIS|TELEDYNE|\s|-/g, '');
 }
@@ -1861,7 +1999,7 @@ function buildSensorLookup_() {
  */
 var SENSOR_PIXEL_UM = {
   IMX250: 3.45, IMX252: 3.45, IMX253: 3.45, IMX255: 3.45, IMX264: 3.45, IMX265: 3.45, IMX267: 3.45, IMX273: 3.45, IMX296: 3.45, IMX297: 3.45, IMX304: 3.45, IMX342: 3.45,
-  IMX174: 5.86, IMX249: 5.86, IMX178: 2.4, IMX183: 2.4, IMX226: 1.85, IMX290: 2.9, IMX430: 9, IMX432: 9, IMX411: 3.76, IMX455: 3.76, IMX540: 2.74, IMX545: 2.74,
+  IMX287: 6.9, IMX425: 9, IMX428: 9, IMX429: 4.5, IMX392: 3.45, IMX291: 2.9, IMX307: 2.9, IMX335: 2, IMX174: 5.86, IMX249: 5.86, IMX178: 2.4, IMX183: 2.4, IMX226: 1.85, IMX290: 2.9, IMX430: 9, IMX432: 9, IMX411: 3.76, IMX455: 3.76, IMX540: 2.74, IMX545: 2.74,
   PYTHON300: 4.8, PYTHON500: 4.8, PYTHON1300: 4.8, PYTHON2000: 4.8, PYTHON5000: 4.8,
   CMV2000: 5.5, CMV4000: 5.5, MT9P031: 2.2, EV76C560: 5.3, EV76C661: 5.3, EV76C570: 5.3, ICX274: 4.4, ICX618: 5.6,
   XGS5000: 3.2, XGS12000: 3.2, GMAX0505: 2.5, GMAX2505: 2.5,
@@ -1876,87 +2014,44 @@ function inferPixelSize_(sensor) {
   return '';
 }
 
-/** 把相機寫進「GigE」「USB3」分頁。像元尺寸依序：官網表格 → 自己型錄同款感測器 → 常見感測器對照（標註請核對）→ 留空（選型會略過，填上就自動加入）。 */
+/** 把相機的選型規格寫進 Products。像元尺寸依序：官網表格 → 自己資料裡同款感測器 → 常見感測器對照（備註標註請核對）→ 留空（選型會略過並提醒補上）。 */
 function appendDehongCamerasToSheets_(cams) {
-  var ss = getDb_(false);
   var lookup = buildSensorLookup_();
-  var plan = { GigE: [], USB3: [] };
+  var records = [];
   var skippedNoPixel = [];
   cams.forEach(function (c) {
     if (!c.iface) c.iface = /^BFS-U3/i.test(c.model) ? 'USB3.0' : /^BFS-(PGE|GE)/i.test(c.model) ? 'GigE' : ''; // FLIR 的表格沒有介面欄，從型號判斷
-    var sheetName = /USB/i.test(c.iface) ? 'USB3' : /GigE/i.test(c.iface) ? 'GigE' : '';
-    if (!sheetName) return; // Camera Link 等不在選型範圍
     var pixel = c.pixel;
     var size = c.size;
+    var note = '';
     var hit = lookup[normSensor_(c.sensor)];
-    var srcName = c.sourceName || '德鴻官網';
-    var source = srcName;
-    if (!pixel && hit) {
+    if (!hwNum_(pixel) && hit) {
       pixel = hit.pixel;
       if (!size) size = hit.size;
-      source = srcName + '（像元尺寸取自自己型錄的同款感測器）';
     }
-    if (!pixel) {
+    if (!hwNum_(pixel)) {
       var guess = inferPixelSize_(c.sensor);
       if (guess) {
         pixel = String(guess);
-        source = srcName + '（像元尺寸依感測器型號推定，請核對）';
+        note = '像元尺寸依感測器型號推定，請核對原廠規格書';
       }
     }
-    if (pixel && /^[0-9.]+$/.test(pixel)) pixel = pixel + '*' + pixel + 'μm';
-    plan[sheetName].push({ cam: c, pixel: pixel, size: size, source: source });
-  });
-
-  var added = 0;
-  Object.keys(plan).forEach(function (sheetName) {
-    if (!plan[sheetName].length) return;
-    var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
-    var header = ensureCalcSheetColumns_(sheet, sheet.getLastColumn() > 0 ? ['資料來源'] : ['原廠名稱', '原廠型號', '公司型號', '畫素', '黑白/彩色', '感測器類型', '感測器型號', '像元尺寸', '感測器尺寸', '曝光方式', '解析度', '偵率', '資料介面', '購物連結', '資料來源']);
-    function colOf(name) {
-      var ex = header.indexOf(name);
-      return ex > -1 ? ex : catalogCol_(header, name);
-    }
-    var keyCol = colOf('公司型號');
-    var have = {};
-    if (sheet.getLastRow() > 1) {
-      sheet.getRange(2, keyCol + 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (r) {
-        have[String(r[0]).trim().toUpperCase()] = true;
-      });
-    }
-    var rowsOut = [];
-    plan[sheetName].forEach(function (p) {
-      var key = p.cam.model.toUpperCase();
-      if (have[key]) return;
-      have[key] = true;
-      if (!p.pixel) skippedNoPixel.push(p.cam.model);
-      var rec = {
-        '原廠名稱': p.cam.brand || cameraBrand_(p.cam.model),
-        '原廠型號': p.cam.model,
-        '公司型號': p.cam.model,
-        '畫素': String(Math.round((p.cam.w * p.cam.h) / 10000)),
-        '黑白/彩色': p.cam.color,
-        '感測器類型': p.cam.type,
-        '感測器型號': p.cam.sensor,
-        '像元尺寸': p.pixel,
-        '感測器尺寸': p.size,
-        '曝光方式': p.cam.shutter ? p.cam.shutter + (/快門$/.test(p.cam.shutter) ? '' : '快門') : '',
-        '解析度': p.cam.w + 'X' + p.cam.h,
-        '偵率': String(p.cam.fps),
-        '資料介面': p.cam.iface,
-        '購物連結': p.cam.link || DEHONG_BASE,
-        '資料來源': p.source + (p.pixel ? '' : '（缺像元尺寸，填上才會納入選型）'),
-      };
-      var out = [];
-      Object.keys(rec).forEach(function (k) {
-        var col = colOf(k);
-        if (col > -1) out[col] = rec[k];
-      });
-      rowsOut.push(out);
+    var iface = /USB/i.test(c.iface) ? (/USB\s*2/i.test(c.iface) && !/3/.test(c.iface) ? 'USB2.0' : 'USB3.0') : /GigE/i.test(c.iface) ? 'GigE' : c.iface || '其他';
+    if (hwIsSelectIface_(iface) && !hwNum_(pixel)) skippedNoPixel.push(c.model);
+    records.push({
+      model: c.model,
+      brand: c.brand || cameraBrand_(c.model),
+      interface: iface,
+      resolution: c.w + 'X' + c.h,
+      pixel: pixel,
+      sensorSize: size,
+      fps: c.fps,
+      note: note,
+      base: { Category: '相機', SourceUrl: c.link || '' },
     });
-    writeCalcRows_(sheet, header, rowsOut);
-    added += rowsOut.length;
   });
-  return { added: added, skippedNoPixel: skippedNoPixel };
+  var r = upsertHardware_(records);
+  return { added: r.updated + r.created, skippedNoPixel: skippedNoPixel };
 }
 
 /** K2 商品內頁的規格表（兩欄「欄位 / 值」，有時是三欄「分類 / 欄位 / 值」）→ {欄位: 值}。 */
@@ -2040,6 +2135,7 @@ function crawlDehongExtras_(indexHtml, errors, pagesRef) {
       InternalModel: model,
       SupplierModel: model,
       Category: '相機',
+      Interface: isReader ? '讀碼器（' + HW_NO_SELECT + '）' : '',
       Notes: '德鴻官網 ' + (isReader ? '海康讀碼器/智慧相機' : '相機（' + cameraBrand_(model) + '）') + '；' + dehongSpecSummary_(f),
       SourceUrl: DEHONG_BASE + link,
       Specs: JSON.stringify(f),
@@ -2092,6 +2188,7 @@ function crawlDehongExtras_(indexHtml, errors, pagesRef) {
         InternalModel: '',
         SupplierModel: 'DHC FA ' + title,
         Category: '鏡頭',
+        Interface: HW_NO_SELECT,
         Notes: '德鴻官網 DHC FA 鏡頭系列（官網沒有單一型號，請補內部型號）；' + dehongSpecSummary_(fields),
         SourceUrl: DEHONG_BASE + link,
         Specs: JSON.stringify(fields),
@@ -2118,6 +2215,7 @@ function crawlDehongExtras_(indexHtml, errors, pagesRef) {
           InternalModel: model,
           SupplierModel: model,
           Category: '鏡頭',
+          Interface: HW_NO_SELECT,
           Notes: '德鴻官網 液態鏡頭；' + dehongSpecSummary_(fields),
           SourceUrl: DEHONG_BASE + '/index.php/liquid-lens',
           Specs: JSON.stringify(fields),
@@ -2201,14 +2299,6 @@ function handleDedupeData(body) {
       return normKey_(r[iM]) || normKey_(r[iS]);
     };
   } }];
-  CALC_SHEETS.forEach(function (cs) {
-    targets.push({ name: cs.name, keyOf: function (h) {
-      var i = calcSheetKeyCol_(h);
-      return function (r) {
-        return i > -1 ? normKey_(r[i]) : '';
-      };
-    } });
-  });
 
   targets.forEach(function (t) {
     var sheet = ss.getSheetByName(t.name);
@@ -2394,6 +2484,7 @@ function importDehongProducts_(log, opts) {
 
   // 第二階段：相機表格、FA 鏡頭系列、液態鏡頭（頁面內容是表格，不是 K2 商品列表）
   var camAdded = { added: 0, skippedNoPixel: [] };
+  var camsToWrite = [];
   var extraCount = 0;
   if (stage === 'extras') {
     var pagesRef = { n: 0 };
@@ -2420,7 +2511,7 @@ function importDehongProducts_(log, opts) {
       added++;
       extraCount++;
     });
-    camAdded = appendDehongCamerasToSheets_(extra.cams);
+    camsToWrite = extra.cams;
   }
 
   // 一次寫入全部新產品（逐筆 appendRow 一千多筆會超過執行時間上限）
@@ -2439,6 +2530,8 @@ function importDehongProducts_(log, opts) {
   }
 
   var teleAdded = appendDehongToTeleSheet_(teleItems);
+  if (camsToWrite.length) camAdded = appendDehongCamerasToSheets_(camsToWrite);
+  markExcludedHardware_();
   var msg = '德鴻官網匯入：新增 ' + added + ' 筆產品（含相機/FA 鏡頭系列/液態鏡頭 ' + extraCount + ' 筆）、替 ' + enriched + ' 筆既有產品補上規格；選型計算分頁：遠心鏡頭 +' + teleAdded + '、相機 +' + camAdded.added + '（共讀取 ' + pages + ' 頁；官網沒有價格，底價請自己詢價後填入）';
   if (camAdded.skippedNoPixel.length) msg += '；' + camAdded.skippedNoPixel.length + ' 款相機官網沒有像元尺寸、也查不到同款感測器，已寫進相機分頁但像元尺寸留空，選型計算會略過，請補上像元尺寸後才會納入';
   if (errors.length) msg += '；失敗：' + errors.slice(0, 3).join('、');
@@ -2577,6 +2670,7 @@ function importFlirThermal_() {
         Supplier: 'FLIR (Teledyne FLIR)',
         Origin: '美國',
         Category: cat.category,
+        Interface: HW_NO_SELECT + '（熱像）',
         Notes: 'FLIR 官網 ' + cat.label + '；' + (title ? title.replace(/\s*\|\s*Flir\s*$/i, '') + '；' : '') + flirSpecSummary_(fields),
         LastUpdated: todayStr(),
         SourceUrl: FLIR_BASE + link,
@@ -2778,9 +2872,12 @@ function parseBaslerSpecs_(html) {
 
 function baslerInterface_(text) {
   var t = String(text || '');
-  if (/usb/i.test(t)) return 'USB3.0';
+  if (/usb/i.test(t)) return /usb\s*2/i.test(t) && !/3/.test(t) ? 'USB2.0' : 'USB3.0';
   if (/gigabit ethernet|gige|ethernet/i.test(t)) return 'GigE';
-  return '';
+  if (/coaxpress|cxp/i.test(t)) return 'CoaXPress';
+  if (/camera\s*link/i.test(t)) return 'Camera Link';
+  if (/mipi/i.test(t)) return 'MIPI';
+  return '其他';
 }
 
 function importBaslerProducts_(offset) {
@@ -2876,6 +2973,234 @@ function importBaslerProducts_(offset) {
 
 function handleImportBaslerProducts(body) {
   var r = importBaslerProducts_(Number(body.offset) || 0);
+  r.success = true;
+  return r;
+}
+
+// ------------------------------------------------------------
+// 邁德威視 MindVision（www.mindvision.com.cn）全系列產品匯入
+// 官網是 WordPress：先用公開的 wp-json 介面列出「产品中心」全部商品（約 665 筆），再逐頁讀規格
+// （頁面上方的簡表 + 詳細規格 .item 區塊）。相機（面陣 / 90 度 / 單板模組）會寫進選型規格；
+// 線陣、智能相機、特殊相機、3D、雙目等不適合面陣選型的，只放進 Products 並標「不納入選型」。
+// 光源、光源控制器、鏡頭、圖像採集卡一樣放進 Products（官網光源頁沒有規格，只有型號）。不含價格。
+// ------------------------------------------------------------
+var MV_BASE = 'https://www.mindvision.com.cn';
+var MV_BRAND = 'MindVision 邁德威視';
+var MV_CHUNK_MS = 150 * 1000;
+
+function mvJson_(path) {
+  return JSON.parse(fetchUrl_(MV_BASE + path));
+}
+
+/** 產品中心全部商品清單 [{id, link, title, groups:[根分類id...], leaf:[全部分類id]}]。 */
+function mvListProducts_() {
+  var cats = {};
+  [1, 2].forEach(function (pg) {
+    try {
+      mvJson_('/wp-json/wp/v2/categories?per_page=100&page=' + pg + '&_fields=id,parent').forEach(function (c) {
+        cats[c.id] = c.parent;
+      });
+    } catch (e) {
+      // 第 2 頁沒有資料時網站會回 400，忽略
+    }
+  });
+  function root(id) {
+    var guard = 0;
+    while (cats[id] && cats[id] !== 0 && cats[id] !== 23 && guard++ < 10) id = cats[id];
+    return id;
+  }
+  var out = [];
+  for (var pg = 1; pg <= 12; pg++) {
+    var list;
+    try {
+      list = mvJson_('/wp-json/wp/v2/posts?categories=23&per_page=100&page=' + pg + '&_fields=id,link,title,categories');
+    } catch (e) {
+      break;
+    }
+    if (!list.length) break;
+    list.forEach(function (x) {
+      var ids = (x.categories || []).filter(function (i) {
+        return i !== 23;
+      });
+      out.push({ id: x.id, link: x.link, title: htmlDecode_(x.title && x.title.rendered), roots: ids.map(root), cats: ids });
+    });
+    if (list.length < 100) break;
+  }
+  out.sort(function (a, b) {
+    return a.id - b.id;
+  });
+  return out;
+}
+
+/** 邁德威視商品頁 → {欄位: 值}：簡表（「型號：」這種有冒號的）+ 詳細規格區塊（<div class="item"><p>名稱</p><p>值</p></div>）。 */
+function parseMvPage_(html) {
+  var f = {};
+  parseHtmlTables_(html).forEach(function (rows) {
+    rows.forEach(function (r) {
+      if (r.length === 2) {
+        var k = String(r[0]).replace(/[：:\s]+$/g, '').replace(/\s+/g, '');
+        if (k && r[1] && !f.hasOwnProperty(k)) f[k] = String(r[1]).trim();
+      }
+    });
+  });
+  var re = /<div class="item[^"]*">\s*<p>((?:(?!<\/p>)[\s\S])*)<\/p>\s*<p>((?:(?!<\/p>)[\s\S])*)<\/p>\s*<\/div>/g;
+  var m;
+  while ((m = re.exec(html)) !== null) {
+    var k2 = htmlDecode_(m[1]).replace(/\s+/g, '');
+    var v2 = htmlDecode_(m[2]).replace(/\s+/g, ' ').trim();
+    if (k2 && v2 && v2 !== '/' && !f.hasOwnProperty(k2)) f[k2] = v2;
+  }
+  return f;
+}
+
+function mvInch_(v) {
+  var t = String(v || '').replace(/[″”“]|&#8243;/g, '"').trim();
+  if (/^\d+(\.\d+)?(\/\d+(\.\d+)?)?$/.test(t)) t += '"';
+  return t;
+}
+
+function mvInterface_(v) {
+  var t = String(v || '');
+  if (/千兆|万兆|GigE|2\.5G|10G|以太/i.test(t)) return 'GigE';
+  if (/USB\s*3/i.test(t)) return 'USB3.0';
+  if (/USB\s*2|USB2/i.test(t)) return 'USB2.0';
+  return t.trim();
+}
+
+/** 這個商品屬於哪一類：group = 相機(面陣可選型) / 其他相機(不納入選型) / 光源 / 調光器 / 鏡頭 / 採集卡。 */
+function mvClassify_(task) {
+  var roots = task.roots;
+  var has = function (id) {
+    return roots.indexOf(id) > -1;
+  };
+  if (task.cats.indexOf(96) > -1) return { category: '調光器', label: '光源控制器', kind: 'ctl' };
+  if (has(45)) return { category: '光源', label: '工業光源', kind: 'light' };
+  if (has(35)) return { category: '鏡頭', label: '工業鏡頭', kind: 'lens' };
+  if (has(43)) return { category: '其他', label: '圖像採集卡', kind: 'card' };
+  if (has(24) || has(134) || has(39)) return { category: '相機', label: has(134) ? '90度直角相機' : has(39) ? '單板相機模組' : '面陣工業相機', kind: 'cam' };
+  if (has(25)) return { category: '相機', label: '線陣工業相機', kind: 'other-cam', marker: '線陣' };
+  if (has(26)) return { category: '相機', label: '智能相機', kind: 'other-cam', marker: '智能相機' };
+  if (has(27)) return { category: '相機', label: '特殊相機', kind: 'other-cam', marker: '特殊相機' };
+  if (has(41)) return { category: '相機', label: '3D 相機', kind: 'other-cam', marker: '3D 相機' };
+  if (has(40)) return { category: '相機', label: '雙目相機模組', kind: 'other-cam', marker: '雙目模組' };
+  return { category: '相機', label: '其他相機', kind: 'other-cam', marker: '其他相機' };
+}
+
+function mvModel_(f, title) {
+  var m = f['型号'] || f['产品型号'];
+  if (m) return String(m).trim();
+  var t = String(title || '').match(/MV-[A-Za-z0-9\-\/]+/);
+  if (t) return t[0];
+  return String(title || '').replace(/工业(线阵)?相机|\s*\|\s*/g, ' ').trim();
+}
+
+function importMindvisionProducts_(offset) {
+  var started = new Date().getTime();
+  var errors = [];
+  var tasks = mvListProducts_();
+  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var byModel = {};
+  existing.forEach(function (r, i) {
+    [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+    });
+  });
+  var newRows = [];
+  var cams = [];
+  var lensRecs = [];
+  var enriched = 0;
+  var pages = 0;
+  var i = offset;
+  for (; i < tasks.length; i++) {
+    if (i > offset && new Date().getTime() - started > MV_CHUNK_MS) break;
+    var t = tasks[i];
+    var html;
+    try {
+      html = fetchUrl_(t.link);
+      pages++;
+    } catch (e) {
+      errors.push(t.title + '（' + e.message + '）');
+      continue;
+    }
+    var f = parseMvPage_(html);
+    var kind = mvClassify_(t);
+    var model = mvModel_(f, t.title);
+    if (!model) continue;
+    var key = model.toUpperCase();
+    var specsJson = JSON.stringify(f);
+    var resText = f['分辨率'] || f['分辨率@帧率'] || f['分辩率@帧率'] || '';
+    var rm = String(resText).match(/(\d{3,5})\s*[xX*×]\s*(\d{3,5})/);
+    var fpsM = String(f['分辩率@帧率'] || f['分辨率@帧率'] || '').match(/(\d+(?:\.\d+)?)\s*fps/i);
+    var iface = mvInterface_(f['数据接口'] || f['传输接口']);
+    var sensorSize = mvInch_(f['光学尺寸'] || (/[\/"″]/.test(f['传感器'] || '') ? f['传感器'] : ''));
+    var colorText = String(f['彩色/黑白'] || f['相机类型'] || '');
+    var marker = '';
+    if (kind.kind === 'other-cam') marker = kind.marker + '（' + HW_NO_SELECT + '）';
+    else if (kind.kind === 'cam' && !iface) marker = '';
+    var spec;
+    if (kind.kind === 'cam' || kind.kind === 'other-cam') {
+      spec = [colorText, iface, rm ? rm[1] + '×' + rm[2] : '', fpsM && fpsM[1] + 'fps', f['传感器型号'] && '感測器 ' + f['传感器型号'], f['像元尺寸'] && '像元 ' + f['像元尺寸'], sensorSize && '靶面 ' + sensorSize, f['镜头接口']].filter(Boolean).join('，');
+    } else if (kind.kind === 'lens') {
+      spec = ['焦距', '靶面', '像素', '物距', '光圈', '接口'].map(function (k) {
+        return f[k] ? k + ' ' + f[k] : '';
+      }).filter(Boolean).join('，');
+    } else {
+      spec = Object.keys(f).slice(0, 8).map(function (k) {
+        return k + ' ' + f[k];
+      }).join('，');
+    }
+    var hit = byModel[key];
+    if (hit) {
+      if (!hit.specs && hit.row > 0 && Object.keys(f).length) {
+        updateRowFields(SHEET_PRODUCTS, hit.row, { Specs: specsJson, SourceUrl: t.link });
+        hit.specs = specsJson;
+        enriched++;
+      }
+    } else {
+      newRows.push({
+        InternalModel: model,
+        SupplierModel: model,
+        Supplier: MV_BRAND,
+        Origin: '中國',
+        Category: kind.category,
+        Interface: marker,
+        Notes: '邁德威視官網 ' + kind.label + '；' + (spec || t.title),
+        LastUpdated: todayStr(),
+        SourceUrl: t.link,
+        Specs: specsJson,
+      });
+      byModel[key] = { row: -1, specs: specsJson };
+    }
+    if (kind.kind === 'cam' && rm && iface) {
+      cams.push({
+        model: model,
+        brand: MV_BRAND,
+        link: t.link,
+        w: Number(rm[1]),
+        h: Number(rm[2]),
+        fps: fpsM ? parseFloat(fpsM[1]) : '',
+        sensor: String(f['传感器型号'] || ''),
+        iface: iface,
+        color: /彩色|color/i.test(colorText) ? '彩色' : /黑白|mono/i.test(colorText) ? '黑白' : '',
+        shutter: /行/.test(f['曝光方式'] || '') ? '卷簾' : /帧|幀|全局/.test(f['曝光方式'] || '') ? '全局' : '',
+        pixel: String(f['像元尺寸'] || ''),
+        size: sensorSize,
+        type: /CCD/i.test(f['传感器类型'] || '') ? 'CCD' : 'CMOS',
+      });
+    } else if (kind.kind === 'other-cam') {
+      lensRecs.push({ model: model, brand: MV_BRAND, interface: marker, resolution: rm ? rm[1] + 'X' + rm[2] : '', sensorSize: sensorSize });
+    } else if (kind.kind === 'lens') {
+      lensRecs.push({ model: model, brand: MV_BRAND, resolution: hwNum_(f['像素']), sensorSize: mvInch_(f['靶面'] || f['靶面尺寸']), focal: f['焦距'], wd: f['物距'], mount: f['接口'] });
+    }
+  }
+  var added = writeProductRows_(newRows);
+  var camRes = cams.length ? appendDehongCamerasToSheets_(cams) : { added: 0, skippedNoPixel: [] };
+  if (lensRecs.length) upsertHardware_(lensRecs);
+  return { added: added, enriched: enriched, camAdded: camRes.added, skippedNoPixel: camRes.skippedNoPixel.length, done: i >= tasks.length, nextOffset: i, total: tasks.length, pages: pages, errors: errors.slice(0, 3) };
+}
+
+function handleImportMindvisionProducts(body) {
+  var r = importMindvisionProducts_(Number(body.offset) || 0);
   r.success = true;
   return r;
 }

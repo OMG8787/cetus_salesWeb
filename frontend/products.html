@@ -61,6 +61,7 @@
       <button class="btn-secondary" onclick="importDehong()" title="從德鴻視覺官網 twdehong.com 抓遠心鏡頭、光源、控制器的型號與規格（不含價格），只補還沒有的">匯入德鴻官網</button>
       <button class="btn-secondary" onclick="importFlir()" title="從 FLIR 官網抓熱像/研發相機、研發鏡頭，以及 FLIR 可見光工業相機(Blackfly S 等，來源為 Teledyne 官網)的型號與規格（不含價格），只補還沒有的">匯入 FLIR 官網</button>
       <button class="btn-secondary" onclick="importBasler()" title="從 Basler 官方文件站(docs.baslerweb.com)抓相機型號與規格（不含價格；主站有防爬蟲，鏡頭與光源抓不到），只補還沒有的">匯入 Basler 官網</button>
+      <button class="btn-secondary" onclick="importMindvision()" title="從邁德威視官網 mindvision.com.cn 抓全系列產品（相機、鏡頭、光源、控制器、採集卡）的型號與規格（不含價格），只補還沒有的">匯入邁德威視官網</button>
       <label class="inline-check"><input type="checkbox" id="product-only-fav" onchange="onProductSearchInput()" /> ★ 只看常用</label>
       <label class="inline-check"><input type="checkbox" id="product-only-incomplete" onchange="onProductSearchInput()" /> 只看資料不完整的</label>
     </div>
@@ -88,6 +89,26 @@
       <input id="np-compatible-group" placeholder="可搭配群組代碼（相同代碼視為可互相搭配）" />
       <input id="np-ref-price" placeholder="底價" oninput="syncProductPriceFromBase('np')" />
       <input id="np-list-price" placeholder="牌價（= 底價 × 2，輸入這裡會自動反推底價）" oninput="syncProductPriceFromList('np')" />
+
+      <div class="calc-hint">選型規格（相機 / 鏡頭要填，選型計算才會推薦它；沒填完整的會被標示提醒）</div>
+      <input id="np-brand" placeholder="品牌（原廠名稱，例：Basler）" />
+      <label>介面：</label>
+      <select id="np-interface">
+        <option value="">（未填）</option>
+        <option value="GigE">GigE</option>
+        <option value="USB3.0">USB3.0</option>
+        <option value="不納入選型">不納入選型（線陣/智能相機/其他）</option>
+      </select>
+      <input id="np-resolution" placeholder="相機解析度，例：1920X1200（鏡頭填百萬畫素數，例：5）" />
+      <input id="np-pixel" placeholder="像元尺寸 µm，例：3.45" />
+      <input id="np-sensor" placeholder='靶面尺寸，例：2/3"' />
+      <input id="np-fps" placeholder="影格率 fps" />
+      <input id="np-mount" placeholder="鏡頭接口 / 相機接口，例：C" />
+      <input id="np-focal" placeholder="FA 鏡頭焦距 mm" />
+      <input id="np-mag" placeholder="遠心鏡頭倍率，例：0.5" />
+      <input id="np-wd" placeholder="工作距離 WD mm" />
+      <input id="np-dof" placeholder="景深 mm" />
+      <input id="np-focuswd" placeholder="最近對焦距離 mm（FA 鏡頭）" />
       <textarea id="np-notes" placeholder="備註"></textarea>
       <button onclick="addProduct()">儲存新產品</button>
     </div>
@@ -170,6 +191,26 @@
         <input id="ep-compatible-group" placeholder="可搭配群組代碼" />
         <input id="ep-ref-price" placeholder="底價" oninput="syncProductPriceFromBase('ep')" />
         <input id="ep-list-price" placeholder="牌價（= 底價 × 2）" oninput="syncProductPriceFromList('ep')" />
+
+        <div class="calc-hint">選型規格（相機 / 鏡頭要填，選型計算才會推薦它；沒填完整的會被標示提醒）</div>
+        <input id="ep-brand" placeholder="品牌（原廠名稱，例：Basler）" />
+        <label>介面：</label>
+        <select id="ep-interface">
+          <option value="">（未填）</option>
+          <option value="GigE">GigE</option>
+          <option value="USB3.0">USB3.0</option>
+          <option value="不納入選型">不納入選型（線陣/智能相機/其他）</option>
+        </select>
+        <input id="ep-resolution" placeholder="相機解析度，例：1920X1200（鏡頭填百萬畫素數，例：5）" />
+        <input id="ep-pixel" placeholder="像元尺寸 µm，例：3.45" />
+        <input id="ep-sensor" placeholder='靶面尺寸，例：2/3"' />
+        <input id="ep-fps" placeholder="影格率 fps" />
+        <input id="ep-mount" placeholder="鏡頭接口 / 相機接口，例：C" />
+        <input id="ep-focal" placeholder="FA 鏡頭焦距 mm" />
+        <input id="ep-mag" placeholder="遠心鏡頭倍率，例：0.5" />
+        <input id="ep-wd" placeholder="工作距離 WD mm" />
+        <input id="ep-dof" placeholder="景深 mm" />
+        <input id="ep-focuswd" placeholder="最近對焦距離 mm（FA 鏡頭）" />
         <textarea id="ep-notes" placeholder="備註"></textarea>
         <button onclick="saveProductEdit()">儲存修改</button>
       </div>
