@@ -239,6 +239,14 @@ async function viewProduct(internalModel, rowIndex) {
     '可搭配產品：' + (result.compatibleProducts.length ? result.compatibleProducts.map((p) => p.InternalModel).join('、') : '無');
 
   document.getElementById('pd-notes').innerHTML = '備註：' + (result.product.Notes || '（無）') + (result.product.Origin ? '｜產地：' + result.product.Origin : '');
+  if (result.product.SourceUrl) {
+    const link = document.createElement('a');
+    link.href = result.product.SourceUrl;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = '官網規格頁';
+    document.getElementById('pd-notes').append('｜資料來源：', link);
+  }
 
   document.getElementById('inquiry-result').textContent = '';
 
@@ -559,4 +567,13 @@ async function toggleFavorite(model) {
   if (result.favorite) favoriteSet.add(String(model));
   else favoriteSet.delete(String(model));
   applyProductFilter(true);
+}
+
+async function importDehong() {
+  if (!confirm('要從德鴻視覺官網（twdehong.com）抓遠心鏡頭、機器視覺鏡頭、光源、光源控制器的型號與規格嗎？只會新增還沒有的型號（約 1400 筆，需要 1～2 分鐘），不含價格，底價請自己詢價後填入。')) return;
+  const result = await callApi('importDehongProducts', {});
+  if (!result.success) return alert(result.message);
+  alert(result.message);
+  clearCached('products_all');
+  searchProducts();
 }

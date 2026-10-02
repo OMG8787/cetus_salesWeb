@@ -19,8 +19,9 @@
  *
  * 試算表分頁與欄位(詳見 README.md)：
  *   Products      - InternalModel, SupplierModel, Supplier, SupplierContact,
- *                    SupplierContactEmail, Origin, Category, CompatibleGroup, RefPrice, Notes, LastUpdated
- *                    （LastUpdated=上次修改日期，前端用來提醒資料多久沒更新、要不要重新詢價）
+ *                    SupplierContactEmail, Origin, Category, CompatibleGroup, RefPrice, Notes, LastUpdated, SourceUrl, Specs
+ *                    （LastUpdated=上次修改日期，前端用來提醒資料多久沒更新、要不要重新詢價；
+ *                    SourceUrl=資料來源網址，Specs=官網抓到的完整規格(JSON)，之後選型計算可以直接用）
  *   PriceHistory  - Date, ProductInternalModel, Supplier, Price, Currency, CaseID, Notes
  *   Cases         - CaseID, CustomerName, EndCustomerName, ProjectContact, ContactPhone,
  *                    Salesperson, FAE, ProductApplication, TestObject, SoftwareName,
@@ -101,6 +102,7 @@ var ROUTES = {
   updateProduct:           { auth: true, fn: handleUpdateProduct },
   deleteProduct:           { auth: true, fn: handleDeleteProduct },
   importCatalogProducts:   { auth: true, fn: handleImportCatalogProducts },
+  importDehongProducts:    { auth: true, fn: handleImportDehongProducts },
 
   // 價格紀錄
   addPriceRecord:          { auth: true, fn: handleAddPriceRecord },
@@ -218,7 +220,7 @@ function jsonOutput(obj) {
  * 之後要加新欄位，改這裡再重新執行一次 setup 就好。
  */
 var SCHEMA = {};
-SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated'];
+SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated', 'SourceUrl', 'Specs'];
 SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Price', 'Currency', 'CaseID', 'Notes'];
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
@@ -291,6 +293,7 @@ PERMISSIONS['deleteStaff'] = ['admin'];
 PERMISSIONS['deleteProduct'] = ['admin', 'sales'];
 PERMISSIONS['deleteSoftware'] = ['admin'];
 PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
+PERMISSIONS['importDehongProducts'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
 PERMISSIONS['deletePriceRecord'] = ['admin', 'sales'];
@@ -1364,6 +1367,182 @@ function importCatalogProducts_(log) {
 function handleImportCatalogProducts(body) {
   var r = importCatalogProducts_(null);
   return { success: true, added: r.added, missingInternal: r.missingInternal, message: r.message };
+}
+
+// ------------------------------------------------------------
+// 從德鴻視覺官網（twdehong.com）抓產品規格：遠心鏡頭 / 機器視覺鏡頭 / 光源 / 光源控制器
+// 官網是 Joomla + K2，分類列表頁(每頁 50 筆)已經直接列出每個產品的規格欄位，不用逐筆進內頁。
+// 只抓公開的型號與規格，不抓價格（官網沒有，價格要自己詢價）。重複執行安全：已存在的型號不會新增，
+// 只會幫已存在、但還沒有規格的產品補上 Specs / SourceUrl。
+// 還沒抓的：相機（要逐系列進內頁）、FA 鏡頭（系列頁）、光學棱鏡。
+// ------------------------------------------------------------
+var DEHONG_BASE = 'https://twdehong.com';
+var DEHONG_RUN_LIMIT_MS = 5 * 60 * 1000;
+
+/** 網址路徑第 3 段（/index.php/<區>/...）決定分類。 */
+function dehongKind_(url) {
+  var seg = decodeURIComponent(String(url).split('/')[2] || '');
+  if (seg === 'light-source') return { category: '光源', label: '光源' };
+  if (seg === 'control-products') return { category: '調光器', label: '光源控制器' };
+  if (['wtl', 'wtl-x', 'special-lens', '機器視覺鏡頭', '高分辨率遠心鏡頭'].indexOf(seg) > -1) return { category: '鏡頭', label: '遠心鏡頭' };
+  return null;
+}
+
+function htmlDecode_(str) {
+  return String(str || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+/** 解析 K2 分類列表頁：回傳 [{url, title, fields:{標籤:值}}]。 */
+function parseDehongItems_(html) {
+  var items = [];
+  var blocks = html.split(/<div[^>]*class="catItemView/);
+  for (var i = 1; i < blocks.length; i++) {
+    var blk = blocks[i];
+    var m = blk.match(/<h3 class="catItemTitle">\s*<a href="([^"]+)">([\s\S]*?)<\/a>/);
+    if (!m) continue;
+    var fields = {};
+    var re = /catItemExtraFieldsLabel">([\s\S]*?)<\/span>\s*<span class="catItemExtraFieldsValue">([\s\S]*?)<\/span>/g;
+    var f;
+    while ((f = re.exec(blk)) !== null) fields[htmlDecode_(f[1])] = htmlDecode_(f[2]);
+    items.push({ url: m[1], title: htmlDecode_(m[2]), fields: fields });
+  }
+  return items;
+}
+
+function fetchDehongPage_(path) {
+  var url = path.indexOf('http') === 0 ? path : DEHONG_BASE + encodeURI(decodeURI(path));
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode() + ' ' + path);
+  return res.getContentText('UTF-8');
+}
+
+function dehongIsEmptyValue_(v) {
+  return !v || /^(NA|N\/A|--+|-|無)$/i.test(v);
+}
+
+function dehongSpecSummary_(fields) {
+  var parts = [];
+  Object.keys(fields).forEach(function (k) {
+    var v = fields[k];
+    if (dehongIsEmptyValue_(v)) return;
+    if (k === '解析度' && v === 'WTL') return; // 型號系列代碼，不是解析度
+    parts.push(k + ' ' + v);
+  });
+  return parts.join('，');
+}
+
+function importDehongProducts_(log) {
+  var started = new Date().getTime();
+  var indexHtml = fetchDehongPage_('/index.php');
+  var catSet = {};
+  var re = /href="(\/index\.php\/[^"#]*itemlist\/category\/[^"#]+)"/g;
+  var m;
+  while ((m = re.exec(indexHtml)) !== null) {
+    if (dehongKind_(m[1])) catSet[m[1]] = true;
+  }
+  var cats = Object.keys(catSet);
+
+  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var byModel = {};
+  existing.forEach(function (r, i) {
+    [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+    });
+  });
+
+  var seen = {};
+  var newRows = [];
+  var added = 0;
+  var enriched = 0;
+  var pages = 0;
+  var incomplete = false;
+  var errors = [];
+
+  for (var c = 0; c < cats.length; c++) {
+    var start = 0;
+    while (true) {
+      if (new Date().getTime() - started > DEHONG_RUN_LIMIT_MS) {
+        incomplete = true;
+        break;
+      }
+      var items;
+      try {
+        items = parseDehongItems_(fetchDehongPage_(cats[c] + (start ? '?start=' + start : '')));
+      } catch (e) {
+        errors.push(cats[c] + '（' + e.message + '）');
+        break;
+      }
+      pages++;
+      items.forEach(function (it) {
+        var kind = dehongKind_(it.url);
+        if (!kind || !it.title || seen[it.url]) return;
+        seen[it.url] = true;
+        var key = it.title.toUpperCase();
+        var specsJson = JSON.stringify(it.fields);
+        var hit = byModel[key];
+        if (hit) {
+          if (!hit.specs) {
+            updateRowFields(SHEET_PRODUCTS, hit.row, { Specs: specsJson, SourceUrl: DEHONG_BASE + it.url });
+            hit.specs = specsJson;
+            enriched++;
+          }
+          return;
+        }
+        newRows.push({
+          InternalModel: it.title,
+          SupplierModel: it.title,
+          Supplier: '德鴻',
+          SupplierContact: '陳小姐',
+          SupplierContactEmail: 'TWDH@twdehong.com',
+          Origin: '台灣',
+          Category: kind.category,
+          Notes: '德鴻官網 ' + kind.label + '；' + dehongSpecSummary_(it.fields),
+          LastUpdated: todayStr(),
+          SourceUrl: DEHONG_BASE + it.url,
+          Specs: specsJson,
+        });
+        byModel[key] = { row: -1, specs: specsJson };
+        added++;
+      });
+      if (items.length < 50) break;
+      start += 50;
+    }
+    if (incomplete) break;
+  }
+
+  // 一次寫入全部新產品（逐筆 appendRow 一千多筆會超過執行時間上限）
+  if (newRows.length) {
+    var sheet = getSheet(SHEET_PRODUCTS);
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var values = newRows.map(function (obj) {
+      return header.map(function (h) {
+        return obj.hasOwnProperty(h) ? obj[h] : '';
+      });
+    });
+    var startRow = sheet.getLastRow() + 1;
+    var range = sheet.getRange(startRow, 1, values.length, header.length);
+    range.setNumberFormat('@');
+    range.setValues(values);
+  }
+
+  var msg = '德鴻官網匯入：新增 ' + added + ' 筆產品、替 ' + enriched + ' 筆既有產品補上規格（共讀取 ' + pages + ' 頁；官網沒有價格，底價請自己詢價後填入）';
+  if (incomplete) msg += '；時間用完還沒讀完，再按一次「匯入德鴻官網」會接著補';
+  if (errors.length) msg += '；失敗：' + errors.slice(0, 3).join('、');
+  if (log) log.push(msg);
+  return { added: added, enriched: enriched, incomplete: incomplete, message: msg };
+}
+
+function handleImportDehongProducts(body) {
+  var r = importDehongProducts_(null);
+  return { success: true, added: r.added, enriched: r.enriched, incomplete: r.incomplete, message: r.message };
 }
 
 // ------------------------------------------------------------
