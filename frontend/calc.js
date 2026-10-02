@@ -274,7 +274,9 @@ const BRAND_ORIGIN_RULES = [
 let productOriginMap = {}; // 型號(大寫) → 產地，來自產品資料庫
 
 function originOf(item) {
-  const brandRule = BRAND_ORIGIN_RULES.find((r) => r[0].test(item.brand || '') || r[0].test(item.name || ''));
+  // 有品牌就只看品牌（避免型號剛好含某些字母被誤判）；品牌空白才用型號判斷
+  const probe = item.brand || item.name || '';
+  const brandRule = BRAND_ORIGIN_RULES.find((r) => r[0].test(probe));
   if (brandRule) return brandRule[1];
   return productOriginMap[String(item.name || '').toUpperCase()] || '';
 }

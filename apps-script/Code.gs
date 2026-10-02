@@ -1126,9 +1126,18 @@ function findUserRowIndex_(username) {
 }
 
 /** 修改角色/顯示名稱，不能改帳號本身(Username)，避免跟裝置/工作階段的對應關係亂掉。 */
+function countAdmins_() {
+  return sheetToObjects(SHEET_USERS).rows.filter(function (r) {
+    return r['Role'] === 'admin';
+  }).length;
+}
+
 function handleUpdateUser(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
   var fields = Object.assign({}, body.fields);
+  if (fields.Role !== undefined && fields.Role !== 'admin' && readRowAsObject(SHEET_USERS, body.rowIndex)['Role'] === 'admin' && countAdmins_() <= 1) {
+    return { success: false, message: '這是唯一的管理員，不能降級，請先指定另一位管理員' };
+  }
   delete fields.Username;
   delete fields.PasswordHash;
   updateRowFields(SHEET_USERS, body.rowIndex, fields);
@@ -1139,6 +1148,7 @@ function handleDeleteUser(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
   var sheet = getSheet(SHEET_USERS);
   if (sheet.getLastRow() - 1 <= 1) return { success: false, message: '至少要保留一個帳號，無法刪除' };
+  if (readRowAsObject(SHEET_USERS, body.rowIndex)['Role'] === 'admin' && countAdmins_() <= 1) return { success: false, message: '這是唯一的管理員，不能刪除' };
   sheet.deleteRow(body.rowIndex);
   return { success: true };
 }
@@ -1177,6 +1187,8 @@ function handleSearchProducts(body) {
   results.forEach(function (r) {
     r.InquiryCount = counts[r['InternalModel']] || 0;
     r.LastInquiryDate = lastDates[r['InternalModel']] || '';
+    r.HasSpecs = r['Specs'] ? '是' : '';
+    delete r.Specs; // 官網匯入後完整規格 JSON 很大，列表不回傳（會超過瀏覽器快取上限）；單筆用 getProduct 取得
   });
   return { success: true, products: results };
 }
