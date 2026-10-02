@@ -790,10 +790,12 @@ async function loadCatalogs() {
   if (cached && cached.cameras && cached.cameras.length) {
     cameraCatalog = cached.cameras;
     lensCatalog = cached.lenses;
+    missingPixelCameras = cached.missing || 0;
     onCatalogReady();
     return;
   }
   status.textContent = '正在讀取相機 / 鏡頭型錄（我的試算表）...';
+  missingPixelCameras = 0;
   try {
     const r = await callApi('getCalcCatalog', {});
     if (r && r.success && r.catalog) {
@@ -801,7 +803,7 @@ async function loadCatalogs() {
       cameraCatalog = [...parseCameraTable(sheetToGvizTable(c['GigE']), 'GigE'), ...parseCameraTable(sheetToGvizTable(c['USB3']), 'USB 3.0')];
       lensCatalog = { fa: parseLensTable(sheetToGvizTable(c['FA鏡頭']), false), tele: parseLensTable(sheetToGvizTable(c['遠心鏡頭']), true) };
       if (cameraCatalog.length) {
-        setCached(CATALOG_CACHE_KEY, { cameras: cameraCatalog, lenses: lensCatalog });
+        setCached(CATALOG_CACHE_KEY, { cameras: cameraCatalog, lenses: lensCatalog, missing: missingPixelCameras });
         onCatalogReady();
         return;
       }
@@ -828,6 +830,7 @@ function reloadCatalog() {
   clearCached('visionCatalog_v2');
   cameraCatalog = [];
   lensCatalog = { fa: [], tele: [] };
+  missingPixelCameras = 0;
   loadCatalogs();
 }
 
@@ -903,7 +906,7 @@ function onCatalogReady() {
   });
   if (cameraCatalog.some((c) => c.name === keep)) select.value = keep;
   status.textContent = cameraCatalog.length
-    ? `型錄：相機 ${cameraCatalog.length} 款、FA 鏡頭 ${lensCatalog.fa.length} 款、遠心鏡頭 ${lensCatalog.tele.length} 款`
+    ? `型錄：相機 ${cameraCatalog.length} 款、FA 鏡頭 ${lensCatalog.fa.length} 款、遠心鏡頭 ${lensCatalog.tele.length} 款${missingPixelCameras ? `（另有 ${missingPixelCameras} 款相機缺像元尺寸，沒有納入計算，請到試算表相機分頁補上）` : ''}`
     : '讀不到相機型錄，請改用手動輸入規格';
   document.getElementById('c-lens-model').dataset.type = ''; // 強制重建鏡頭下拉
   recalc();
@@ -931,6 +934,8 @@ function cellValue(row, i) {
 }
 
 const isNameHeader = (l) => (l.includes('公司型號') || l === 'Name') && !l.includes('原廠型號');
+
+let missingPixelCameras = 0; // 型錄裡缺像元尺寸、因此沒有納入選型的相機數
 
 function parseCameraTable(table, iface) {
   if (!table || !table.rows || !table.rows.length) return [];
@@ -963,6 +968,10 @@ function parseCameraTable(table, iface) {
     if (iface !== 'GigE') {
       const alt = String(cellValue(row, idx.maximumGain)).trim();
       if (alt.includes('"')) size = alt;
+    }
+    if (!(pixelW > 0)) {
+      missingPixelCameras++;
+      return;
     }
     cams.push({ name, resW, resH, pixelW, pixelH, size, iface, fps: parseFloat(cellValue(row, idx.fps)) || 0, mp: (resW * resH) / 1e6 });
   });

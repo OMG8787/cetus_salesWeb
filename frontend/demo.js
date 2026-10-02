@@ -250,6 +250,9 @@ function handleDemoApi(action, params) {
     case 'syncCalcCatalog':
       return { success: true, message: '示範模式不會同步型錄。' };
 
+    case 'dedupeData':
+      return { success: true, apply: !!params.apply, report: [], removed: 0, customerSuspects: [] };
+
     case 'importDehongProducts':
       return { success: true, added: 0, enriched: 0, message: '示範模式不會真的抓取官網，正式模式才會匯入。' };
 

@@ -578,3 +578,21 @@ async function importDehong() {
   clearCached('visionCatalog_v3');
   searchProducts();
 }
+
+async function dedupeData() {
+  const NL = String.fromCharCode(10);
+  const preview = await callApi('dedupeData', { apply: false });
+  if (!preview.success) return alert(preview.message);
+  const lines = preview.report.map((r) => `${r.sheet}：${r.groups} 組重複、可刪除 ${r.extra} 筆（例：${r.examples.join('、')}）`);
+  if (preview.customerSuspects.length) {
+    lines.push(NL + `客戶資料有 ${preview.customerSuspects.length} 組疑似重複（案件用公司名稱關聯，不自動合併，請到客戶管理自行確認）：` + NL + preview.customerSuspects.slice(0, 8).join(NL));
+  }
+  if (!preview.report.length) return alert(lines.length ? lines.join(NL) : '沒有發現重複的產品或型錄資料。');
+  if (!confirm(lines.join(NL) + NL + NL + '要合併嗎？會保留資料最完整的那一筆，並把其他重複筆有填、而保留筆沒填的欄位補進去，其餘刪除。')) return;
+  const done = await callApi('dedupeData', { apply: true });
+  if (!done.success) return alert(done.message);
+  alert(`已合併，刪除 ${done.removed} 筆重複資料。`);
+  clearCached('products_all');
+  clearCached('visionCatalog_v3');
+  searchProducts();
+}
