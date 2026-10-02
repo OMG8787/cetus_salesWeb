@@ -620,6 +620,51 @@ async function importDehong() {
   searchProducts();
 }
 
+async function importFlir() {
+  if (!confirm('要從 FLIR 官網抓相機與鏡頭的型號、規格嗎？包含 flir.com 的熱像/研發相機與研發鏡頭，以及 FLIR 可見光工業相機（Blackfly S、Oryx、Chameleon3 等，這些已改由 Teledyne 官網販售，會從那邊抓並寫進選型計算的 GigE/USB3 分頁）。FLIR 沒有光源類產品。只會新增還沒有的型號，分段執行約需 3～8 分鐘，請不要關閉頁面，不含價格。')) return;
+  const NL = String.fromCharCode(10);
+  let added = 0;
+  let enriched = 0;
+  let camAdded = 0;
+  let skipped = 0;
+  let step = 0;
+  let offset = 0;
+  const notes = [];
+  try {
+    setLoadingText('匯入 FLIR：讀取熱像/研發相機與鏡頭...');
+    const t = await callApi('importFlirProducts', { stage: 'thermal' });
+    if (!t.success) throw new Error(t.message || '匯入失敗');
+    added += t.added;
+    enriched += t.enriched || 0;
+    if (t.errors && t.errors.length) notes.push(...t.errors);
+    while (true) {
+      step++;
+      setLoadingText('匯入 FLIR 工業相機：第 ' + step + ' 段（已新增 ' + (added + camAdded) + ' 筆）...');
+      const r = await callApi('importFlirProducts', { stage: 'visible', offset });
+      if (!r.success) throw new Error(r.message || '匯入失敗');
+      added += r.added;
+      enriched += r.enriched || 0;
+      camAdded += r.camAdded || 0;
+      skipped += r.skippedNoPixel || 0;
+      if (r.errors && r.errors.length) notes.push(...r.errors);
+      if (r.done || step > 60) break;
+      offset = r.nextOffset;
+      setLoadingText('匯入 FLIR 工業相機：已讀 ' + offset + ' / ' + r.total + ' 款...');
+    }
+    const lines = ['匯入完成：新增 ' + added + ' 筆產品、替既有產品補上 ' + enriched + ' 筆規格。', '選型計算相機分頁 +' + camAdded + '。'];
+    if (skipped) lines.push(skipped + ' 款相機缺像元尺寸，選型計算會略過。');
+    if (notes.length) lines.push('部分頁面讀取失敗：' + notes.slice(0, 6).join('、') + '（可以再按一次匯入補抓）');
+    alert(lines.join(NL));
+  } catch (e) {
+    alert('匯入中斷：' + (e.message || e) + NL + '已經匯入的資料會保留，再按一次「匯入 FLIR 官網」會接著補。');
+  } finally {
+    setLoadingText('處理中，請稍候...');
+  }
+  clearCached('products_all');
+  clearCached('visionCatalog_v3');
+  searchProducts();
+}
+
 async function dedupeData() {
   const NL = String.fromCharCode(10);
   const preview = await callApi('dedupeData', { apply: false });

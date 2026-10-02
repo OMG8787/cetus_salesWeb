@@ -106,6 +106,7 @@ var ROUTES = {
   importCatalogProducts:   { auth: true, fn: handleImportCatalogProducts },
   importDehongProducts:    { auth: true, fn: handleImportDehongProducts },
   dedupeData:              { auth: true, fn: handleDedupeData },
+  importFlirProducts:      { auth: true, fn: handleImportFlirProducts },
   getCalcCatalog:          { auth: true, fn: handleGetCalcCatalog },
   syncCalcCatalog:         { auth: true, fn: handleSyncCalcCatalog },
 
@@ -300,6 +301,7 @@ PERMISSIONS['deleteSoftware'] = ['admin'];
 PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
 PERMISSIONS['importDehongProducts'] = ['admin', 'sales'];
 PERMISSIONS['dedupeData'] = ['admin'];
+PERMISSIONS['importFlirProducts'] = ['admin', 'sales'];
 PERMISSIONS['syncCalcCatalog'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
@@ -1633,6 +1635,8 @@ function htmlDecode_(str) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, function (m, h) { return String.fromCharCode(parseInt(h, 16)); })
+    .replace(/&#(\d+);/g, function (m, d) { return String.fromCharCode(Number(d)); })
     .replace(/&amp;/g, '&')
     .trim();
 }
@@ -1871,17 +1875,18 @@ function appendDehongCamerasToSheets_(cams) {
     var pixel = c.pixel;
     var size = c.size;
     var hit = lookup[normSensor_(c.sensor)];
-    var source = '德鴻官網';
+    var srcName = c.sourceName || '德鴻官網';
+    var source = srcName;
     if (!pixel && hit) {
       pixel = hit.pixel;
       if (!size) size = hit.size;
-      source = '德鴻官網（像元尺寸取自自己型錄的同款感測器）';
+      source = srcName + '（像元尺寸取自自己型錄的同款感測器）';
     }
     if (!pixel) {
       var guess = inferPixelSize_(c.sensor);
       if (guess) {
         pixel = String(guess);
-        source = '德鴻官網（像元尺寸依感測器型號推定，請核對）';
+        source = srcName + '（像元尺寸依感測器型號推定，請核對）';
       }
     }
     if (pixel && /^[0-9.]+$/.test(pixel)) pixel = pixel + '*' + pixel + 'μm';
@@ -1911,7 +1916,7 @@ function appendDehongCamerasToSheets_(cams) {
       have[key] = true;
       if (!p.pixel) skippedNoPixel.push(p.cam.model);
       var rec = {
-        '原廠名稱': cameraBrand_(p.cam.model),
+        '原廠名稱': p.cam.brand || cameraBrand_(p.cam.model),
         '原廠型號': p.cam.model,
         '公司型號': p.cam.model,
         '畫素': String(Math.round((p.cam.w * p.cam.h) / 10000)),
@@ -1924,7 +1929,7 @@ function appendDehongCamerasToSheets_(cams) {
         '解析度': p.cam.w + 'X' + p.cam.h,
         '偵率': String(p.cam.fps),
         '資料介面': p.cam.iface,
-        '購物連結': DEHONG_BASE,
+        '購物連結': p.cam.link || DEHONG_BASE,
         '資料來源': p.source + (p.pixel ? '' : '（缺像元尺寸，填上才會納入選型）'),
       };
       var out = [];
@@ -2430,6 +2435,299 @@ function importDehongProducts_(log, opts) {
 function handleImportDehongProducts(body) {
   var r = importDehongProducts_(null, { stage: body.stage === 'extras' ? 'extras' : 'lists', offset: body.offset });
   return { success: true, added: r.added, enriched: r.enriched, teleAdded: r.teleAdded, camAdded: r.camAdded, done: r.done, nextOffset: r.nextOffset, totalCats: r.totalCats, pages: r.pages, skippedNoPixel: r.skippedNoPixel, errors: r.errors, message: r.message };
+}
+
+// ------------------------------------------------------------
+// FLIR 官網爬蟲
+//  ① www.flir.com/en-asia：熱像機器視覺相機、研發/科學相機、研發鏡頭、多相機視覺系統（規格表在商品頁的 <table>）
+//  ② FLIR 的可見光工業相機（Blackfly S、Oryx、Chameleon3、Grasshopper3、Firefly、Flea3、Dragonfly S、Forge…）
+//     已經轉由 Teledyne Vision Solutions 銷售，flir.com 上已經沒有這些商品頁，改讀
+//     www.teledynevisionsolutions.com 每個型號頁內嵌的規格資料（JSON-LD：解析度、像元尺寸、靶面、介面…），
+//     可以直接進選型計算的 GigE / USB3 分頁。
+// 只抓公開規格，不抓價格。FLIR 官網沒有光源類產品。
+// ------------------------------------------------------------
+var FLIR_BASE = 'https://www.flir.com';
+var TELEDYNE_BASE = 'https://www.teledynevisionsolutions.com';
+var FLIR_THERMAL_CATS = [
+  { path: '/en-asia/browse/thermal-machine-vision/thermal-machine-vision-cameras/', category: '相機', label: '熱像機器視覺相機' },
+  { path: '/en-asia/browse/research--science/research--science-cameras/', category: '相機', label: '研發/科學相機' },
+  { path: '/en-asia/browse/research--science/rd-lenses/', category: '鏡頭', label: '研發鏡頭' },
+  { path: '/en-asia/browse/continuous-monitoring/multicamera-vision-systems/', category: '相機', label: '多相機視覺系統' },
+];
+var FLIR_SKIP_PRODUCT = /housing|warranty|cable|power-supply|charger|battery|filter-holder|software|image-streaming|transport-case|\bcase\b|mount|bracket|window/i;
+var TELEDYNE_FAMILIES = [
+  'blackfly-s-usb3', 'blackfly-s-gige', 'blackfly-s-board-level', 'blackfly-usb3', 'blackfly-gige', 'oryx-10gige',
+  'chameleon3-usb3', 'firefly-dl', 'flea3-usb3', 'grasshopper3-usb3', 'grasshopper3-gige', 'dragonfly-s-usb3', 'forge-5gige',
+];
+var FLIR_CHUNK_MS = 150 * 1000;
+
+function fetchUrl_(url) {
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode() + ' ' + url);
+  return res.getContentText('UTF-8');
+}
+
+/** FLIR 商品頁的規格表：群組標題列(1 欄) + 「欄位 / 值」(2 欄) → {欄位: 值}。服務據點電話表會被略過。 */
+function parseFlirSpecs_(html) {
+  var out = {};
+  parseHtmlTables_(html).forEach(function (rows) {
+    if (!rows.length || /Service Center/i.test(rows[0].join(' '))) return;
+    rows.forEach(function (r) {
+      if (r.length !== 2) return;
+      var k = String(r[0]).trim();
+      var v = String(r[1]).trim();
+      if (k && v && !out.hasOwnProperty(k)) out[k] = v;
+    });
+  });
+  return out;
+}
+
+function flirSpecSummary_(fields) {
+  var parts = [];
+  Object.keys(fields).forEach(function (k) {
+    var v = fields[k];
+    if (parts.length >= 10 || !v || v.length > 70) return;
+    if (/^(Contents|Packaging|EMC|Humidity|Encapsulation|Housing)/i.test(k)) return;
+    parts.push(k + ' ' + v);
+  });
+  return parts.join('，');
+}
+
+function flirModelFromUrl_(path, title) {
+  var slug = decodeURIComponent(path.replace(/\/+$/, '').split('/').pop()).replace(/\?.*$/, '');
+  if (/^[a-z0-9_.-]{2,14}$/i.test(slug)) return 'FLIR ' + slug.toUpperCase();
+  return htmlDecode_(String(title || slug)).replace(/\s*\|\s*Flir\s*$/i, '').trim();
+}
+
+/** 熱像相機 / 研發鏡頭等：flir.com/en-asia 的分類頁 → 商品頁 → 規格表 → Products（不進選型計算，熱像機的像元尺寸與可見光相機不同）。 */
+function importFlirThermal_() {
+  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var byModel = {};
+  existing.forEach(function (r, i) {
+    [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+    });
+  });
+  var newRows = [];
+  var enriched = 0;
+  var errors = [];
+  var pages = 0;
+  var seen = {};
+  FLIR_THERMAL_CATS.forEach(function (cat) {
+    var html;
+    try {
+      html = fetchUrl_(FLIR_BASE + cat.path);
+      pages++;
+    } catch (e) {
+      errors.push(cat.path + '（' + e.message + '）');
+      return;
+    }
+    var links = {};
+    var re = /href="(\/en-asia\/products\/[^"#?]+)"/g;
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      var slug = m[1].split('/').filter(Boolean).pop();
+      if (cat.category === '相機' && FLIR_SKIP_PRODUCT.test(slug)) continue;
+      if (/^(t\d{6}|\d{7})/i.test(slug) && cat.category === '相機') continue; // 配件料號
+      links[m[1]] = true;
+    }
+    Object.keys(links).forEach(function (link) {
+      if (seen[link]) return;
+      seen[link] = true;
+      var pageHtml;
+      try {
+        pageHtml = fetchUrl_(FLIR_BASE + link);
+        pages++;
+      } catch (e) {
+        errors.push(link + '（' + e.message + '）');
+        return;
+      }
+      var tm = pageHtml.match(/<title>([\s\S]*?)<\/title>/);
+      var title = tm ? htmlDecode_(tm[1]) : '';
+      var fields = parseFlirSpecs_(pageHtml);
+      var model = flirModelFromUrl_(link, title);
+      var key = model.toUpperCase();
+      var specsJson = JSON.stringify(fields);
+      var hit = byModel[key];
+      if (hit) {
+        if (!hit.specs && hit.row > 0 && Object.keys(fields).length) {
+          updateRowFields(SHEET_PRODUCTS, hit.row, { Specs: specsJson, SourceUrl: FLIR_BASE + link });
+          hit.specs = specsJson;
+          enriched++;
+        }
+        return;
+      }
+      newRows.push({
+        InternalModel: model,
+        SupplierModel: model,
+        Supplier: 'FLIR (Teledyne FLIR)',
+        Origin: '美國',
+        Category: cat.category,
+        Notes: 'FLIR 官網 ' + cat.label + '；' + (title ? title.replace(/\s*\|\s*Flir\s*$/i, '') + '；' : '') + flirSpecSummary_(fields),
+        LastUpdated: todayStr(),
+        SourceUrl: FLIR_BASE + link,
+        Specs: specsJson,
+      });
+      byModel[key] = { row: -1, specs: specsJson };
+    });
+  });
+  var added = writeProductRows_(newRows);
+  return { added: added, enriched: enriched, pages: pages, errors: errors };
+}
+
+/** 一次把整批新產品寫進 Products（文字格式，避免型號被轉成日期或數字）。 */
+function writeProductRows_(newRows) {
+  if (!newRows.length) return 0;
+  var sheet = getSheet(SHEET_PRODUCTS);
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var values = newRows.map(function (obj) {
+    return header.map(function (h) {
+      return obj.hasOwnProperty(h) ? obj[h] : '';
+    });
+  });
+  var range = sheet.getRange(sheet.getLastRow() + 1, 1, values.length, header.length);
+  range.setNumberFormat('@');
+  range.setValues(values);
+  return values.length;
+}
+
+/** Teledyne 型號頁內嵌的 JSON-LD → {規格名: 值}。 */
+function parseTeledyneProps_(html) {
+  var out = {};
+  var re = /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g;
+  var m;
+  while ((m = re.exec(html)) !== null) {
+    var data;
+    try {
+      data = JSON.parse(m[1]);
+    } catch (e) {
+      continue;
+    }
+    var nodes = Array.isArray(data) ? data : [data];
+    nodes.forEach(function (n) {
+      (n && n.additionalProperty ? n.additionalProperty : []).forEach(function (pv) {
+        if (pv && pv.name && pv.value != null && !out.hasOwnProperty(pv.name)) out[pv.name] = String(pv.value);
+      });
+    });
+  }
+  return out;
+}
+
+function teledyneInterface_(dataInterface, family) {
+  var t = String(dataInterface || '') + ' ' + family;
+  if (/usb/i.test(t)) return 'USB3.0';
+  if (/gig|ethernet|base-?t|poe/i.test(t)) return 'GigE';
+  return String(dataInterface || '');
+}
+
+/**
+ * FLIR 可見光工業相機（Teledyne Vision Solutions）。每次最多處理 FLIR_CHUNK_MS，回傳 nextOffset，前端接著呼叫到 done。
+ * 同時寫進 Products 與選型計算的 GigE / USB3 分頁（有像元尺寸才會被選型使用）。
+ */
+function importFlirVisible_(offset) {
+  var started = new Date().getTime();
+  var tasks = [];
+  var errors = [];
+  TELEDYNE_FAMILIES.forEach(function (slug) {
+    try {
+      var html = fetchUrl_(TELEDYNE_BASE + '/products/' + slug + '/');
+      var seen = {};
+      var re = /\?model=([^&"#]+)/g;
+      var m;
+      while ((m = re.exec(html)) !== null) {
+        var model = decodeURIComponent(m[1]);
+        if (!seen[model]) {
+          seen[model] = true;
+          tasks.push({ family: slug, model: model });
+        }
+      }
+    } catch (e) {
+      errors.push(slug + '（' + e.message + '）');
+    }
+  });
+
+  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var byModel = {};
+  existing.forEach(function (r, i) {
+    [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+    });
+  });
+
+  var newRows = [];
+  var cams = [];
+  var enriched = 0;
+  var pages = tasks.length ? TELEDYNE_FAMILIES.length : 0;
+  var i = offset;
+  for (; i < tasks.length; i++) {
+    if (i > offset && new Date().getTime() - started > FLIR_CHUNK_MS) break;
+    var t = tasks[i];
+    var props;
+    try {
+      props = parseTeledyneProps_(fetchUrl_(TELEDYNE_BASE + '/products/' + t.family + '/?model=' + encodeURIComponent(t.model)));
+      pages++;
+    } catch (e) {
+      errors.push(t.model + '（' + e.message + '）');
+      continue;
+    }
+    var link = TELEDYNE_BASE + '/products/' + t.family + '/?model=' + encodeURIComponent(t.model);
+    var key = t.model.toUpperCase();
+    var specsJson = JSON.stringify(props);
+    var res = String(props['Resolution'] || '').match(/(\d{3,5})\D+?(\d{3,5})/);
+    var iface = teledyneInterface_(props['Data Interface'], t.family);
+    var fmt = String(props['Sensor Format'] || '').replace(/["”]/g, '');
+    var spec = [props['Spectrum'], props['Shutter type'], iface, res ? res[1] + '×' + res[2] : '', props['Max Frame Rate Standard'] && props['Max Frame Rate Standard'] + 'fps', props['Sensor Model'] && '感測器 ' + props['Sensor Model'], props['Pixel Size'] && '像元 ' + props['Pixel Size'] + 'μm', fmt && '靶面 ' + fmt + '"', props['Lens Mount']].filter(Boolean).join('，');
+    var hit = byModel[key];
+    if (hit) {
+      if (!hit.specs && hit.row > 0) {
+        updateRowFields(SHEET_PRODUCTS, hit.row, { Specs: specsJson, SourceUrl: link });
+        hit.specs = specsJson;
+        enriched++;
+      }
+    } else {
+      newRows.push({
+        InternalModel: t.model,
+        SupplierModel: t.model,
+        Supplier: 'FLIR (Teledyne Vision Solutions)',
+        Origin: '美國',
+        Category: '相機',
+        Notes: 'FLIR 工業相機（' + t.family + '）；' + spec,
+        LastUpdated: todayStr(),
+        SourceUrl: link,
+        Specs: specsJson,
+      });
+      byModel[key] = { row: -1, specs: specsJson };
+    }
+    if (res && iface) {
+      cams.push({
+        model: t.model,
+        brand: 'FLIR',
+        sourceName: 'FLIR/Teledyne 官網',
+        link: link,
+        w: Number(res[1]),
+        h: Number(res[2]),
+        fps: parseFloat(props['Max Frame Rate Standard']) || '',
+        sensor: String(props['Sensor Model'] || ''),
+        iface: iface,
+        color: /color/i.test(props['Spectrum'] || '') ? '彩色' : /mono/i.test(props['Spectrum'] || '') ? '黑白' : '',
+        shutter: /global/i.test(props['Shutter type'] || '') ? '全局' : /rolling/i.test(props['Shutter type'] || '') ? '卷簾' : '',
+        pixel: String(props['Pixel Size'] || ''),
+        size: fmt ? fmt + '"' : '',
+        type: String(props['Sensor Type'] || ''),
+      });
+    }
+  }
+  var added = writeProductRows_(newRows);
+  var camRes = appendDehongCamerasToSheets_(cams);
+  var done = i >= tasks.length;
+  return { added: added, enriched: enriched, camAdded: camRes.added, skippedNoPixel: camRes.skippedNoPixel.length, done: done, nextOffset: i, total: tasks.length, pages: pages, errors: errors.slice(0, 3) };
+}
+
+function handleImportFlirProducts(body) {
+  var r = body.stage === 'visible' ? importFlirVisible_(Number(body.offset) || 0) : importFlirThermal_();
+  r.success = true;
+  if (r.done === undefined) r.done = true;
+  return r;
 }
 
 // ------------------------------------------------------------

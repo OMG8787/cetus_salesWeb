@@ -59,6 +59,7 @@
       <button class="btn-secondary" onclick="importCatalog()" title="把「選型計算」型錄（相機/FA鏡頭/遠心鏡頭）讀進產品資料表，只補還沒有的">匯入型錄產品</button>
       <button class="btn-secondary" onclick="dedupeData()" title="檢查產品與選型計算分頁裡重複的型號，確認後合併（保留資料最完整的那筆）">排除重複資料</button>
       <button class="btn-secondary" onclick="importDehong()" title="從德鴻視覺官網 twdehong.com 抓遠心鏡頭、光源、控制器的型號與規格（不含價格），只補還沒有的">匯入德鴻官網</button>
+      <button class="btn-secondary" onclick="importFlir()" title="從 FLIR 官網抓熱像/研發相機、研發鏡頭，以及 FLIR 可見光工業相機(Blackfly S 等，來源為 Teledyne 官網)的型號與規格（不含價格），只補還沒有的">匯入 FLIR 官網</button>
       <label class="inline-check"><input type="checkbox" id="product-only-fav" onchange="onProductSearchInput()" /> ★ 只看常用</label>
       <label class="inline-check"><input type="checkbox" id="product-only-incomplete" onchange="onProductSearchInput()" /> 只看資料不完整的</label>
     </div>

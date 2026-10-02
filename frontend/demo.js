@@ -256,6 +256,9 @@ function handleDemoApi(action, params) {
     case 'importDehongProducts':
       return { success: true, added: 0, enriched: 0, message: '示範模式不會真的抓取官網，正式模式才會匯入。' };
 
+    case 'importFlirProducts':
+      return { success: true, added: 0, enriched: 0, camAdded: 0, done: true, message: '示範模式不會真的抓取官網，正式模式才會匯入。' };
+
     case 'importCatalogProducts':
       return { success: true, added: 0, missingInternal: 0, message: '示範模式不會真的讀取型錄，正式模式才會匯入。' };
 
