@@ -1167,9 +1167,27 @@ function handleResetUserPassword(body) {
 // ------------------------------------------------------------
 // 產品搜尋表 (CRUD)
 // ------------------------------------------------------------
+/** 讀 Products 全部欄位，但跳過 Specs（官網完整規格 JSON，很大，列表用不到，讀它會讓搜尋變很慢）。 */
+function readProductsLite_() {
+  var sheet = getSheet(SHEET_PRODUCTS);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  var header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  if (lastRow < 2) return { header: header, rows: [] };
+  var sc = header.indexOf('Specs');
+  var n = lastRow - 1;
+  var left = sc > -1 ? sheet.getRange(2, 1, n, sc).getValues() : sheet.getRange(2, 1, n, lastCol).getValues();
+  var right = sc > -1 && sc + 1 < lastCol ? sheet.getRange(2, sc + 2, n, lastCol - sc - 1).getValues() : null;
+  var cols = sc > -1 ? header.filter(function (h, i) { return i !== sc; }) : header;
+  var rows = left.map(function (r, i) {
+    return rowToObject(cols, right ? r.concat(right[i]) : r);
+  });
+  return { header: cols, rows: rows };
+}
+
 function handleSearchProducts(body) {
   var keyword = String(body.keyword || '').toLowerCase();
-  var data = sheetToObjects(SHEET_PRODUCTS);
+  var data = readProductsLite_();
   data.rows.forEach(function (r, i) {
     r.RowIndex = i + 2;
   });
@@ -1191,8 +1209,6 @@ function handleSearchProducts(body) {
   results.forEach(function (r) {
     r.InquiryCount = counts[r['InternalModel']] || 0;
     r.LastInquiryDate = lastDates[r['InternalModel']] || '';
-    r.HasSpecs = r['Specs'] ? '是' : '';
-    delete r.Specs; // 官網匯入後完整規格 JSON 很大，列表不回傳（會超過瀏覽器快取上限）；單筆用 getProduct 取得
   });
   return { success: true, products: results };
 }
