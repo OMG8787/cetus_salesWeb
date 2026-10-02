@@ -2223,7 +2223,16 @@ function handleDedupeData(body) {
   return { success: true, apply: apply, report: report, removed: removed, customerSuspects: cust };
 }
 
-function importDehongProducts_(log) {
+/**
+ * opts.stage：'lists'（K2 分類列表，每次最多讀 DEHONG_CHUNK_MS 毫秒，回傳 nextOffset 讓前端接著呼叫）
+ *           或 'extras'（相機表格、FA 系列、液態鏡頭）。分段執行才不會因為單次執行太久被 Apps Script 中斷。
+ */
+var DEHONG_CHUNK_MS = 150 * 1000;
+
+function importDehongProducts_(log, opts) {
+  opts = opts || { stage: 'lists', offset: 0 };
+  var stage = opts.stage || 'lists';
+  var offset = Number(opts.offset) || 0;
   var started = new Date().getTime();
   var indexHtml = fetchDehongPage_('/index.php');
   var catSet = {};
@@ -2243,7 +2252,10 @@ function importDehongProducts_(log) {
       // 單一大類頁面抓不到就略過，其餘照常
     }
   });
-  var cats = Object.keys(catSet);
+  var cats = Object.keys(catSet).sort();
+  var totalCats = cats.length;
+  var nextOffset = totalCats;
+  var doneLists = true;
 
   var existing = sheetToObjects(SHEET_PRODUCTS).rows;
   var byModel = {};
@@ -2263,13 +2275,14 @@ function importDehongProducts_(log) {
   var incomplete = false;
   var errors = [];
 
-  for (var c = 0; c < cats.length; c++) {
+  for (var c = offset; stage === 'lists' && c < cats.length; c++) {
+    if (c > offset && new Date().getTime() - started > DEHONG_CHUNK_MS) {
+      nextOffset = c;
+      doneLists = false;
+      break;
+    }
     var start = 0;
     while (true) {
-      if (new Date().getTime() - started > DEHONG_RUN_LIMIT_MS) {
-        incomplete = true;
-        break;
-      }
       var items;
       var lastListHtml = '';
       try {
@@ -2319,21 +2332,17 @@ function importDehongProducts_(log) {
       if (items.length < 50) break;
       start += 50;
     }
-    if (incomplete) break;
   }
 
   // 分類列表沒有直接列出、只出現在連結裡的商品：逐一進內頁補抓
-  if (!incomplete) {
+  if (stage === 'lists') {
     var seenDecoded = {};
     Object.keys(seen).forEach(function (u) {
       seenDecoded[decodeURIComponent(u)] = true;
     });
     Object.keys(itemLinks).forEach(function (dec) {
       if (seenDecoded[dec] || !dehongKind_(dec) || dec.indexOf('/fa-cctv-lens/') > -1) return;
-      if (new Date().getTime() - started > DEHONG_RUN_LIMIT_MS) {
-        incomplete = true;
-        return;
-      }
+      if (new Date().getTime() - started > DEHONG_CHUNK_MS + 60000) return;
       try {
         var it2 = parseDehongItemPage_(fetchDehongPage_(itemLinks[dec]), itemLinks[dec]);
         pages++;
@@ -2367,7 +2376,7 @@ function importDehongProducts_(log) {
   // 第二階段：相機表格、FA 鏡頭系列、液態鏡頭（頁面內容是表格，不是 K2 商品列表）
   var camAdded = { added: 0, skippedNoPixel: [] };
   var extraCount = 0;
-  if (!incomplete) {
+  if (stage === 'extras') {
     var pagesRef = { n: 0 };
     var extra = crawlDehongExtras_(indexHtml, errors, pagesRef);
     pages += pagesRef.n;
@@ -2413,15 +2422,14 @@ function importDehongProducts_(log) {
   var teleAdded = appendDehongToTeleSheet_(teleItems);
   var msg = '德鴻官網匯入：新增 ' + added + ' 筆產品（含相機/FA 鏡頭系列/液態鏡頭 ' + extraCount + ' 筆）、替 ' + enriched + ' 筆既有產品補上規格；選型計算分頁：遠心鏡頭 +' + teleAdded + '、相機 +' + camAdded.added + '（共讀取 ' + pages + ' 頁；官網沒有價格，底價請自己詢價後填入）';
   if (camAdded.skippedNoPixel.length) msg += '；' + camAdded.skippedNoPixel.length + ' 款相機官網沒有像元尺寸、也查不到同款感測器，已寫進相機分頁但像元尺寸留空，選型計算會略過，請補上像元尺寸後才會納入';
-  if (incomplete) msg += '；時間用完還沒讀完，再按一次「匯入德鴻官網」會接著補';
   if (errors.length) msg += '；失敗：' + errors.slice(0, 3).join('、');
   if (log) log.push(msg);
-  return { added: added, enriched: enriched, teleAdded: teleAdded, camAdded: camAdded.added, incomplete: incomplete, message: msg };
+  return { added: added, enriched: enriched, teleAdded: teleAdded, camAdded: camAdded.added, incomplete: !doneLists, done: doneLists, nextOffset: nextOffset, totalCats: totalCats, pages: pages, skippedNoPixel: camAdded.skippedNoPixel.length, errors: errors.slice(0, 3), message: msg };
 }
 
 function handleImportDehongProducts(body) {
-  var r = importDehongProducts_(null);
-  return { success: true, added: r.added, enriched: r.enriched, incomplete: r.incomplete, message: r.message };
+  var r = importDehongProducts_(null, { stage: body.stage === 'extras' ? 'extras' : 'lists', offset: body.offset });
+  return { success: true, added: r.added, enriched: r.enriched, teleAdded: r.teleAdded, camAdded: r.camAdded, done: r.done, nextOffset: r.nextOffset, totalCats: r.totalCats, pages: r.pages, skippedNoPixel: r.skippedNoPixel, errors: r.errors, message: r.message };
 }
 
 // ------------------------------------------------------------

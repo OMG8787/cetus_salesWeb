@@ -569,11 +569,52 @@ async function toggleFavorite(model) {
   applyProductFilter(true);
 }
 
+function setLoadingText(text) {
+  const el = document.querySelector('#loading-overlay .loading-box div:last-child');
+  if (el) el.textContent = text;
+}
+
+/** 分段匯入：每次呼叫後端只處理一部分（避免單次執行太久被中斷），這裡自動接著呼叫到完成，並顯示進度。 */
 async function importDehong() {
-  if (!confirm('要從德鴻視覺官網（twdehong.com）抓遠心鏡頭、機器視覺鏡頭、光源、光源控制器的型號與規格嗎？只會新增還沒有的型號（約 1400 筆，需要 1～2 分鐘），不含價格，底價請自己詢價後填入。')) return;
-  const result = await callApi('importDehongProducts', {});
-  if (!result.success) return alert(result.message);
-  alert(result.message);
+  if (!confirm('要從德鴻視覺官網（twdehong.com）抓遠心鏡頭、光源、控制器、相機等型號與規格嗎？只會新增還沒有的型號（約 2000 筆，分段執行共需 3～6 分鐘，請不要關閉頁面），不含價格，底價請自己詢價後填入。')) return;
+  const NL = String.fromCharCode(10);
+  let offset = 0;
+  let added = 0;
+  let tele = 0;
+  let enriched = 0;
+  let total = 0;
+  let step = 0;
+  const notes = [];
+  try {
+    while (true) {
+      step++;
+      setLoadingText(`匯入德鴻官網：第 ${step} 段讀取中（已新增 ${added} 筆）...`);
+      const r = await callApi('importDehongProducts', { stage: 'lists', offset });
+      if (!r.success) throw new Error(r.message || '匯入失敗');
+      added += r.added;
+      tele += r.teleAdded || 0;
+      enriched += r.enriched || 0;
+      total = r.totalCats || total;
+      if (r.errors && r.errors.length) notes.push(...r.errors);
+      if (r.done || step > 60) break;
+      offset = r.nextOffset;
+      setLoadingText(`匯入德鴻官網：已讀 ${offset} / ${total} 個分類，新增 ${added} 筆...`);
+    }
+    setLoadingText('匯入德鴻官網：讀取相機、FA 鏡頭、液態鏡頭...');
+    const ex = await callApi('importDehongProducts', { stage: 'extras' });
+    if (!ex.success) throw new Error(ex.message || '匯入相機資料失敗');
+    added += ex.added;
+    enriched += ex.enriched || 0;
+    if (ex.errors && ex.errors.length) notes.push(...ex.errors);
+    const lines = [`匯入完成：新增 ${added} 筆產品、替既有產品補上 ${enriched} 筆規格。`, `選型計算分頁：遠心鏡頭 +${tele}、相機 +${ex.camAdded || 0}。`];
+    if (ex.skippedNoPixel) lines.push(`${ex.skippedNoPixel} 款相機缺像元尺寸，已寫進相機分頁但選型計算會略過，請補上像元尺寸。`);
+    if (notes.length) lines.push('部分頁面讀取失敗：' + notes.join('、') + '（可以再按一次匯入補抓）');
+    alert(lines.join(NL));
+  } catch (e) {
+    alert('匯入中斷：' + (e.message || e) + NL + '已經匯入的資料會保留，再按一次「匯入德鴻官網」會接著補。');
+  } finally {
+    setLoadingText('處理中，請稍候...');
+  }
   clearCached('products_all');
   clearCached('visionCatalog_v3');
   searchProducts();
