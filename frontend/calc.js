@@ -22,7 +22,7 @@ const CALC_STATE_KEY = 'aoi_calc_state';
 const CATALOG_CACHE_KEY = 'visionCatalog_v3';
 const CALC_INPUT_IDS = [
   'c-fov-l', 'c-fov-s', 'c-acc-tol', 'c-acc', 'c-acc-unit', 'c-ppf', 'c-wd',
-  'c-cam-source', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
+  'c-cam-source', 'c-cam-iface', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
   'c-lens-type', 'c-lens-model', 'c-f-user', 'c-mag-user',
   'c-speed', 'c-motion', 'c-exp', 'c-exp-unit', 'c-blur', 'c-pps',
 ];
@@ -246,7 +246,9 @@ function pickCamera(req, add) {
   if (!req.ok) return null;
   const auto = findSmallestCamera(req.reqW, req.reqH);
   if (!auto) {
-    const biggest = cameraCatalog.reduce((a, b) => (b.mp > a.mp ? b : a));
+    const pool = cameraPool();
+    if (!pool.length) return null;
+    const biggest = pool.reduce((a, b) => (b.mp > a.mp ? b : a));
     add('error', `型錄裡沒有任何一台相機達到 ${req.reqW} × ${req.reqH}，以下以最大的 ${biggest.name} 計算，建議拆成多個視野或改用線掃相機`, ['c-cam-model']);
     return Object.assign({}, biggest);
   }
@@ -257,9 +259,15 @@ function pickCamera(req, add) {
  * 相機推薦（規則同 CCD_camera.html）：長邊像素 ≥ 所需長邊、短邊像素 ≥ 所需短邊，
  * 再依畫素由小到大排（最接近需求的在前面），同畫素時 GigE 優先。
  */
+/** 依「介面類別」選項過濾後的相機清單（空值 = 全部）。 */
+function cameraPool() {
+  const f = val('c-cam-iface');
+  return f ? cameraCatalog.filter((c) => c.iface === f) : cameraCatalog;
+}
+
 function findCameraRecs(reqW, reqH, count) {
   const gigeFirst = (c) => (String(c.iface).toLowerCase().includes('gige') ? 0 : 1);
-  return cameraCatalog
+  return cameraPool()
     .filter((c) => c.resW >= reqW && c.resH >= reqH)
     .sort((a, b) => a.mp - b.mp || gigeFirst(a) - gigeFirst(b))
     .slice(0, count);
@@ -891,20 +899,38 @@ function loadCatalogsFromPublic() {
   });
 }
 
-function onCatalogReady() {
-  catalogLoaded = true;
-  const status = document.getElementById('c-catalog-status');
+/** 型號下拉：只列出目前「介面類別」的相機；原本選的型號不在新類別裡就回到「自動」。 */
+function renderCamModelOptions(preferred) {
   const select = document.getElementById('c-cam-model');
-  const keep = select.value || savedSelects['c-cam-model'] || '';
+  const keep = preferred || select.value || '';
+  const pool = cameraPool();
   select.innerHTML = '<option value="">自動（最小符合需求）</option>';
-  cameraCatalog.sort((a, b) => a.mp - b.mp);
-  cameraCatalog.forEach((c) => {
+  pool.forEach((c) => {
     const opt = document.createElement('option');
     opt.value = c.name;
     opt.textContent = `${c.name}｜${c.resW}×${c.resH}｜${c.iface}${c.fps ? `｜${c.fps}fps` : ''}`;
     select.appendChild(opt);
   });
-  if (cameraCatalog.some((c) => c.name === keep)) select.value = keep;
+  if (pool.some((c) => c.name === keep)) select.value = keep;
+}
+
+function onCatalogReady() {
+  catalogLoaded = true;
+  const status = document.getElementById('c-catalog-status');
+  cameraCatalog.sort((a, b) => a.mp - b.mp);
+  // 介面類別選項：直接從型錄(自己的試算表 GigE / USB3 分頁)裡有哪些介面產生
+  const ifaceSelect = document.getElementById('c-cam-iface');
+  const keepIface = ifaceSelect.value || savedSelects['c-cam-iface'] || '';
+  ifaceSelect.innerHTML = '<option value="">全部介面</option>';
+  [...new Set(cameraCatalog.map((c) => c.iface).filter(Boolean))].forEach((name) => {
+    const count = cameraCatalog.filter((c) => c.iface === name).length;
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = `${name}（${count} 款）`;
+    ifaceSelect.appendChild(opt);
+  });
+  if ([...ifaceSelect.options].some((o) => o.value === keepIface)) ifaceSelect.value = keepIface;
+  renderCamModelOptions(savedSelects['c-cam-model']);
   status.textContent = cameraCatalog.length
     ? `型錄：相機 ${cameraCatalog.length} 款、FA 鏡頭 ${lensCatalog.fa.length} 款、遠心鏡頭 ${lensCatalog.tele.length} 款${missingPixelCameras ? `（另有 ${missingPixelCameras} 款相機缺像元尺寸，沒有納入計算，請到試算表相機分頁補上）` : ''}`
     : '讀不到相機型錄，請改用手動輸入規格';
@@ -1193,6 +1219,7 @@ function toggleCamSource() {
   const manual = val('c-cam-source') === 'manual';
   document.getElementById('c-cam-manual').style.display = manual ? 'grid' : 'none';
   document.getElementById('c-cam-model-wrap').style.display = manual ? 'none' : '';
+  document.getElementById('c-cam-iface-wrap').style.display = manual ? 'none' : '';
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1201,7 +1228,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   applyAdminOnlyVisibility();
 
   const state = loadCalcState();
-  ['c-cam-model', 'c-lens-model'].forEach((id) => {
+  ['c-cam-model', 'c-cam-iface', 'c-lens-model'].forEach((id) => {
     if (state[id]) savedSelects[id] = state[id];
   });
   CALC_INPUT_IDS.forEach((id) => {
@@ -1211,6 +1238,13 @@ window.addEventListener('DOMContentLoaded', async () => {
       // 使用者自己打字 → 手動模式（要在 recalc 之前標記）；清空 → 回到自動
       el.dataset.manual = state[id + '__manual'] === '1' ? '1' : '0';
       el.addEventListener('input', () => (el.dataset.manual = el.value === '' ? '0' : '1'));
+    }
+    if (id === 'c-cam-iface') {
+      el.addEventListener('change', () => {
+        renderCamModelOptions();
+        recalc();
+      });
+      return;
     }
     el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', recalc);
   });
