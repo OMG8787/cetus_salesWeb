@@ -398,6 +398,11 @@ function setup() {
   importLegacyCustomers_(log);
   seedSoftwareFromCases_(log);
   try {
+    normalizeDehongSupplier(log);
+  } catch (e) {
+    log.push('統一供應商名稱失敗：' + e.message);
+  }
+  try {
     migrateLegacyCalcSheets_(log);
   } catch (e) {
     log.push('舊型錄分頁整併失敗（之後可在選型計算頁按「同步型錄」重試）：' + e.message);
@@ -1791,7 +1796,7 @@ function appendDehongToTeleSheet_(items) {
       wd: rec['工作距離'],
       dof: rec['景深'],
       mount: rec['相機接口'],
-      base: { Category: '鏡頭', Supplier: '德鴻' },
+      base: { Category: '鏡頭', Supplier: DEHONG_SUPPLIER },
     });
   });
   var r = upsertHardware_(recs);
@@ -1806,6 +1811,39 @@ function appendDehongToTeleSheet_(items) {
 // 還沒抓的：相機（要逐系列進內頁）、FA 鏡頭（系列頁）、光學棱鏡。
 // ------------------------------------------------------------
 var DEHONG_BASE = 'https://twdehong.com';
+/** 德鴻在供應商欄統一使用的名稱（舊資料裡的「德鴻 / 台灣德鴻 / 臺灣德鴻」會被統一成這個）。 */
+var DEHONG_SUPPLIER = '台灣德鴻視覺有限公司';
+var DEHONG_SUPPLIER_ALIASES = ['德鴻', '台灣德鴻', '臺灣德鴻', '臺灣德鴻視覺有限公司', '台灣德鴻視覺', '臺灣德鴻視覺', '德鴻視覺', '德鴻視覺有限公司'];
+
+/** 把某分頁「Supplier」欄裡屬於 aliases 的名稱統一改成 target，回傳改了幾筆。 */
+function normalizeSupplierColumn_(sheetName, aliases, target) {
+  var sheet = getSheet(sheetName);
+  if (sheet.getLastRow() < 2) return 0;
+  var col = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].indexOf('Supplier');
+  if (col < 0) return 0;
+  var range = sheet.getRange(2, col + 1, sheet.getLastRow() - 1, 1);
+  var n = 0;
+  var out = range.getValues().map(function (r) {
+    var v = String(r[0]).trim();
+    if (v !== target && aliases.indexOf(v) > -1) {
+      n++;
+      return [target];
+    }
+    return [r[0]];
+  });
+  if (n) range.setValues(out);
+  return n;
+}
+
+/** 統一德鴻的供應商名稱（產品資料與價格紀錄）。可重複執行；可直接在 Apps Script 編輯器選這個函式按執行。 */
+function normalizeDehongSupplier(log) {
+  var p = normalizeSupplierColumn_(SHEET_PRODUCTS, DEHONG_SUPPLIER_ALIASES, DEHONG_SUPPLIER);
+  var h = normalizeSupplierColumn_(SHEET_PRICE_HISTORY, DEHONG_SUPPLIER_ALIASES, DEHONG_SUPPLIER);
+  var msg = '供應商名稱統一為「' + DEHONG_SUPPLIER + '」：產品 ' + p + ' 筆、價格紀錄 ' + h + ' 筆';
+  if (log) log.push(msg);
+  Logger.log(msg);
+  return { products: p, history: h };
+}
 var DEHONG_RUN_LIMIT_MS = 5 * 60 * 1000;
 
 /** 網址路徑第 3 段（/index.php/<區>/...）決定分類。 */
@@ -2470,7 +2508,7 @@ function importDehongProducts_(log, opts) {
         newRows.push({
           InternalModel: it.title,
           SupplierModel: it.title,
-          Supplier: '德鴻',
+          Supplier: DEHONG_SUPPLIER,
           SupplierContact: '陳小姐',
           SupplierContactEmail: 'TWDH@twdehong.com',
           Origin: '台灣',
@@ -2509,7 +2547,7 @@ function importDehongProducts_(log, opts) {
         newRows.push({
           InternalModel: it2.title,
           SupplierModel: it2.title,
-          Supplier: '德鴻',
+          Supplier: DEHONG_SUPPLIER,
           SupplierContact: '陳小姐',
           SupplierContactEmail: 'TWDH@twdehong.com',
           Origin: '台灣',
@@ -2546,7 +2584,7 @@ function importDehongProducts_(log, opts) {
         }
         return;
       }
-      rec.Supplier = '德鴻';
+      rec.Supplier = DEHONG_SUPPLIER;
       rec.SupplierContact = '陳小姐';
       rec.SupplierContactEmail = 'TWDH@twdehong.com';
       rec.Origin = rec.Category === '相機' ? '' : '台灣';
