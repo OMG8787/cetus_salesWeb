@@ -796,6 +796,90 @@ async function importMindvision() {
   searchProducts();
 }
 
+/** 一次跑完全部官網匯入：每家各自分段執行，失敗的不影響其他家，最後整理各家新增多少。 */
+async function importAllMissing() {
+  if (!confirm('要一次匯入全部官網的硬體嗎？依序跑：公開型錄 → 德鴻 → FLIR → Basler → 邁德威視。只會新增還沒有的型號、補空白規格，不含價格。全部約需 10～25 分鐘，請不要關閉頁面。')) return;
+  const NL = String.fromCharCode(10);
+  const results = [];
+  const failNote = (r) => (r && r.errors && r.errors.length ? r.errors.length + ' 個頁面失敗' : '');
+
+  // 通用：反覆呼叫 action 直到 done，累計各項數字
+  const loop = async (label, action, base, stage) => {
+    const sum = { added: 0, enriched: 0, camAdded: 0, notes: [] };
+    let offset = 0;
+    let step = 0;
+    while (true) {
+      step++;
+      setLoadingText('匯入 ' + label + '：第 ' + step + ' 段（已新增 ' + sum.added + ' 筆）...');
+      const r = await callApi(action, Object.assign({}, base, stage ? { stage } : {}, { offset }));
+      if (!r.success) throw new Error(r.message || '失敗');
+      sum.added += r.added || 0;
+      sum.enriched += r.enriched || 0;
+      sum.camAdded += r.camAdded || r.teleAdded || 0;
+      if (r.errors && r.errors.length) sum.notes.push(...r.errors);
+      if (r.done || step > 80) break;
+      offset = r.nextOffset;
+    }
+    return sum;
+  };
+  const run = async (label, fn) => {
+    try {
+      const sum = await fn();
+      results.push({ label, ok: true, sum });
+    } catch (e) {
+      results.push({ label, ok: false, error: e.message || String(e) });
+    }
+  };
+
+  await run('公開型錄', async () => {
+    setLoadingText('匯入公開型錄...');
+    const r = await callApi('importCatalogProducts', {});
+    if (!r.success) throw new Error(r.message);
+    return { added: r.added, enriched: 0, camAdded: 0, notes: [] };
+  });
+  await run('德鴻', async () => {
+    const a = await loop('德鴻', 'importDehongProducts', {}, 'lists');
+    setLoadingText('匯入德鴻：讀取相機、FA 鏡頭、液態鏡頭...');
+    const b = await callApi('importDehongProducts', { stage: 'extras' });
+    if (!b.success) throw new Error(b.message);
+    a.added += b.added || 0;
+    a.enriched += b.enriched || 0;
+    a.camAdded += b.camAdded || 0;
+    if (b.errors && b.errors.length) a.notes.push(...b.errors);
+    return a;
+  });
+  await run('FLIR', async () => {
+    setLoadingText('匯入 FLIR：熱像/研發相機與鏡頭...');
+    const t = await callApi('importFlirProducts', { stage: 'thermal' });
+    if (!t.success) throw new Error(t.message);
+    const v = await loop('FLIR 工業相機', 'importFlirProducts', {}, 'visible');
+    return { added: (t.added || 0) + v.added, enriched: (t.enriched || 0) + v.enriched, camAdded: v.camAdded, notes: [...(t.errors || []), ...v.notes] };
+  });
+  await run('Basler', () => loop('Basler', 'importBaslerProducts', {}));
+  await run('邁德威視', () => loop('邁德威視', 'importMindvisionProducts', {}));
+
+  setLoadingText('處理中，請稍候...');
+  let total = 0;
+  const lines = ['全部匯入完成，各家結果：'];
+  results.forEach((r) => {
+    if (!r.ok) {
+      lines.push('✗ ' + r.label + '：失敗（' + r.error + '）');
+      return;
+    }
+    total += r.sum.added;
+    const blocked = r.sum.notes.filter((n) => /HTTP 403|HTTP 429/.test(n)).length;
+    let line = '✓ ' + r.label + '：新增 ' + r.sum.added + ' 筆、補規格 ' + r.sum.enriched + ' 筆、選型規格 +' + r.sum.camAdded;
+    if (blocked) line += '（' + blocked + ' 個頁面被官網擋下 403，這家官網擋 Google 伺服器，無法抓取）';
+    else if (r.sum.notes.length) line += '（' + r.sum.notes.length + ' 個頁面讀取失敗，可再按一次補抓）';
+    lines.push(line);
+  });
+  lines.push('合計新增 ' + total + ' 筆產品。');
+  alert(lines.join(NL));
+  clearCached('products_all');
+  clearCached('visionCatalog_v5');
+  searchProducts();
+}
+
 async function dedupeData() {
   const NL = String.fromCharCode(10);
   const preview = await callApi('dedupeData', { apply: false });

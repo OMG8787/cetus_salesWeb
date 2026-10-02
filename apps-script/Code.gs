@@ -2585,7 +2585,17 @@ var TELEDYNE_FAMILIES = [
 var FLIR_CHUNK_MS = 150 * 1000;
 
 function fetchUrl_(url) {
-  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+  var headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7',
+    'Accept-Language': 'en-US,en;q=0.9,zh-TW;q=0.8',
+    'Referer': url.split('/').slice(0, 3).join('/') + '/',
+  };
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: headers });
+  if (res.getResponseCode() === 403 || res.getResponseCode() === 429) {
+    Utilities.sleep(1500);
+    res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: headers });
+  }
   if (res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode() + ' ' + url);
   return res.getContentText('UTF-8');
 }
