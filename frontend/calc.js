@@ -22,6 +22,7 @@ const CALC_STATE_KEY = 'aoi_calc_state';
 const CATALOG_CACHE_KEY = 'visionCatalog_v5';
 const CALC_INPUT_IDS = [
   'c-fov-l', 'c-fov-s', 'c-acc-tol', 'c-acc', 'c-acc-unit', 'c-ppf', 'c-wd',
+  'c-brand-all', 'c-origin-all', 'c-lens-brand', 'c-lens-origin', 'c-light-model', 'c-ctl-model', 'c-host-model', 'q-type', 'q-mult', 'q-customer', 'q-format',
   'c-cam-source', 'c-cam-iface', 'c-brand', 'c-origin', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
   'c-lens-type', 'c-lens-model', 'c-f-user', 'c-mag-user',
   'c-speed', 'c-motion', 'c-exp', 'c-exp-unit', 'c-blur', 'c-pps',
@@ -109,6 +110,7 @@ function recalc() {
 
   renderMessages(msgs);
   lastCalc = { req, cam, lens, act, fly, msgs, formulas: formulaLog.slice() };
+  if (typeof renderQuotePanel === 'function') renderQuotePanel();
 }
 
 // ---- ① 客戶需求 ----
@@ -281,29 +283,40 @@ function originOf(item) {
   return productOriginMap[String(item.name || '').toUpperCase()] || '';
 }
 
-function matchesBrandOrigin(item) {
-  const b = val('c-brand');
-  const o = val('c-origin');
-  return (!b || item.brand === b) && (!o || originOf(item) === o);
+/** 品牌 / 產地的有效條件：客戶需求（全部套用）為底，相機 / 鏡頭各自指定了就以各自的為準。kind：cam / lens / other(光源主機等)。 */
+function effectiveFilter(kind) {
+  const all = { brand: val('c-brand-all'), origin: val('c-origin-all') };
+  if (kind === 'cam') return { brand: val('c-brand') || all.brand, origin: val('c-origin') || all.origin };
+  if (kind === 'lens') return { brand: val('c-lens-brand') || all.brand, origin: val('c-lens-origin') || all.origin };
+  return all;
+}
+
+function matchesBrandOrigin(item, kind) {
+  const f = effectiveFilter(kind);
+  return (!f.brand || item.brand === f.brand) && (!f.origin || originOf(item) === f.origin);
 }
 
 /** 依「介面類別」「品牌」「產地」選項過濾後的相機清單（空值 = 不限）。 */
 function cameraPool() {
   const f = val('c-cam-iface');
-  return cameraCatalog.filter((c) => (!f || c.iface === f) && matchesBrandOrigin(c));
+  return cameraCatalog.filter((c) => (!f || c.iface === f) && matchesBrandOrigin(c, 'cam'));
 }
 
 /** 依品牌 / 產地過濾後的鏡頭清單。 */
 function lensPool(type) {
-  return lensCatalog[type].filter(matchesBrandOrigin);
+  return lensCatalog[type].filter((l) => matchesBrandOrigin(l, 'lens'));
 }
 
-/** 品牌 / 產地下拉選項：直接依型錄（相機 + 鏡頭）裡有哪些產生。 */
+let savedBO = {}; // 重新整理前選的品牌 / 產地（型錄、產品還沒載入前下拉是空的）
+
+/** 品牌 / 產地下拉選項：客戶需求（全部）依型錄 + 產品資料庫；相機、鏡頭各自依自己的型錄。 */
 function rebuildBrandOriginOptions() {
-  const all = [...cameraCatalog, ...lensCatalog.fa, ...lensCatalog.tele];
+  const prods = (typeof calcProducts !== 'undefined' ? calcProducts : []).map((p) => ({ brand: productBrand(p), name: productKey(p) }));
+  const lenses = [...lensCatalog.fa, ...lensCatalog.tele];
   const build = (id, firstLabel, values) => {
     const select = document.getElementById(id);
-    const keep = select.value || savedSelects[id] || '';
+    if (!select) return;
+    const keep = select.value || savedSelects[id] || savedBO[id] || '';
     select.innerHTML = '<option value="">' + firstLabel + '</option>';
     [...new Set(values.filter(Boolean))].sort().forEach((v) => {
       const opt = document.createElement('option');
@@ -313,11 +326,16 @@ function rebuildBrandOriginOptions() {
     });
     if ([...select.options].some((o) => o.value === keep)) select.value = keep;
   };
-  build('c-brand', '不限品牌', all.map((x) => x.brand));
-  build('c-origin', '不限產地', all.map(originOf));
+  const everything = [...cameraCatalog, ...lenses, ...prods];
+  build('c-brand-all', '不限品牌', everything.map((x) => x.brand));
+  build('c-origin-all', '不限產地', everything.map(originOf));
+  build('c-brand', '依客戶需求', cameraCatalog.map((x) => x.brand));
+  build('c-origin', '依客戶需求', cameraCatalog.map(originOf));
+  build('c-lens-brand', '依客戶需求', lenses.map((x) => x.brand));
+  build('c-lens-origin', '依客戶需求', lenses.map(originOf));
 }
 
-/** 產品資料庫有填產地的型號補進對照表，讀完後重建選項（讀不到就只用品牌對照）。 */
+/** 產品資料庫：補產地對照、提供光源 / 主機 / 配件 / 底價，讀完後重建選項（讀不到就只用品牌對照）。 */
 async function loadProductOrigins() {
   try {
     let list = getCached('products_all');
@@ -334,10 +352,13 @@ async function loadProductOrigins() {
       });
     });
     productOriginMap = map;
+    calcProducts = list;
+    indexProducts();
     rebuildBrandOriginOptions();
+    refreshAddonPick();
     recalc();
   } catch (e) {
-    console.error('讀取產品產地失敗', e);
+    console.error('讀取產品失敗', e);
   }
 }
 
@@ -687,7 +708,8 @@ function renderLensRecs(recs, used, type) {
 function populateLensSelect(type) {
   const select = document.getElementById('c-lens-model');
   const pool = lensPool(type);
-  const poolKey = `${pool.length}|${val('c-brand')}|${val('c-origin')}`;
+  const lf = effectiveFilter('lens');
+  const poolKey = `${pool.length}|${lf.brand}|${lf.origin}`;
   if (select.dataset.type === type && select.dataset.count === poolKey) return;
   const keep = select.value || savedSelects['c-lens-model'] || '';
   select.innerHTML = '<option value="">自動（採用建議第一名）</option>';
@@ -1292,6 +1314,9 @@ function resetCalc() {
   });
   document.getElementById('c-ppf').value = 5;
   document.getElementById('c-blur').value = 1;
+  savedHw = {};
+  savedBO = {};
+  if (typeof clearQuoteState === 'function') clearQuoteState();
   setTargetsAuto();
   toggleCamSource();
   recalc();
@@ -1318,6 +1343,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   ['c-cam-model', 'c-cam-iface', 'c-brand', 'c-origin', 'c-lens-model'].forEach((id) => {
     if (state[id]) savedSelects[id] = state[id];
   });
+  ['c-light-model', 'c-ctl-model', 'c-host-model'].forEach((id) => {
+    if (state[id]) savedHw[id] = state[id];
+  });
+  ['c-brand-all', 'c-origin-all', 'c-brand', 'c-origin', 'c-lens-brand', 'c-lens-origin'].forEach((id) => {
+    if (state[id]) savedBO[id] = state[id];
+  });
   CALC_INPUT_IDS.forEach((id) => {
     const el = document.getElementById(id);
     if (state[id] != null && !savedSelects[id]) el.value = state[id];
@@ -1326,7 +1357,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       el.dataset.manual = state[id + '__manual'] === '1' ? '1' : '0';
       el.addEventListener('input', () => (el.dataset.manual = el.value === '' ? '0' : '1'));
     }
-    if (id === 'c-cam-iface' || id === 'c-brand' || id === 'c-origin') {
+    if (['c-cam-iface', 'c-brand', 'c-origin', 'c-brand-all', 'c-origin-all', 'c-lens-brand', 'c-lens-origin'].includes(id)) {
       el.addEventListener('change', () => {
         renderCamModelOptions();
         recalc();
