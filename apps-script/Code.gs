@@ -105,6 +105,7 @@ var ROUTES = {
   addProduct:              { auth: true, fn: handleAddProduct },
   updateProduct:           { auth: true, fn: handleUpdateProduct },
   deleteProduct:           { auth: true, fn: handleDeleteProduct },
+  deleteProducts:          { auth: true, fn: handleDeleteProducts },
   importCatalogProducts:   { auth: true, fn: handleImportCatalogProducts },
   importDehongProducts:    { auth: true, fn: handleImportDehongProducts },
   dedupeData:              { auth: true, fn: handleDedupeData },
@@ -301,6 +302,7 @@ PERMISSIONS['addStaff'] = ['admin'];
 PERMISSIONS['updateStaff'] = ['admin'];
 PERMISSIONS['deleteStaff'] = ['admin'];
 PERMISSIONS['deleteProduct'] = ['admin', 'sales'];
+PERMISSIONS['deleteProducts'] = ['admin', 'sales'];
 PERMISSIONS['deleteSoftware'] = ['admin'];
 PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
 PERMISSIONS['importDehongProducts'] = ['admin', 'sales'];
@@ -1310,6 +1312,33 @@ function handleDeleteProduct(body) {
   if (rowNum === -1) return { success: false, message: '查無此產品' };
   sheet.deleteRow(rowNum);
   return { success: true };
+}
+
+/** 批次刪除產品：rowIndexes = 要刪的列號陣列。連續的列合併成一次刪除，幾千筆也很快。 */
+function handleDeleteProducts(body) {
+  var sheet = getSheet(SHEET_PRODUCTS);
+  var last = sheet.getLastRow();
+  var seen = {};
+  var rows = (body.rowIndexes || [])
+    .map(Number)
+    .filter(function (n) {
+      if (!(n >= 2 && n <= last) || seen[n]) return false;
+      seen[n] = true;
+      return true;
+    })
+    .sort(function (a, b) {
+      return b - a;
+    });
+  if (!rows.length) return { success: false, message: '沒有可刪除的列（可能已經被刪除，請重新載入產品資料）' };
+  var i = 0;
+  while (i < rows.length) {
+    var start = rows[i];
+    var count = 1;
+    while (i + count < rows.length && rows[i + count] === start - count) count++;
+    sheet.deleteRows(start - count + 1, count);
+    i += count;
+  }
+  return { success: true, deleted: rows.length };
 }
 
 // ------------------------------------------------------------
@@ -3014,6 +3043,8 @@ var MV_BASE = 'https://www.mindvision.com.cn';
 var MV_BRAND = 'MindVision 邁德威視';
 var MV_CHUNK_MS = 150 * 1000;
 
+var MV_NON_PRODUCT = /尺寸图|尺寸圖|图纸|圖紙|手册|手冊|说明书|說明書|驱动|驅動|SDK|软件|軟件|教程|培训|彩页|样本|选型表|常见问题|下载|案例/;
+
 function mvJson_(path) {
   return JSON.parse(fetchUrl_(MV_BASE + path));
 }
@@ -3150,8 +3181,11 @@ function importMindvisionProducts_(offset) {
     }
     var f = parseMvPage_(html);
     var kind = mvClassify_(t);
+    if (MV_NON_PRODUCT.test(t.title)) continue; // 尺寸圖、手冊、驅動、軟體等不是產品
     var model = mvModel_(f, t.title);
     if (!model) continue;
+    // 相機 / 鏡頭 / 採集卡一定要有型號欄位或標題裡的 MV- 型號，否則是說明頁
+    if (kind.kind !== 'light' && kind.kind !== 'ctl' && !f['型号'] && !f['产品型号'] && !/MV-[A-Za-z0-9]/.test(t.title)) continue;
     var key = model.toUpperCase();
     var specsJson = JSON.stringify(f);
     var resText = f['分辨率'] || f['分辨率@帧率'] || f['分辩率@帧率'] || '';

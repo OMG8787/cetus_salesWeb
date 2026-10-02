@@ -117,9 +117,17 @@
       <button onclick="addProduct()">儲存新產品</button>
     </div>
 
+    <div id="product-bulk-bar" class="panel" style="padding:8px 12px;">
+      <span id="bulk-info" class="calc-hint">批次刪除：勾選下方列左邊的方框，或按「全選目前篩選結果」（先用上面的搜尋把錯誤資料篩出來，例如輸入「尺寸图」）。</span>
+      <button class="btn-secondary" onclick="bulkSelectFiltered()">全選目前篩選結果</button>
+      <button class="btn-secondary" onclick="bulkSelectPage()">全選本頁</button>
+      <button class="btn-secondary" onclick="bulkClear()">清除選取</button>
+      <button id="bulk-delete-btn" style="background:#c0392b;color:#fff;" onclick="bulkDelete()">刪除所選</button>
+    </div>
     <table id="product-table">
       <thead>
         <tr>
+          <th>選</th>
           <th>常用</th>
           <th class="sortable" data-sort="InternalModel">內部型號</th>
           <th class="sortable" data-sort="SupplierModel">供應商型號</th>

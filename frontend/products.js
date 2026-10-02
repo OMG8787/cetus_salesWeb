@@ -218,16 +218,73 @@ function renderProductPage() {
   document.getElementById('product-page-last').dataset.page = totalPages;
 }
 
+// ---- 批次刪除：用列號記住勾選，換頁/重新篩選也保留 ----
+const selectedRows = new Set();
+
+function updateBulkInfo() {
+  const n = selectedRows.size;
+  const info = document.getElementById('bulk-info');
+  if (info) info.textContent = n ? '已選取 ' + n + ' 筆（目前篩選結果共 ' + filteredProducts.length + ' 筆）' : '批次刪除：勾選下方列左邊的方框，或按「全選目前篩選結果」（先用上面的搜尋把錯誤資料篩出來，例如輸入「尺寸图」）。';
+  const btn = document.getElementById('bulk-delete-btn');
+  if (btn) btn.textContent = n ? '刪除所選（' + n + '）' : '刪除所選';
+}
+
+function toggleRowSelect(rowIndex, checked) {
+  if (checked) selectedRows.add(rowIndex);
+  else selectedRows.delete(rowIndex);
+  updateBulkInfo();
+}
+
+function bulkSelectFiltered() {
+  filteredProducts.forEach((p) => selectedRows.add(p.RowIndex));
+  updateBulkInfo();
+  renderCurrentPage();
+}
+
+function bulkSelectPage() {
+  document.querySelectorAll('#product-table tbody input[type=checkbox]').forEach((cb) => (cb.checked = true));
+  const size = getProductPageSize();
+  filteredProducts.slice((productPage - 1) * size, productPage * size).forEach((p) => selectedRows.add(p.RowIndex));
+  updateBulkInfo();
+}
+
+function bulkClear() {
+  selectedRows.clear();
+  updateBulkInfo();
+  renderCurrentPage();
+}
+
+function renderCurrentPage() {
+  renderProductPage();
+}
+
+async function bulkDelete() {
+  const n = selectedRows.size;
+  if (!n) return alert('還沒有勾選任何產品');
+  const byRow = new Map(allProducts.map((p) => [p.RowIndex, p]));
+  const sample = [...selectedRows].slice(0, 12).map((r) => (byRow.get(r) ? byRow.get(r).InternalModel || byRow.get(r).SupplierModel : '#' + r));
+  const NL = String.fromCharCode(10);
+  if (!confirm('確定要刪除這 ' + n + ' 筆產品嗎？刪除後無法復原。' + NL + NL + '例如：' + NL + sample.join(NL) + (n > 12 ? NL + '…另外 ' + (n - 12) + ' 筆' : ''))) return;
+  const r = await callApi('deleteProducts', { rowIndexes: [...selectedRows] });
+  if (!r.success) return alert(r.message);
+  selectedRows.clear();
+  clearCached('products_all');
+  clearCached('visionCatalog_v5');
+  alert('已刪除 ' + r.deleted + ' 筆');
+  await searchProducts();
+}
+
 function renderProductTable(products) {
   const tbody = document.querySelector('#product-table tbody');
   tbody.innerHTML = '';
   products.forEach((p) => {
     const tr = document.createElement('tr');
     const isFav = favoriteSet.has(String(p.InternalModel));
-    tr.innerHTML = `<td>${p.InternalModel ? `<button class="fav-star ${isFav ? '' : 'off'}" title="${isFav ? '取消常用' : '加入常用'}" onclick="toggleFavorite('${String(p.InternalModel).replace(/'/g, "\\'")}')">${isFav ? '★' : '☆'}</button>` : ''}</td><td>${p.InternalModel || '<span class="badge-warn">（缺內部型號）</span>'}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || '<span class="badge-warn">無</span>'}</td><td>${p.InquiryCount || 0}</td><td>${productAlertHtml(p)}</td><td>${p.Notes || ''}</td>
+    tr.innerHTML = `<td><input type="checkbox" ${selectedRows.has(p.RowIndex) ? 'checked' : ''} onchange="toggleRowSelect(${p.RowIndex}, this.checked)" /></td><td>${p.InternalModel ? `<button class="fav-star ${isFav ? '' : 'off'}" title="${isFav ? '取消常用' : '加入常用'}" onclick="toggleFavorite('${String(p.InternalModel).replace(/'/g, "\\'")}')">${isFav ? '★' : '☆'}</button>` : ''}</td><td>${p.InternalModel || '<span class="badge-warn">（缺內部型號）</span>'}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || '<span class="badge-warn">無</span>'}</td><td>${p.InquiryCount || 0}</td><td>${productAlertHtml(p)}</td><td>${p.Notes || ''}</td>
       <td><button onclick="viewProduct('${String(p.InternalModel || '').replace(/'/g, "\\'")}', ${p.RowIndex})">查看/詢價</button></td>`;
     tbody.appendChild(tr);
   });
+  updateBulkInfo();
 }
 
 async function viewProduct(internalModel, rowIndex) {
