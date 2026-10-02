@@ -616,7 +616,7 @@ async function importDehong() {
     setLoadingText('處理中，請稍候...');
   }
   clearCached('products_all');
-  clearCached('visionCatalog_v3');
+  clearCached('visionCatalog_v4');
   searchProducts();
 }
 
@@ -661,7 +661,7 @@ async function importFlir() {
     setLoadingText('處理中，請稍候...');
   }
   clearCached('products_all');
-  clearCached('visionCatalog_v3');
+  clearCached('visionCatalog_v4');
   searchProducts();
 }
 
@@ -700,7 +700,7 @@ async function importBasler() {
     setLoadingText('處理中，請稍候...');
   }
   clearCached('products_all');
-  clearCached('visionCatalog_v3');
+  clearCached('visionCatalog_v4');
   searchProducts();
 }
 
@@ -718,6 +718,6 @@ async function dedupeData() {
   if (!done.success) return alert(done.message);
   alert(`已合併，刪除 ${done.removed} 筆重複資料。`);
   clearCached('products_all');
-  clearCached('visionCatalog_v3');
+  clearCached('visionCatalog_v4');
   searchProducts();
 }

@@ -19,10 +19,10 @@
 const STANDARD_FOCAL_LENGTHS = [8, 12, 16, 25, 35, 50, 75];
 const TOL_SYMBOLS = { pm: '±', p: '+', m: '-' };
 const CALC_STATE_KEY = 'aoi_calc_state';
-const CATALOG_CACHE_KEY = 'visionCatalog_v3';
+const CATALOG_CACHE_KEY = 'visionCatalog_v4';
 const CALC_INPUT_IDS = [
   'c-fov-l', 'c-fov-s', 'c-acc-tol', 'c-acc', 'c-acc-unit', 'c-ppf', 'c-wd',
-  'c-cam-source', 'c-cam-iface', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
+  'c-cam-source', 'c-cam-iface', 'c-brand', 'c-origin', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
   'c-lens-type', 'c-lens-model', 'c-f-user', 'c-mag-user',
   'c-speed', 'c-motion', 'c-exp', 'c-exp-unit', 'c-blur', 'c-pps',
 ];
@@ -259,10 +259,84 @@ function pickCamera(req, add) {
  * 相機推薦（規則同 CCD_camera.html）：長邊像素 ≥ 所需長邊、短邊像素 ≥ 所需短邊，
  * 再依畫素由小到大排（最接近需求的在前面），同畫素時 GigE 優先。
  */
-/** 依「介面類別」選項過濾後的相機清單（空值 = 全部）。 */
+// 品牌 → 產地（型錄沒有產地欄時的預設對照；產品資料庫(Products)有填產地的型號會優先採用）
+const BRAND_ORIGIN_RULES = [
+  [/basler|allied\s*vision|avt|schneider|ids\b|imaging\s*source|vieworks/i, '德國'],
+  [/flir|cognex|edmund|navitar|point\s*grey|teledyne\s*flir/i, '美國'],
+  [/dalsa/i, '加拿大'],
+  [/hik|海康|mind\s*vision|mv-|大恆|daheng|dhc|華睿|dahua|大華|嘉恆|do3think|\bhr\b/i, '中國'],
+  [/sony|omron|computar|tamron|kowa|fujinon|fujifilm|moritex|myutron|keyence|panasonic|ricoh|cbc|evt/i, '日本'],
+  [/opto\s*engineering|optotune/i, '義大利'],
+  [/lucid/i, '加拿大'],
+  [/sentech|toshiba|jai/i, '日本'],
+  [/vst|opt\b/i, '日本'],
+];
+let productOriginMap = {}; // 型號(大寫) → 產地，來自產品資料庫
+
+function originOf(item) {
+  const brandRule = BRAND_ORIGIN_RULES.find((r) => r[0].test(item.brand || '') || r[0].test(item.name || ''));
+  if (brandRule) return brandRule[1];
+  return productOriginMap[String(item.name || '').toUpperCase()] || '';
+}
+
+function matchesBrandOrigin(item) {
+  const b = val('c-brand');
+  const o = val('c-origin');
+  return (!b || item.brand === b) && (!o || originOf(item) === o);
+}
+
+/** 依「介面類別」「品牌」「產地」選項過濾後的相機清單（空值 = 不限）。 */
 function cameraPool() {
   const f = val('c-cam-iface');
-  return f ? cameraCatalog.filter((c) => c.iface === f) : cameraCatalog;
+  return cameraCatalog.filter((c) => (!f || c.iface === f) && matchesBrandOrigin(c));
+}
+
+/** 依品牌 / 產地過濾後的鏡頭清單。 */
+function lensPool(type) {
+  return lensCatalog[type].filter(matchesBrandOrigin);
+}
+
+/** 品牌 / 產地下拉選項：直接依型錄（相機 + 鏡頭）裡有哪些產生。 */
+function rebuildBrandOriginOptions() {
+  const all = [...cameraCatalog, ...lensCatalog.fa, ...lensCatalog.tele];
+  const build = (id, firstLabel, values) => {
+    const select = document.getElementById(id);
+    const keep = select.value || savedSelects[id] || '';
+    select.innerHTML = '<option value="">' + firstLabel + '</option>';
+    [...new Set(values.filter(Boolean))].sort().forEach((v) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+    if ([...select.options].some((o) => o.value === keep)) select.value = keep;
+  };
+  build('c-brand', '不限品牌', all.map((x) => x.brand));
+  build('c-origin', '不限產地', all.map(originOf));
+}
+
+/** 產品資料庫有填產地的型號補進對照表，讀完後重建選項（讀不到就只用品牌對照）。 */
+async function loadProductOrigins() {
+  try {
+    let list = getCached('products_all');
+    if (!list) {
+      const r = await callApi('searchProducts', { keyword: '' });
+      if (!r.success) return;
+      list = r.products;
+    }
+    const map = {};
+    list.forEach((p) => {
+      if (!p.Origin) return;
+      [p.InternalModel, p.SupplierModel].forEach((m) => {
+        if (m) map[String(m).toUpperCase()] = p.Origin;
+      });
+    });
+    productOriginMap = map;
+    rebuildBrandOriginOptions();
+    recalc();
+  } catch (e) {
+    console.error('讀取產品產地失敗', e);
+  }
 }
 
 function findCameraRecs(reqW, reqH, count) {
@@ -380,9 +454,9 @@ function calcLens(req, cam, add) {
   lens.used = pickLens(type, lens, req);
   renderLensRecs(lens.recs, lens.used, type);
 
-  if (lensCatalog[type].length && !lens.recs.length) {
+  if (lensPool(type).length && !lens.recs.length) {
     const tv = isFa ? `焦距 ${fmt(lens.target)} mm` : `倍率 ${fmt(lens.target, 4)}x`;
-    const inRange = lensCatalog[type].some((l) => Math.abs((isFa ? l.f : l.mag) - lens.target) / lens.target <= 0.5);
+    const inRange = lensPool(type).some((l) => Math.abs((isFa ? l.f : l.mag) - lens.target) / lens.target <= 0.5);
     const why = inRange ? '接近的型號都因解析力 / 延伸環 / 視野扣分過多' : '型錄裡沒有 ±50% 內的型號';
     add('warn', `找不到合適的${isFa ? 'FA' : '遠心'}鏡頭（${tv}，${why}），目前以計算值推算。可從「型號」手動挑一支看詳細問題，${isFa ? '或調整 WD、改用遠心鏡頭' : '或改用 FA 鏡頭'}`, ['c-lens-model', inputId]);
   }
@@ -477,7 +551,7 @@ function pickLens(type, lens, req) {
 /** FA 鏡頭打分數（規則同 CCD_lens.html）：只看焦距在目標 ±50% 內，100 分往下扣。 */
 function scoreFaLenses(req, cam, targetF, wdFor) {
   if (req.wd > 0 && targetF >= req.wd) return [];
-  return lensCatalog.fa
+  return lensPool('fa')
     .filter((l) => Math.abs(l.f - targetF) / targetF <= 0.5)
     .map((l) => {
       const errors = [];
@@ -528,7 +602,7 @@ function scoreFaLenses(req, cam, targetF, wdFor) {
 
 /** 遠心鏡頭打分數（規則同 CCD_lens.html）：只看倍率在目標 ±50% 內。 */
 function scoreTeleLenses(req, cam, targetMag) {
-  return lensCatalog.tele
+  return lensPool('tele')
     .filter((l) => Math.abs(l.mag - targetMag) / targetMag <= 0.5)
     .map((l) => {
       const errors = [];
@@ -575,7 +649,7 @@ function getLensMp(resStr) {
 function renderLensRecs(recs, used, type) {
   const box = document.getElementById('c-lens-recs');
   box.innerHTML = '';
-  if (!lensCatalog[type].length) {
+  if (!lensPool(type).length) {
     box.innerHTML = `<div class="calc-hint">${catalogLoaded ? '型錄裡沒有' : '尚未載入'}${type === 'fa' ? ' FA ' : '遠心'}鏡頭資料，${type === 'fa' ? '以標準焦距 8/12/16/25/35/50/75 mm 或欄位焦距推算' : '以欄位倍率推算'}</div>`;
     return;
   }
@@ -610,10 +684,12 @@ function renderLensRecs(recs, used, type) {
 
 function populateLensSelect(type) {
   const select = document.getElementById('c-lens-model');
-  if (select.dataset.type === type && select.dataset.count === String(lensCatalog[type].length)) return;
+  const pool = lensPool(type);
+  const poolKey = `${pool.length}|${val('c-brand')}|${val('c-origin')}`;
+  if (select.dataset.type === type && select.dataset.count === poolKey) return;
   const keep = select.value || savedSelects['c-lens-model'] || '';
   select.innerHTML = '<option value="">自動（採用建議第一名）</option>';
-  const list = lensCatalog[type].slice().sort((a, b) => (type === 'fa' ? a.f - b.f : a.mag - b.mag));
+  const list = pool.slice().sort((a, b) => (type === 'fa' ? a.f - b.f : a.mag - b.mag));
   list.forEach((l) => {
     const opt = document.createElement('option');
     opt.value = l.name;
@@ -622,7 +698,7 @@ function populateLensSelect(type) {
   });
   select.value = list.some((l) => l.name === keep) ? keep : '';
   select.dataset.type = type;
-  select.dataset.count = String(lensCatalog[type].length);
+  select.dataset.count = poolKey;
 }
 
 function toggleLensFields() {
@@ -930,6 +1006,7 @@ function onCatalogReady() {
     ifaceSelect.appendChild(opt);
   });
   if ([...ifaceSelect.options].some((o) => o.value === keepIface)) ifaceSelect.value = keepIface;
+  rebuildBrandOriginOptions();
   renderCamModelOptions(savedSelects['c-cam-model']);
   status.textContent = cameraCatalog.length
     ? `型錄：相機 ${cameraCatalog.length} 款、FA 鏡頭 ${lensCatalog.fa.length} 款、遠心鏡頭 ${lensCatalog.tele.length} 款${missingPixelCameras ? `（另有 ${missingPixelCameras} 款相機缺像元尺寸，沒有納入計算，請到試算表相機分頁補上）` : ''}`
@@ -967,6 +1044,7 @@ function parseCameraTable(table, iface) {
   if (!table || !table.rows || !table.rows.length) return [];
   const idx = detectColumns(table, {
     name: isNameHeader,
+    brand: (l) => l.includes('原廠名稱') || l.includes('Original Company'),
     resolution: (l) => l.includes('解析度') || l.includes('Resolution'),
     pixelSize: (l) => l.includes('像元尺寸') || l.includes('Pixel Size'),
     fps: (l) => l.includes('偵率') || l.includes('幀率') || l.includes('FPS'),
@@ -976,6 +1054,7 @@ function parseCameraTable(table, iface) {
   const cams = [];
   table.rows.forEach((row) => {
     const name = String(cellValue(row, idx.name)).trim();
+    const brand = String(cellValue(row, idx.brand)).trim();
     const res = String(cellValue(row, idx.resolution)).trim();
     if (!name || !res || name === '公司型號' || name === 'Name' || res === '解析度' || res === 'Resolution') return;
     const parts = res.toUpperCase().split(/X|\*|×/);
@@ -999,7 +1078,7 @@ function parseCameraTable(table, iface) {
       missingPixelCameras++;
       return;
     }
-    cams.push({ name, resW, resH, pixelW, pixelH, size, iface, fps: parseFloat(cellValue(row, idx.fps)) || 0, mp: (resW * resH) / 1e6 });
+    cams.push({ name, brand, resW, resH, pixelW, pixelH, size, iface, fps: parseFloat(cellValue(row, idx.fps)) || 0, mp: (resW * resH) / 1e6 });
   });
   return cams;
 }
@@ -1008,6 +1087,7 @@ function parseLensTable(table, isTele) {
   if (!table || !table.rows || !table.rows.length) return [];
   const idx = detectColumns(table, {
     name: isNameHeader,
+    brand: (l) => l.includes('原廠名稱') || l.includes('Original Company'),
     resolution: (l) => l.includes('解析度') || l.includes('Resolution'),
     sensorSize: (l) => l.includes('感測器尺寸') || l.includes('靶面') || l.includes('SensorSize') || l.includes('Sensor Size'),
     f: (l) => l.includes('焦距') || l.includes('Focus Length'),
@@ -1020,7 +1100,7 @@ function parseLensTable(table, isTele) {
   table.rows.forEach((row) => {
     const name = String(cellValue(row, idx.name)).trim();
     if (!name || name === '公司型號' || name === 'Name') return;
-    const base = { name, sensorSize: String(cellValue(row, idx.sensorSize)).trim(), resolution: String(cellValue(row, idx.resolution)).trim() };
+    const base = { name, brand: String(cellValue(row, idx.brand)).trim(), sensorSize: String(cellValue(row, idx.sensorSize)).trim(), resolution: String(cellValue(row, idx.resolution)).trim() };
     if (isTele) {
       const mag = parseFloat(cellValue(row, idx.mag));
       if (mag > 0) lenses.push(Object.assign(base, { mag, wd: String(cellValue(row, idx.wd)).trim(), dof: String(cellValue(row, idx.dof)).trim() }));
@@ -1228,7 +1308,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   applyAdminOnlyVisibility();
 
   const state = loadCalcState();
-  ['c-cam-model', 'c-cam-iface', 'c-lens-model'].forEach((id) => {
+  ['c-cam-model', 'c-cam-iface', 'c-brand', 'c-origin', 'c-lens-model'].forEach((id) => {
     if (state[id]) savedSelects[id] = state[id];
   });
   CALC_INPUT_IDS.forEach((id) => {
@@ -1239,7 +1319,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       el.dataset.manual = state[id + '__manual'] === '1' ? '1' : '0';
       el.addEventListener('input', () => (el.dataset.manual = el.value === '' ? '0' : '1'));
     }
-    if (id === 'c-cam-iface') {
+    if (id === 'c-cam-iface' || id === 'c-brand' || id === 'c-origin') {
       el.addEventListener('change', () => {
         renderCamModelOptions();
         recalc();
@@ -1253,5 +1333,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   recalc();
   loadCatalogs();
+  loadProductOrigins();
   loadCalcCaseList();
 });
