@@ -398,6 +398,11 @@ function setup() {
   importLegacyCustomers_(log);
   seedSoftwareFromCases_(log);
   try {
+    repairDehongCloak(log);
+  } catch (e) {
+    log.push('修復備註混淆碼失敗：' + e.message);
+  }
+  try {
     normalizeSupplierNames(log);
   } catch (e) {
     log.push('統一供應商名稱失敗：' + e.message);
@@ -1898,6 +1903,7 @@ function dehongKind_(url) {
 
 function htmlDecode_(str) {
   return String(str || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<[^>]*>/g, '')
     .replace(/&quot;/g, '"')
     .replace(/&#0?39;/g, "'")
@@ -1947,7 +1953,95 @@ function fetchDehongPage_(path) {
   var url = path.indexOf('http') === 0 ? path : DEHONG_BASE + encodeURI(decodeURI(path));
   var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
   if (res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode() + ' ' + path);
-  return res.getContentText('UTF-8');
+  return dehongUncloakHtml_(res.getContentText('UTF-8'));
+}
+
+/** 解開 expression：'4000X3000' + '&#64;' + '9' ... → 4000X3000@9...（把 &#NN; 轉成字元）。 */
+function dehongUncloakExpr_(expr) {
+  return String(expr)
+    .split('+')
+    .map(function (x) {
+      return x.trim().replace(/^['"]|['"]$/g, '');
+    })
+    .join('')
+    .replace(/&#(\d+);/g, function (m, d) {
+      return String.fromCharCode(Number(d));
+    });
+}
+
+/**
+ * 德鴻官網是 Joomla，凡是含「@」的文字（例如規格「4000X3000@9.86FPS」）都會被當成 Email 用 JavaScript 混淆，
+ * 抓到的 HTML 變成「Email住址會使用灌水程式保護機制…」加一大段程式碼。這裡把它還原成原本的文字。
+ */
+function dehongUncloakHtml_(html) {
+  return String(html).replace(/<span id=['"]cloak[0-9a-f]+['"]>[\s\S]*?<\/span>\s*<script[^>]*>([\s\S]*?)<\/script>/g, function (m, js) {
+    var a = js.match(/var\s+addy_text[0-9a-f]+\s*=\s*([\s\S]*?);\s*document\.getElementById/);
+    return a ? dehongUncloakExpr_(a[1]) : '';
+  });
+}
+
+/** 修復已經存進試算表的混淆文字（Notes / Specs 裡的 Email 住址會使用灌水程式…）。 */
+function dehongUncloakStored_(text) {
+  var re = /此?Email[^；;]{0,60}?(?:保護機制|保护机制)[，,]?\s*你需要啟動\s*Javascript\s*才能觀看它\s*document\.getElementById\([^)]*\)\.innerHTML\s*=\s*['"]{2}\s*;[\s\S]*?var\s+addy_text[0-9a-f]+\s*=\s*([\s\S]*?);\s*document\.getElementById\([^)]*\)\.innerHTML\s*\+?=\s*['"]?\s*\+\s*addy_text[0-9a-f]+\s*\+\s*['"]?/g;
+  return String(text).replace(re, function (m, expr) {
+    return dehongUncloakExpr_(expr);
+  });
+}
+
+/**
+ * 修復產品備註 / 規格裡殘留的混淆程式碼（把「Email住址會使用灌水程式…」換回原本的「4000X3000@9.86FPS」）。
+ * 可重複執行；在 Apps Script 編輯器選這個函式按執行（setup 也會順便執行）。
+ */
+function repairDehongCloak(log) {
+  var sheet = getSheet(SHEET_PRODUCTS);
+  if (sheet.getLastRow() < 2) return 0;
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var iNotes = header.indexOf('Notes');
+  var iSpecs = header.indexOf('Specs');
+  if (iNotes < 0) return 0;
+  var n = sheet.getLastRow() - 1;
+  var notes = sheet.getRange(2, iNotes + 1, n, 1).getValues();
+  var fixedRows = [];
+  var out = notes.map(function (r, i) {
+    var v = String(r[0]);
+    if (v.indexOf('addy_text') > -1 || v.indexOf('灌水程式') > -1) {
+      var nv = dehongUncloakStored_(v);
+      if (nv !== v) {
+        fixedRows.push(i);
+        return [nv];
+      }
+    }
+    return [r[0]];
+  });
+  if (fixedRows.length) {
+    sheet.getRange(2, iNotes + 1, n, 1).setValues(out);
+    if (iSpecs > -1) {
+      var specs = sheet.getRange(2, iSpecs + 1, n, 1).getValues();
+      fixedRows.forEach(function (i) {
+        var v = String(specs[i][0]);
+        if (v.indexOf('addy_text') > -1 || v.indexOf('灌水程式') > -1) {
+          var nv = dehongUncloakStored_(v);
+          if (nv === v) {
+            // Specs 是 JSON，引號被跳脫成 \"，先解析再逐欄修復
+            try {
+              var obj = JSON.parse(v);
+              Object.keys(obj).forEach(function (k) {
+                obj[k] = dehongUncloakStored_(obj[k]);
+              });
+              nv = JSON.stringify(obj);
+            } catch (e) {
+              nv = v;
+            }
+          }
+          if (nv !== v) sheet.getRange(i + 2, iSpecs + 1).setValue(nv);
+        }
+      });
+    }
+  }
+  var msg = '修復德鴻備註裡的混淆程式碼：' + fixedRows.length + ' 筆';
+  if (log) log.push(msg);
+  Logger.log(msg);
+  return fixedRows.length;
 }
 
 function dehongIsEmptyValue_(v) {
