@@ -108,8 +108,36 @@ function productMatchScore(p, keywords) {
   return worst;
 }
 
+/** 類別 / 供應商下拉選項：依目前所有產品裡實際有的值產生（不重複、附筆數），保留原本的選擇。 */
+function rebuildProductFilterOptions() {
+  const build = (id, firstLabel, field) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const keep = sel.value;
+    const counts = new Map();
+    allProducts.forEach((p) => {
+      const v = String(p[field] || '').trim();
+      if (v) counts.set(v, (counts.get(v) || 0) + 1);
+    });
+    const sig = [...counts.entries()].map(([k, n]) => k + n).join('|');
+    if (sel.dataset.sig === sig) return;
+    sel.dataset.sig = sig;
+    sel.innerHTML = '<option value="">' + firstLabel + '</option>';
+    [...counts.keys()].sort((a, b) => a.localeCompare(b)).forEach((v) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v + '（' + counts.get(v) + '）';
+      sel.appendChild(opt);
+    });
+    if (counts.has(keep)) sel.value = keep;
+  };
+  build('product-cat-filter', '全部類別', 'Category');
+  build('product-supplier-filter', '全部供應商', 'Supplier');
+}
+
 /** keepPage = true：背景資料更新時保留目前頁碼（超出範圍會自動拉回最後一頁）。 */
 function applyProductFilter(keepPage) {
+  rebuildProductFilterOptions();
   const keywords = document.getElementById('product-search-input').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const byModel = (a, b) => String(a.InternalModel || '').localeCompare(String(b.InternalModel || ''));
 
@@ -117,6 +145,10 @@ function applyProductFilter(keepPage) {
   const onlyFav = document.getElementById('product-only-fav').checked;
   let pool = onlyIncomplete ? allProducts.filter((p) => productIssues(p).length) : allProducts;
   if (onlyFav) pool = pool.filter((p) => favoriteSet.has(String(p.InternalModel)));
+  const catFilter = document.getElementById('product-cat-filter').value;
+  const supFilter = document.getElementById('product-supplier-filter').value;
+  if (catFilter) pool = pool.filter((p) => String(p.Category || '').trim() === catFilter);
+  if (supFilter) pool = pool.filter((p) => String(p.Supplier || '').trim() === supFilter);
   if (!keywords.length) {
     filteredProducts = pool.slice().sort(byModel);
   } else {

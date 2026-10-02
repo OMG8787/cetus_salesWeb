@@ -57,6 +57,10 @@
     <input id="product-search-input" placeholder="輸入內部型號 / 供應商型號 / 供應商 / 類別 / 產地關鍵字（邊打邊篩選，多個關鍵字用空白隔開）"
       oninput="onProductSearchInput()" />
     <div class="toolbar">
+      <label class="inline-check">類別：<select id="product-cat-filter" onchange="onProductSearchInput()"><option value="">全部類別</option></select></label>
+      <label class="inline-check">供應商：<select id="product-supplier-filter" onchange="onProductSearchInput()"><option value="">全部供應商</option></select></label>
+    </div>
+    <div class="toolbar">
       <button onclick="searchProducts()">重新載入產品資料</button>
       <button onclick="toggleNewProductForm()">+ 新增產品</button>
       <button class="btn-secondary" onclick="importCatalog()" title="把「選型計算」型錄（相機/FA鏡頭/遠心鏡頭）讀進產品資料表，只補還沒有的">匯入型錄產品</button>
