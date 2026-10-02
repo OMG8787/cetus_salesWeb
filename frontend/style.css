@@ -51,6 +51,23 @@ header button { margin-left: 12px; padding: 6px 12px; border: none; border-radiu
 table { width: 100%; border-collapse: collapse; margin-top: 12px; background: white; }
 th, td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; font-size: 14px; }
 th { background: #eef2f7; }
+/* 產品搜尋表：固定欄寬，備註只顯示前幾行，避免某一欄把其他欄擠掉 */
+#product-table { table-layout: fixed; width: 100%; }
+#product-table th, #product-table td { padding: 8px 8px; vertical-align: top; word-break: break-word; overflow-wrap: anywhere; }
+#product-table th:nth-child(1), #product-table td:nth-child(1) { width: 36px; text-align: center; }
+#product-table th:nth-child(2), #product-table td:nth-child(2) { width: 48px; text-align: center; }
+#product-table th:nth-child(3), #product-table td:nth-child(3) { width: 14%; }
+#product-table th:nth-child(4), #product-table td:nth-child(4) { width: 14%; }
+#product-table th:nth-child(5), #product-table td:nth-child(5) { width: 11%; }
+#product-table th:nth-child(6), #product-table td:nth-child(6) { width: 64px; }
+#product-table th:nth-child(7), #product-table td:nth-child(7) { width: 64px; }
+#product-table th:nth-child(8), #product-table td:nth-child(8) { width: 68px; text-align: center; }
+#product-table th:nth-child(9), #product-table td:nth-child(9) { width: 15%; font-size: 12px; }
+#product-table th:nth-child(11), #product-table td:nth-child(11) { width: 84px; }
+#product-table th.sortable::after { font-size: 10px; }
+#product-table .pt-notes { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: #556; line-height: 1.45; }
+#product-table td:nth-child(11) button { padding: 5px 8px; font-size: 12px; white-space: nowrap; }
+#product-table .badge-warn { display: inline-block; margin: 0 0 4px; }
 .pd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0; margin: 10px 0; border: 1px solid #e3e8ef; border-radius: 6px; overflow: hidden; background: #fff; }
 .pd-grid > div { display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #eef1f5; font-size: 13px; }
 .pd-grid > div > span:first-child { color: #667; min-width: 84px; flex: none; }
