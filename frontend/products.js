@@ -900,7 +900,18 @@ async function importAllMissing() {
     while (true) {
       step++;
       setLoadingText('匯入 ' + label + '：第 ' + step + ' 段（已新增 ' + sum.added + ' 筆）...');
-      const r = await callApi(action, Object.assign({}, base, stage ? { stage } : {}, { offset }));
+      // 網路偶爾斷線(Failed to fetch)時，同一段最多重試 3 次，已寫入的資料不會重複
+      let r;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          r = await callApi(action, Object.assign({}, base, stage ? { stage } : {}, { offset }));
+          break;
+        } catch (e) {
+          if (attempt === 3) throw e;
+          setLoadingText('匯入 ' + label + '：連線中斷，重試第 ' + attempt + ' 次...');
+          await new Promise((res) => setTimeout(res, 4000));
+        }
+      }
       if (!r.success) throw new Error(r.message || '失敗');
       sum.added += r.added || 0;
       sum.enriched += r.enriched || 0;

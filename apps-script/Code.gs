@@ -1553,13 +1553,27 @@ function upsertHardware_(records) {
   var fieldMap = { Brand: 'brand', Interface: 'interface', Resolution: 'resolution', PixelSize: 'pixel', SensorSize: 'sensorSize', FPS: 'fps', Mount: 'mount', FocalLength: 'focal', Magnification: 'mag', WD: 'wd', DOF: 'dof', FocusWD: 'focusWd' };
   var numeric = { PixelSize: 1, FPS: 1, FocalLength: 1, Magnification: 1, FocusWD: 1 };
   var sheet = getSheet(SHEET_PRODUCTS);
-  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var fullHeader = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  // 讀資料時跳過 Specs（官網完整規格 JSON，很大、這裡用不到），col 是「去掉 Specs 後」的欄位位置，寫回時用 realCol 換回真正的欄位
+  var sc = fullHeader.indexOf('Specs');
+  var header = sc > -1 ? fullHeader.filter(function (h, i) { return i !== sc; }) : fullHeader;
+  var realCol = function (i) {
+    return sc > -1 && i >= sc ? i + 1 : i;
+  };
   var col = {};
   header.forEach(function (h, i) {
     col[h] = i;
   });
   var lastRow = sheet.getLastRow();
-  var data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, header.length).getValues() : [];
+  var data = [];
+  if (lastRow > 1) {
+    var nRows = lastRow - 1;
+    var left = sheet.getRange(2, 1, nRows, sc > -1 ? sc : fullHeader.length).getValues();
+    var right = sc > -1 && sc + 1 < fullHeader.length ? sheet.getRange(2, sc + 2, nRows, fullHeader.length - sc - 1).getValues() : null;
+    data = left.map(function (r, i) {
+      return right ? r.concat(right[i]) : r;
+    });
+  }
   var rowByKey = {};
   data.forEach(function (r, i) {
     [r[col['InternalModel']], r[col['SupplierModel']]].forEach(function (x) {
@@ -1624,7 +1638,7 @@ function upsertHardware_(records) {
       });
     var first = Math.min.apply(null, idxs);
     var last = Math.max.apply(null, idxs);
-    var block = sheet.getRange(2, first + 1, data.length, last - first + 1);
+    var block = sheet.getRange(2, realCol(first) + 1, data.length, last - first + 1);
     block.setNumberFormat('@');
     block.setValues(
       data.map(function (r) {
@@ -1634,7 +1648,7 @@ function upsertHardware_(records) {
       })
     );
     if (notesChanged) {
-      sheet.getRange(2, col['Notes'] + 1, data.length, 1).setValues(
+      sheet.getRange(2, realCol(col['Notes']) + 1, data.length, 1).setValues(
         data.map(function (r) {
           return [r[col['Notes']]];
         })
@@ -1653,13 +1667,16 @@ function markExcludedHardware_() {
   var iCat = header.indexOf('Category');
   var iInt = header.indexOf('Interface');
   var iNotes = header.indexOf('Notes');
-  if (iInt < 0) return 0;
-  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues();
+  if (iInt < 0 || iCat < 0 || iNotes < 0) return 0;
+  var n0 = sheet.getLastRow() - 1;
+  var cats = sheet.getRange(2, iCat + 1, n0, 1).getValues();
+  var notesCol = sheet.getRange(2, iNotes + 1, n0, 1).getValues();
+  var ints = sheet.getRange(2, iInt + 1, n0, 1).getValues();
   var n = 0;
-  var out = data.map(function (r) {
-    var v = r[iInt];
-    if ((r[iCat] === '相機' || r[iCat] === '鏡頭') && String(v).trim() === '') {
-      var notes = String(r[iNotes] || '');
+  var out = ints.map(function (r, i) {
+    var v = r[0];
+    if ((cats[i][0] === '相機' || cats[i][0] === '鏡頭') && String(v).trim() === '') {
+      var notes = String(notesCol[i][0] || '');
       if (/^德鴻官網 海康讀碼器/.test(notes)) v = '讀碼器（' + HW_NO_SELECT + '）';
       else if (/^FLIR 官網/.test(notes)) v = HW_NO_SELECT + '（熱像）';
       else if (/液態鏡頭|DHC FA 鏡頭系列|LED额定功率|LED額定功率|官網只有型號與圖片/.test(notes)) v = HW_NO_SELECT;
@@ -1667,7 +1684,7 @@ function markExcludedHardware_() {
     }
     return [v];
   });
-  if (n) sheet.getRange(2, iInt + 1, data.length, 1).setNumberFormat('@').setValues(out);
+  if (n) sheet.getRange(2, iInt + 1, n0, 1).setNumberFormat('@').setValues(out);
   return n;
 }
 
@@ -1705,7 +1722,7 @@ function handleGetCalcCatalog(body) {
     '遠心鏡頭': { header: ['原廠名稱', '公司型號', '解析度', '感測器尺寸', '放大倍率', '工作距離', '景深'], rows: [] },
   };
   var incomplete = [];
-  sheetToObjects(SHEET_PRODUCTS).rows.forEach(function (r) {
+  readProductsLite_().rows.forEach(function (r) {
     var cat = r['Category'];
     if (cat !== '相機' && cat !== '鏡頭') return;
     var name = String(r['InternalModel'] || r['SupplierModel'] || '').trim();
@@ -2471,11 +2488,11 @@ function importDehongProducts_(log, opts) {
   var nextOffset = totalCats;
   var doneLists = true;
 
-  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var existing = readProductsLite_().rows; // 不讀 Specs 大欄位，用 SourceUrl 判斷「已經抓過規格」
   var byModel = {};
   existing.forEach(function (r, i) {
     [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
-      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['SourceUrl'] };
     });
   });
 
@@ -2723,11 +2740,11 @@ function flirModelFromUrl_(path, title) {
 
 /** 熱像相機 / 研發鏡頭等：flir.com/en-asia 的分類頁 → 商品頁 → 規格表 → Products（不進選型計算，熱像機的像元尺寸與可見光相機不同）。 */
 function importFlirThermal_() {
-  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var existing = readProductsLite_().rows; // 不讀 Specs 大欄位，用 SourceUrl 判斷「已經抓過規格」
   var byModel = {};
   existing.forEach(function (r, i) {
     [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
-      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['SourceUrl'] };
     });
   });
   var newRows = [];
@@ -2869,11 +2886,11 @@ function importFlirVisible_(offset) {
     }
   });
 
-  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var existing = readProductsLite_().rows; // 不讀 Specs 大欄位，用 SourceUrl 判斷「已經抓過規格」
   var byModel = {};
   existing.forEach(function (r, i) {
     [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
-      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['SourceUrl'] };
     });
   });
 
@@ -3006,11 +3023,11 @@ function importBaslerProducts_(offset) {
     var slug = m[1].replace(BASLER_DOCS + '/', '');
     if (BASLER_MODEL_SLUG.test(slug)) tasks.push(slug);
   }
-  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var existing = readProductsLite_().rows; // 不讀 Specs 大欄位，用 SourceUrl 判斷「已經抓過規格」
   var byModel = {};
   existing.forEach(function (r, i) {
     [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
-      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['SourceUrl'] };
     });
   });
   var newRows = [];
@@ -3101,7 +3118,7 @@ function handleImportBaslerProducts(body) {
 // ------------------------------------------------------------
 var MV_BASE = 'https://www.mindvision.com.cn';
 var MV_BRAND = 'MindVision 邁德威視';
-var MV_CHUNK_MS = 150 * 1000;
+var MV_CHUNK_MS = 90 * 1000; // 邁德威視每頁較大、寫入前還要讀寫 Products，單段抓短一點避免超過 6 分鐘
 
 var MV_NON_PRODUCT = /尺寸图|尺寸圖|图纸|圖紙|手册|手冊|说明书|說明書|驱动|驅動|SDK|软件|軟件|教程|培训|彩页|样本|选型表|常见问题|下载|案例/;
 
@@ -3215,11 +3232,11 @@ function importMindvisionProducts_(offset) {
   var started = new Date().getTime();
   var errors = [];
   var tasks = mvListProducts_();
-  var existing = sheetToObjects(SHEET_PRODUCTS).rows;
+  var existing = readProductsLite_().rows; // 不讀 Specs 大欄位，用 SourceUrl 判斷「已經抓過規格」
   var byModel = {};
   existing.forEach(function (r, i) {
     [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
-      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['Specs'] };
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['SourceUrl'] };
     });
   });
   var newRows = [];
