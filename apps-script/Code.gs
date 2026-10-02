@@ -1621,6 +1621,7 @@ function dehongKind_(url) {
   if (seg === 'control-products') return { category: '調光器', label: '光源控制器' };
   if (['wtl', 'wtl-x', 'special-lens', '機器視覺鏡頭', '高分辨率遠心鏡頭'].indexOf(seg) > -1) return { category: '鏡頭', label: '遠心鏡頭' };
   if (seg === '光學棱鏡') return { category: '其他', label: '光學棱鏡' };
+  if (seg === 'optical-products') return { category: '鏡頭', label: '遠心鏡頭' };
   return null;
 }
 
@@ -1651,6 +1652,22 @@ function parseDehongItems_(html) {
     items.push({ url: m[1], title: htmlDecode_(m[2]), fields: fields });
   }
   return items;
+}
+
+/** K2 商品內頁 → {url, title, fields}（欄位來自「附加資訊」；沒有的話改用規格表）。分類列表沒列出的商品用這個補抓。 */
+function parseDehongItemPage_(html, url) {
+  var t = html.match(/<h2 class="itemTitle">\s*([\s\S]*?)\s*<\/h2>/);
+  var title = t ? htmlDecode_(t[1]) : '';
+  if (!title) {
+    var pt = html.match(/<title>([\s\S]*?)<\/title>/);
+    title = pt ? htmlDecode_(pt[1]).replace(/^.*?\s-\s/, '').trim() : '';
+  }
+  var fields = {};
+  var re = /itemExtraFieldsLabel">([\s\S]*?)<\/span>\s*<span class="itemExtraFieldsValue">([\s\S]*?)<\/span>/g;
+  var f;
+  while ((f = re.exec(html)) !== null) fields[htmlDecode_(f[1]).replace(/[:：]\s*$/, '')] = htmlDecode_(f[2]);
+  if (!Object.keys(fields).length) fields = parseDehongSpecPairs_(html);
+  return { url: url, title: title, fields: fields };
 }
 
 function fetchDehongPage_(path) {
@@ -1748,9 +1765,11 @@ function parseDehongCameraRows_(rows) {
 }
 
 function cameraBrand_(model) {
-  if (/^MV-/i.test(model)) return 'Hikrobot 海康威視';
+  if (/^MV-(CA|CE|CS|CU|CH|CL|CB|CC|ID|SC)/i.test(model)) return 'Hikrobot 海康威視';
   if (/^BFS-/i.test(model)) return 'FLIR';
-  return 'Basler';
+  if (/^(ala|aca|a2a|boa)/i.test(model)) return 'Basler';
+  if (/^(MV-)?(G|U|SU|EM)[A-Z]*\d/i.test(model)) return 'MindVision 邁德威視';
+  return '德鴻代理品牌';
 }
 
 function normSensor_(name) {
@@ -1758,14 +1777,23 @@ function normSensor_(name) {
 }
 
 /** 找出相機頁面：從官網首頁出發，收集 industrial-camera / hk 底下的分類頁（海康、FLIR、Basler…）。 */
-function discoverDehongCameraCats_(indexHtml) {
+function discoverDehongCameraCats_(indexHtml, itemLinks) {
   var found = {};
-  var queue = [];
+  var queued = {};
+  var queue = ['/index.php/hk', '/index.php/industrial-camera'];
+  queue.forEach(function (q) {
+    queued[q] = true;
+  });
   var re = /href="(\/index\.php\/(?:industrial-camera|hk)\/itemlist\/category\/[^"#]+)"/g;
   var m;
-  while ((m = re.exec(indexHtml)) !== null) queue.push(m[1]);
+  while ((m = re.exec(indexHtml)) !== null) {
+    if (!queued[m[1]]) {
+      queued[m[1]] = true;
+      queue.push(m[1]);
+    }
+  }
   var guard = 0;
-  while (queue.length && guard++ < 40) {
+  while (queue.length && guard++ < 80) {
     var path = queue.shift();
     if (found[path]) continue;
     found[path] = true;
@@ -1773,7 +1801,15 @@ function discoverDehongCameraCats_(indexHtml) {
       var html = fetchDehongPage_(path);
       var sub = /href="(\/index\.php\/(?:industrial-camera|hk)\/itemlist\/category\/[^"#]+)"/g;
       var x;
-      while ((x = sub.exec(html)) !== null) if (!found[x[1]]) queue.push(x[1]);
+      while ((x = sub.exec(html)) !== null) {
+        if (!found[x[1]] && !queued[x[1]]) {
+          queued[x[1]] = true;
+          queue.push(x[1]);
+        }
+      }
+      var itemRe = /href="(\/index\.php\/(?:industrial-camera|hk)\/item\/[^"#]+)"/g;
+      var y;
+      while ((y = itemRe.exec(html)) !== null) if (itemLinks) itemLinks[y[1]] = true;
     } catch (e) {
       // 單一分類抓不到就略過
     }
@@ -1829,6 +1865,7 @@ function appendDehongCamerasToSheets_(cams) {
   var plan = { GigE: [], USB3: [] };
   var skippedNoPixel = [];
   cams.forEach(function (c) {
+    if (!c.iface) c.iface = /^BFS-U3/i.test(c.model) ? 'USB3.0' : /^BFS-(PGE|GE)/i.test(c.model) ? 'GigE' : ''; // FLIR 的表格沒有介面欄，從型號判斷
     var sheetName = /USB/i.test(c.iface) ? 'USB3' : /GigE/i.test(c.iface) ? 'GigE' : '';
     if (!sheetName) return; // Camera Link 等不在選型範圍
     var pixel = c.pixel;
@@ -1903,13 +1940,32 @@ function appendDehongCamerasToSheets_(cams) {
   return { added: added, skippedNoPixel: skippedNoPixel };
 }
 
+/** K2 商品內頁的規格表（兩欄「欄位 / 值」，有時是三欄「分類 / 欄位 / 值」）→ {欄位: 值}。 */
+function parseDehongSpecPairs_(html) {
+  var out = {};
+  parseHtmlTables_(html).forEach(function (rows) {
+    var hasModel = rows.some(function (r) {
+      return r.length >= 2 && r[r.length - 2] === '型號';
+    });
+    if (!hasModel) return;
+    rows.forEach(function (r) {
+      if (r.length < 2) return;
+      var k = String(r[r.length - 2]).trim();
+      var v = String(r[r.length - 1]).trim();
+      if (k && v && !out.hasOwnProperty(k)) out[k] = v;
+    });
+  });
+  return out;
+}
+
 /** 抓相機、FA 鏡頭系列、液態鏡頭，回傳要放進 Products 的資料列與選型相機清單。 */
 function crawlDehongExtras_(indexHtml, errors, pagesRef) {
   var products = [];
   var cams = [];
   var seenCam = {};
 
-  discoverDehongCameraCats_(indexHtml).forEach(function (path) {
+  var camItemLinks = {};
+  discoverDehongCameraCats_(indexHtml, camItemLinks).forEach(function (path) {
     var html;
     try {
       html = fetchDehongPage_(path);
@@ -1934,6 +1990,56 @@ function crawlDehongExtras_(indexHtml, errors, pagesRef) {
         });
       });
     });
+  });
+
+
+  // 相機內頁（K2 商品頁）：海康讀碼器/智慧相機與舊款 MV-GE 系列，規格是「欄位 / 值」的兩欄表格
+  Object.keys(camItemLinks).forEach(function (link) {
+    var html;
+    try {
+      html = fetchDehongPage_(link);
+    } catch (e) {
+      errors.push(link + '（' + e.message + '）');
+      return;
+    }
+    pagesRef.n++;
+    var f = parseDehongSpecPairs_(html);
+    var model = String(f['型號'] || parseDehongItemPage_(html, link).title || '').trim();
+    if (!model || seenCam[model.toUpperCase()]) return;
+    seenCam[model.toUpperCase()] = true;
+    var isReader = /^MV-(ID|SC)/i.test(model);
+    var res = String(f['解析度@幀率'] || f['解析度'] || '').match(/(\d{3,5})\D+?(\d{3,5})/);
+    var fpsM = String(f['解析度@幀率'] || '').match(/@\s*([0-9.]+)/) || String(f['**處理幀率'] || '').match(/([0-9.]+)/);
+    var nums = String(f['像元尺寸'] || '').match(/[0-9.]+/g);
+    var pixel = nums && nums.length ? nums[0] + '*' + (nums[1] || nums[0]) + 'μm' : '';
+    var sensorText = String(f['感測器'] || f['感測器類型'] || '').replace(/[”″]/g, '"');
+    var sizeM = String(f['靶面尺寸'] || sensorText).match(/\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)?"/);
+    var colorText = String(f['相機類型'] || f['黑白/彩色'] || '');
+    var color = /彩色|Color/i.test(colorText) ? '彩色' : /黑白|Mono/i.test(colorText) ? '黑白' : '';
+    var iface = String(f['資料介面'] || '') || (!isReader && /^(MV-)?G[EM]/i.test(model) ? 'GigE' : '');
+    products.push({
+      InternalModel: model,
+      SupplierModel: model,
+      Category: '相機',
+      Notes: '德鴻官網 ' + (isReader ? '海康讀碼器/智慧相機' : '相機（' + cameraBrand_(model) + '）') + '；' + dehongSpecSummary_(f),
+      SourceUrl: DEHONG_BASE + link,
+      Specs: JSON.stringify(f),
+    });
+    if (!isReader && res && iface) {
+      cams.push({
+        model: model,
+        w: Number(res[1]),
+        h: Number(res[2]),
+        fps: fpsM ? parseFloat(fpsM[1]) : '',
+        sensor: '',
+        iface: iface,
+        color: color,
+        shutter: String(f['快門類型'] || '').replace(/全域/, '全局'),
+        pixel: pixel ? pixel.replace(/μm$/, '') : '',
+        size: sizeM ? sizeM[0] : '',
+        type: /CMOS/i.test(sensorText) ? 'CMOS' : /CCD/i.test(sensorText) ? 'CCD' : '',
+      });
+    }
   });
 
   // FA 鏡頭：官網只有系列頁（例如 1" 5MP），沒有單一型號，內部型號留空請自己補
@@ -2126,6 +2232,17 @@ function importDehongProducts_(log) {
   while ((m = re.exec(indexHtml)) !== null) {
     if (dehongKind_(m[1])) catSet[m[1]] = true;
   }
+  // 首頁選單沒有列出全部分類（例如光學產品底下的 CHL 鏡頭），再從各大類的首頁補抓
+  ['/index.php/optical-products', '/index.php/special-lens', '/index.php/wtl', '/index.php/wtl-x', '/index.php/light-source', '/index.php/control-products', '/index.php/機器視覺鏡頭', '/index.php/高分辨率遠心鏡頭', '/index.php/光學棱鏡'].forEach(function (top) {
+    try {
+      var topHtml = fetchDehongPage_(top);
+      var tm;
+      var tre = /href="(\/index\.php\/[^"#]*itemlist\/category\/[^"#]+)"/g;
+      while ((tm = tre.exec(topHtml)) !== null) if (dehongKind_(tm[1])) catSet[tm[1]] = true;
+    } catch (e) {
+      // 單一大類頁面抓不到就略過，其餘照常
+    }
+  });
   var cats = Object.keys(catSet);
 
   var existing = sheetToObjects(SHEET_PRODUCTS).rows;
@@ -2137,6 +2254,7 @@ function importDehongProducts_(log) {
   });
 
   var seen = {};
+  var itemLinks = {};
   var teleItems = [];
   var newRows = [];
   var added = 0;
@@ -2153,13 +2271,19 @@ function importDehongProducts_(log) {
         break;
       }
       var items;
+      var lastListHtml = '';
       try {
-        items = parseDehongItems_(fetchDehongPage_(cats[c] + (start ? '?start=' + start : '')));
+        lastListHtml = fetchDehongPage_(cats[c] + (start ? '?start=' + start : ''));
+        items = parseDehongItems_(lastListHtml);
       } catch (e) {
         errors.push(cats[c] + '（' + e.message + '）');
         break;
       }
       pages++;
+      var listHtml = lastListHtml;
+      var ir = /href="(\/index\.php\/[^"#]*\/item\/[^"#]+)"/g;
+      var im;
+      while ((im = ir.exec(listHtml)) !== null) itemLinks[decodeURIComponent(im[1])] = im[1];
       items.forEach(function (it) {
         var kind = dehongKind_(it.url);
         if (!kind || !it.title || seen[it.url]) return;
@@ -2196,6 +2320,48 @@ function importDehongProducts_(log) {
       start += 50;
     }
     if (incomplete) break;
+  }
+
+  // 分類列表沒有直接列出、只出現在連結裡的商品：逐一進內頁補抓
+  if (!incomplete) {
+    var seenDecoded = {};
+    Object.keys(seen).forEach(function (u) {
+      seenDecoded[decodeURIComponent(u)] = true;
+    });
+    Object.keys(itemLinks).forEach(function (dec) {
+      if (seenDecoded[dec] || !dehongKind_(dec) || dec.indexOf('/fa-cctv-lens/') > -1) return;
+      if (new Date().getTime() - started > DEHONG_RUN_LIMIT_MS) {
+        incomplete = true;
+        return;
+      }
+      try {
+        var it2 = parseDehongItemPage_(fetchDehongPage_(itemLinks[dec]), itemLinks[dec]);
+        pages++;
+        if (!it2.title) return;
+        var kind2 = dehongKind_(it2.url);
+        seen[it2.url] = true;
+        var key2 = it2.title.toUpperCase();
+        if (kind2.label === '遠心鏡頭') teleItems.push(it2);
+        if (byModel[key2]) return;
+        newRows.push({
+          InternalModel: it2.title,
+          SupplierModel: it2.title,
+          Supplier: '德鴻',
+          SupplierContact: '陳小姐',
+          SupplierContactEmail: 'TWDH@twdehong.com',
+          Origin: '台灣',
+          Category: kind2.category,
+          Notes: '德鴻官網 ' + kind2.label + '；' + (Object.keys(it2.fields).length ? dehongSpecSummary_(it2.fields) : '官網只有型號與圖片，沒有規格表'),
+          LastUpdated: todayStr(),
+          SourceUrl: DEHONG_BASE + it2.url,
+          Specs: JSON.stringify(it2.fields),
+        });
+        byModel[key2] = { row: -1, specs: '1' };
+        added++;
+      } catch (e) {
+        errors.push(dec + '（' + e.message + '）');
+      }
+    });
   }
 
   // 第二階段：相機表格、FA 鏡頭系列、液態鏡頭（頁面內容是表格，不是 K2 商品列表）
