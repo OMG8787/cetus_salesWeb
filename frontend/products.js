@@ -349,6 +349,7 @@ async function viewProduct(internalModel, rowIndex) {
     document.getElementById('pd-notes').append('｜資料來源：', link);
   }
 
+  renderProductFields(result.product);
   document.getElementById('inquiry-result').textContent = '';
 
   document.getElementById('ep-supplier-model').value = result.product.SupplierModel || '';
@@ -375,6 +376,44 @@ async function viewProduct(internalModel, rowIndex) {
   document.getElementById('ep-focuswd').value = result.product.FocusWD || '';
 
   renderPriceHistoryTable(result.priceHistory || []);
+}
+
+function pdEsc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+}
+
+/** 產品詳情直接列出全部資料：基本資料、選型規格、官網抓到的完整規格（不用按「編輯」才看得到）。 */
+function renderProductFields(p) {
+  const grid = (rows) =>
+    '<div class="pd-grid">' +
+    rows
+      .map(([k, v]) => '<div><span>' + pdEsc(k) + '</span><span' + (v === '' || v == null ? ' class="pd-empty">—' : '>' + pdEsc(v)) + '</span></div>')
+      .join('') +
+    '</div>';
+  const basic = [
+    ['內部型號', p.InternalModel], ['供應商型號', p.SupplierModel], ['供應商', p.Supplier], ['供應商窗口', p.SupplierContact],
+    ['詢價信箱', p.SupplierContactEmail], ['產地', p.Origin], ['類別', p.Category], ['可搭配群組', p.CompatibleGroup],
+    ['底價', p.RefPrice], ['上次修改', String(p.LastUpdated || '').slice(0, 10)],
+  ];
+  const isLens = p.Category === '鏡頭';
+  const sel = [
+    ['品牌', p.Brand], ['介面', p.Interface], ['解析度', p.Resolution], ['像元尺寸 µm', p.PixelSize], ['靶面', p.SensorSize],
+    ['影格率 fps', p.FPS], ['接口', p.Mount], ['焦距 mm', p.FocalLength], ['放大倍率', p.Magnification],
+    ['工作距離 WD', p.WD], ['景深 DOF', p.DOF], ['最近對焦距離', p.FocusWD],
+  ].filter(([k, v]) => v || (isLens ? !/像元|影格|介面/.test(k) : !/焦距|倍率|WD|DOF|最近/.test(k)));
+  let html = '<div class="pd-section-title">基本資料</div>' + grid(basic);
+  html += '<div class="pd-section-title">選型規格（選型計算用）</div>' + grid(sel);
+  let specs = null;
+  try {
+    specs = p.Specs ? JSON.parse(p.Specs) : null;
+  } catch (e) {
+    specs = null;
+  }
+  const keys = specs ? Object.keys(specs).filter((k) => specs[k] !== '' && specs[k] != null) : [];
+  html += '<div class="pd-section-title">官網完整規格' + (keys.length ? '（' + keys.length + ' 項）' : '') + '</div>';
+  html += keys.length ? grid(keys.map((k) => [k, specs[k]])) : '<div class="calc-hint">沒有官網完整規格（手動新增的產品，或尚未從官網匯入）。</div>';
+  document.getElementById('pd-fields').innerHTML = html;
+  document.getElementById('pd-specs').innerHTML = '';
 }
 
 function renderPriceHistoryTable(history) {

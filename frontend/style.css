@@ -51,6 +51,12 @@ header button { margin-left: 12px; padding: 6px 12px; border: none; border-radiu
 table { width: 100%; border-collapse: collapse; margin-top: 12px; background: white; }
 th, td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; font-size: 14px; }
 th { background: #eef2f7; }
+.pd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0; margin: 10px 0; border: 1px solid #e3e8ef; border-radius: 6px; overflow: hidden; background: #fff; }
+.pd-grid > div { display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #eef1f5; font-size: 13px; }
+.pd-grid > div > span:first-child { color: #667; min-width: 84px; flex: none; }
+.pd-grid > div > span:last-child { color: #222; word-break: break-all; }
+.pd-grid .pd-empty { color: #bbb; }
+.pd-section-title { margin: 14px 0 4px; font-weight: bold; color: #2c5aa0; font-size: 14px; }
 
 /* 可點擊排序的表頭 */
 th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
