@@ -398,7 +398,7 @@ function setup() {
   importLegacyCustomers_(log);
   seedSoftwareFromCases_(log);
   try {
-    normalizeDehongSupplier(log);
+    normalizeSupplierNames(log);
   } catch (e) {
     log.push('統一供應商名稱失敗：' + e.message);
   }
@@ -1833,6 +1833,28 @@ function normalizeSupplierColumn_(sheetName, aliases, target) {
   });
   if (n) range.setValues(out);
   return n;
+}
+
+/** 各家供應商名稱的統一規則：[目標名稱, [舊寫法...]]。之後要統一別家，在這裡加一行再執行 normalizeSupplierNames 即可。 */
+function supplierNameRules_() {
+  return [
+    [DEHONG_SUPPLIER, DEHONG_SUPPLIER_ALIASES],
+    [MV_BRAND, ['邁德威視', '迈德威视', '邁德威視 MindVision', 'MindVision', 'Mindvision', 'MINDVISION', '邁德威視科技', '迈德威视科技']],
+  ];
+}
+
+/** 統一所有已知供應商的名稱（德鴻、邁德威視…），產品資料與價格紀錄一起改。可重複執行；在 Apps Script 編輯器選這個函式按執行。 */
+function normalizeSupplierNames(log) {
+  var lines = [];
+  supplierNameRules_().forEach(function (rule) {
+    var p = normalizeSupplierColumn_(SHEET_PRODUCTS, rule[1], rule[0]);
+    var h = normalizeSupplierColumn_(SHEET_PRICE_HISTORY, rule[1], rule[0]);
+    lines.push('「' + rule[0] + '」：產品 ' + p + ' 筆、價格紀錄 ' + h + ' 筆');
+  });
+  var msg = '供應商名稱統一：' + lines.join('；');
+  if (log) log.push(msg);
+  Logger.log(msg);
+  return msg;
 }
 
 /** 統一德鴻的供應商名稱（產品資料與價格紀錄）。可重複執行；可直接在 Apps Script 編輯器選這個函式按執行。 */
