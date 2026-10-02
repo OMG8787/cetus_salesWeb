@@ -48,6 +48,8 @@
  *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
  *   Shortcuts     - Username, Title, Url, OpenOnStart, SortOrder（每人自己的首頁「常用網站」）
  *   Memos         - Owner, OwnerName, Title, Content, Shared, CreatedDate, LastUpdated（備忘錄，預設只有自己看，Shared=是 全站可看）
+ *   GigE / USB3 / FA鏡頭 / 遠心鏡頭 - 選型計算用的相機與鏡頭型錄（完整複製自原本的公開型錄，欄位一模一樣，之後直接在這裡編修；
+ *                    遠心鏡頭另外多出德鴻官網規格欄位）。標題列由 setup 從型錄複製，不在 SCHEMA 內
  *   Software      - Name（案件「軟體名稱」下拉選單的選項，公司準系統只有幾套；新名稱在案件頁會詢問是否新增）
  *   Config        - Key, Value
  *   Devices       - DeviceId, Username, DeviceLabel, TokenHash, CreatedDate, LastSeenDate
@@ -103,6 +105,8 @@ var ROUTES = {
   deleteProduct:           { auth: true, fn: handleDeleteProduct },
   importCatalogProducts:   { auth: true, fn: handleImportCatalogProducts },
   importDehongProducts:    { auth: true, fn: handleImportDehongProducts },
+  getCalcCatalog:          { auth: true, fn: handleGetCalcCatalog },
+  syncCalcCatalog:         { auth: true, fn: handleSyncCalcCatalog },
 
   // 價格紀錄
   addPriceRecord:          { auth: true, fn: handleAddPriceRecord },
@@ -294,6 +298,7 @@ PERMISSIONS['deleteProduct'] = ['admin', 'sales'];
 PERMISSIONS['deleteSoftware'] = ['admin'];
 PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
 PERMISSIONS['importDehongProducts'] = ['admin', 'sales'];
+PERMISSIONS['syncCalcCatalog'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
 PERMISSIONS['deletePriceRecord'] = ['admin', 'sales'];
@@ -380,6 +385,11 @@ function setup() {
 
   importLegacyCustomers_(log);
   seedSoftwareFromCases_(log);
+  try {
+    copyCalcCatalog_(log);
+  } catch (e) {
+    log.push('選型計算型錄複製失敗（之後可在選型計算頁按「同步型錄」重試）：' + e.message);
+  }
   try {
     importCatalogProducts_(log);
   } catch (e) {
@@ -1370,6 +1380,229 @@ function handleImportCatalogProducts(body) {
 }
 
 // ------------------------------------------------------------
+// 選型計算型錄：把原本公開型錄的 4 個分頁（GigE / USB3 / FA鏡頭 / 遠心鏡頭）完整複製到自己的試算表，
+// 欄位與內容一模一樣；之後選型計算改讀這 4 個分頁，可以自己直接補資料、修改。
+// 只補缺的：公司型號已存在的列完全不動，所以自己改過的內容不會被覆蓋。
+// ------------------------------------------------------------
+var CALC_SHEETS = [
+  { name: 'GigE', kind: 'camera' },
+  { name: 'USB3', kind: 'camera' },
+  { name: 'FA鏡頭', kind: 'fa' },
+  { name: '遠心鏡頭', kind: 'tele' },
+];
+
+/** 遠心鏡頭分頁在原本 12 欄之後多出來的德鴻官網規格欄位。 */
+var TELE_EXTRA_COLS = ['遠心度', '光學畸變', '光圈', 'MTF>0.3 (LP/MM)', '相機接口', '分辨率(um)', '視野 2/3"', '視野 1"', '視野 1.1"', '視野 1/2"', '視野 1/3"', '資料來源'];
+
+function calcSheetKeyCol_(header) {
+  return catalogCol_(header, '公司型號');
+}
+
+/** 取得分頁（沒有就建立），確保標題列有 needed 這些欄位（缺的補在最後面）。回傳最新標題列。 */
+function ensureCalcSheetColumns_(sheet, needed) {
+  var lastCol = sheet.getLastColumn();
+  var header = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
+  var missing = needed.filter(function (c) {
+    return header.indexOf(c) === -1;
+  });
+  if (missing.length) {
+    sheet.getRange(1, header.length + 1, 1, missing.length).setValues([missing]);
+    sheet.getRange(1, header.length + 1, 1, missing.length).setNumberFormat('@');
+    header = header.concat(missing);
+  }
+  sheet.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#eef2f7');
+  if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1);
+  return header;
+}
+
+function writeCalcRows_(sheet, header, rows) {
+  if (!rows.length) return;
+  var values = rows.map(function (r) {
+    var out = [];
+    for (var i = 0; i < header.length; i++) out.push(r[i] === undefined || r[i] === null ? '' : String(r[i]));
+    return out;
+  });
+  var range = sheet.getRange(sheet.getLastRow() + 1, 1, values.length, header.length);
+  range.setNumberFormat('@'); // 文字格式：避免 1/2" 之類被轉成日期、640X480 被亂轉型
+  range.setValues(values);
+}
+
+/** 從公開型錄複製（只補缺的列）。回傳每個分頁新增的筆數。 */
+function copyCalcCatalog_(log) {
+  var sheetId = getConfig('CatalogSheetId') || DEFAULT_CATALOG_SHEET_ID;
+  var ss = getDb_(false);
+  var summary = [];
+  CALC_SHEETS.forEach(function (cs) {
+    var rows;
+    try {
+      rows = fetchCatalogTab_(sheetId, cs.name);
+    } catch (e) {
+      summary.push(cs.name + '失敗：' + e.message);
+      return;
+    }
+    if (rows.length < 2) return;
+    var sheet = ss.getSheetByName(cs.name) || ss.insertSheet(cs.name);
+    var srcHeader = rows[0].map(String);
+    while (srcHeader.length && !String(srcHeader[srcHeader.length - 1]).trim()) srcHeader.pop(); // 去掉來源標題列尾端的空白欄
+    var existingCols = sheet.getLastColumn();
+    var header = existingCols > 0 ? sheet.getRange(1, 1, 1, existingCols).getValues()[0].map(String) : [];
+    var fresh = header.join('') === '';
+    if (fresh) {
+      sheet.getRange(1, 1, 1, srcHeader.length).setValues([srcHeader]);
+      sheet.getRange(1, 1, 1, srcHeader.length).setNumberFormat('@');
+      header = srcHeader;
+    }
+    header = ensureCalcSheetColumns_(sheet, cs.kind === 'tele' ? srcHeader.concat(TELE_EXTRA_COLS) : srcHeader);
+
+    var keyCol = calcSheetKeyCol_(header);
+    var have = {};
+    if (sheet.getLastRow() > 1 && keyCol > -1) {
+      sheet.getRange(2, keyCol + 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (r) {
+        have[String(r[0]).trim().toUpperCase()] = true;
+      });
+    }
+    var srcKey = calcSheetKeyCol_(srcHeader);
+    var toAdd = [];
+    rows.slice(1).forEach(function (r) {
+      var key = srcKey > -1 ? String(r[srcKey]).trim().toUpperCase() : '';
+      if (!key || have[key]) return; // 沒有公司型號的列（空白列或雜訊）不複製，已存在的不重複
+      // 來源欄位 → 我的分頁欄位（用欄名對應，我的分頁欄位順序被改過也不會錯位）
+      var out = [];
+      srcHeader.forEach(function (h, i) {
+        var idx = header.indexOf(h);
+        if (idx > -1) out[idx] = r[i];
+      });
+      if (key) have[key] = true;
+      toAdd.push(out);
+    });
+    writeCalcRows_(sheet, header, toAdd);
+    summary.push(cs.name + ' +' + toAdd.length);
+  });
+  if (log) log.push('選型計算型錄複製到自己的試算表（' + summary.join('、') + '）；之後選型計算讀這 4 個分頁，可直接編修');
+  return summary;
+}
+
+function handleSyncCalcCatalog(body) {
+  var summary = copyCalcCatalog_(null);
+  return { success: true, message: '已同步選型計算型錄（' + summary.join('、') + '）' };
+}
+
+/** 選型計算頁用：回傳 4 個分頁的標題列與全部資料列（純文字）。分頁還沒建立就是空的。 */
+function handleGetCalcCatalog(body) {
+  var ss = getDb_(false);
+  var out = {};
+  CALC_SHEETS.forEach(function (cs) {
+    var sheet = ss.getSheetByName(cs.name);
+    var data = sheet && sheet.getLastRow() > 0 ? sheet.getDataRange().getValues() : [];
+    out[cs.name] = {
+      header: data.length ? data[0].map(String) : [],
+      rows: data.slice(1).filter(function (r) {
+        return r.join('').trim() !== '';
+      }).map(function (r) {
+        return r.map(String);
+      }),
+    };
+  });
+  return { success: true, catalog: out };
+}
+
+/** 德鴻官網欄位 → 遠心鏡頭分頁的一列。解析度欄位官網沒有 MP 值，依支援的最大靶面估算（1.1"→20、1"→12、其他→5）。 */
+function dehongToTeleRecord_(it) {
+  var f = it.fields;
+  var best = null;
+  var bestSize = 0;
+  Object.keys(f).forEach(function (k) {
+    if (dehongIsEmptyValue_(f[k])) return;
+    var m = k.match(/(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?"/);
+    if (!m) return;
+    var size = m[2] ? Number(m[1]) / Number(m[2]) : Number(m[1]);
+    if (size > bestSize) {
+      bestSize = size;
+      best = m[0];
+    }
+  });
+  function pick(prefix) {
+    var found = '';
+    Object.keys(f).forEach(function (k) {
+      if (k.indexOf(prefix) === 0 && !dehongIsEmptyValue_(f[k])) found = f[k];
+    });
+    return found;
+  }
+  var mp = bestSize >= 1.05 ? '20' : bestSize >= 0.95 ? '12' : '5';
+  return {
+    '原廠名稱': '德鴻',
+    '原廠型號': it.title,
+    '鏡頭系列': f['解析度'] || '',
+    '公司型號': it.title,
+    '解析度': best ? mp : '',
+    '放大倍率': f['放大倍數'] || '',
+    '工作距離': f['物距'] || '',
+    '景深': f['景深'] || '',
+    '軸': f['軸'] || '',
+    '感測器尺寸': best || '',
+    '購物連結': DEHONG_BASE + it.url,
+    '遠心度': f['遠心度'] || '',
+    '光學畸變': f['光學畸變'] || '',
+    '光圈': f['光圈'] || '',
+    'MTF>0.3 (LP/MM)': f['MTF>0.3 (LP/MM)'] || '',
+    '相機接口': f['相機接口'] || '',
+    '分辨率(um)': f['分辨率'] || '',
+    '視野 2/3"': pick('2/3"'),
+    '視野 1"': pick('1" '),
+    '視野 1.1"': pick('1.1"'),
+    '視野 1/2"': pick('1/2"'),
+    '視野 1/3"': pick('1/3"'),
+    '資料來源': '德鴻官網',
+  };
+}
+
+/** 把德鴻遠心鏡頭規格寫進「遠心鏡頭」分頁（公司型號沒有才新增；已有的列只補空白的德鴻欄位）。 */
+function appendDehongToTeleSheet_(items) {
+  if (!items.length) return 0;
+  var ss = getDb_(false);
+  var sheet = ss.getSheetByName('遠心鏡頭') || ss.insertSheet('遠心鏡頭');
+  var base = ['原廠名稱', '原廠型號', '鏡頭系列', '公司型號', '解析度', '放大倍率', '工作距離', '景深', '軸', '感測器尺寸', '鏡頭類型', '購物連結'];
+  var header = ensureCalcSheetColumns_(sheet, sheet.getLastColumn() > 0 ? TELE_EXTRA_COLS : base.concat(TELE_EXTRA_COLS));
+  // 欄名可能是「原廠名稱\nOriginal Company」這種中英文連在一起，用關鍵字找欄
+  function colOf(name) {
+    var exact = header.indexOf(name);
+    return exact > -1 ? exact : catalogCol_(header, name);
+  }
+  var keyCol = colOf('公司型號');
+  var rowByKey = {};
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, keyCol + 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (r, i) {
+      rowByKey[String(r[0]).trim().toUpperCase()] = i + 2;
+    });
+  }
+  var toAdd = [];
+  var added = 0;
+  items.forEach(function (it) {
+    var rec = dehongToTeleRecord_(it);
+    if (!(Number(rec['放大倍率']) > 0)) return; // 沒有倍率就沒辦法拿來選型
+    var key = it.title.toUpperCase();
+    if (rowByKey[key] === -1) return; // 這次已經加過同型號
+    if (rowByKey[key]) {
+      TELE_EXTRA_COLS.forEach(function (c) {
+        var col = colOf(c);
+        if (col > -1 && rec[c] && !sheet.getRange(rowByKey[key], col + 1).getValue()) sheet.getRange(rowByKey[key], col + 1).setValue(rec[c]);
+      });
+      return;
+    }
+    var out = [];
+    Object.keys(rec).forEach(function (k) {
+      var col = colOf(k);
+      if (col > -1) out[col] = rec[k];
+    });
+    rowByKey[key] = -1;
+    toAdd.push(out);
+    added++;
+  });
+  writeCalcRows_(sheet, header, toAdd);
+  return added;
+}
+
+// ------------------------------------------------------------
 // 從德鴻視覺官網（twdehong.com）抓產品規格：遠心鏡頭 / 機器視覺鏡頭 / 光源 / 光源控制器
 // 官網是 Joomla + K2，分類列表頁(每頁 50 筆)已經直接列出每個產品的規格欄位，不用逐筆進內頁。
 // 只抓公開的型號與規格，不抓價格（官網沒有，價格要自己詢價）。重複執行安全：已存在的型號不會新增，
@@ -1459,6 +1692,7 @@ function importDehongProducts_(log) {
   });
 
   var seen = {};
+  var teleItems = [];
   var newRows = [];
   var added = 0;
   var enriched = 0;
@@ -1486,6 +1720,7 @@ function importDehongProducts_(log) {
         if (!kind || !it.title || seen[it.url]) return;
         seen[it.url] = true;
         var key = it.title.toUpperCase();
+        if (kind.label === '遠心鏡頭') teleItems.push(it);
         var specsJson = JSON.stringify(it.fields);
         var hit = byModel[key];
         if (hit) {
@@ -1533,11 +1768,12 @@ function importDehongProducts_(log) {
     range.setValues(values);
   }
 
-  var msg = '德鴻官網匯入：新增 ' + added + ' 筆產品、替 ' + enriched + ' 筆既有產品補上規格（共讀取 ' + pages + ' 頁；官網沒有價格，底價請自己詢價後填入）';
+  var teleAdded = appendDehongToTeleSheet_(teleItems);
+  var msg = '德鴻官網匯入：新增 ' + added + ' 筆產品、替 ' + enriched + ' 筆既有產品補上規格、' + teleAdded + ' 筆遠心鏡頭寫進選型計算用的「遠心鏡頭」分頁（共讀取 ' + pages + ' 頁；官網沒有價格，底價請自己詢價後填入）';
   if (incomplete) msg += '；時間用完還沒讀完，再按一次「匯入德鴻官網」會接著補';
   if (errors.length) msg += '；失敗：' + errors.slice(0, 3).join('、');
   if (log) log.push(msg);
-  return { added: added, enriched: enriched, incomplete: incomplete, message: msg };
+  return { added: added, enriched: enriched, teleAdded: teleAdded, incomplete: incomplete, message: msg };
 }
 
 function handleImportDehongProducts(body) {

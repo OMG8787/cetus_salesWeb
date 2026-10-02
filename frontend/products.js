@@ -575,5 +575,6 @@ async function importDehong() {
   if (!result.success) return alert(result.message);
   alert(result.message);
   clearCached('products_all');
+  clearCached('visionCatalog_v3');
   searchProducts();
 }

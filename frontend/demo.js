@@ -244,6 +244,12 @@ function handleDemoApi(action, params) {
     case 'getCalendarEvents':
       return { success: true, events: [{ Id: 'demo1', Title: '（示範）拜訪客戶', Start: new Date().toISOString().slice(0, 10) + 'T14:00', End: '', AllDay: false, Location: '' }] };
 
+    case 'getCalcCatalog':
+      return { success: true, catalog: {} };
+
+    case 'syncCalcCatalog':
+      return { success: true, message: '示範模式不會同步型錄。' };
+
     case 'importDehongProducts':
       return { success: true, added: 0, enriched: 0, message: '示範模式不會真的抓取官網，正式模式才會匯入。' };
 

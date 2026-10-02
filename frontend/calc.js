@@ -19,7 +19,7 @@
 const STANDARD_FOCAL_LENGTHS = [8, 12, 16, 25, 35, 50, 75];
 const TOL_SYMBOLS = { pm: '±', p: '+', m: '-' };
 const CALC_STATE_KEY = 'aoi_calc_state';
-const CATALOG_CACHE_KEY = 'visionCatalog_v2';
+const CATALOG_CACHE_KEY = 'visionCatalog_v3';
 const CALC_INPUT_IDS = [
   'c-fov-l', 'c-fov-s', 'c-acc-tol', 'c-acc', 'c-acc-unit', 'c-ppf', 'c-wd',
   'c-cam-source', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
@@ -775,7 +775,63 @@ function renderMessages(msgs) {
 // 分頁 GigE / USB3（相機）、FA鏡頭 / 遠心鏡頭（鏡頭），跟原本 CCD_camera / CCD_lens 用同一份資料。
 // 沒設定或讀不到時改用手動輸入規格。
 // ------------------------------------------------------------
-function loadCatalogs() {
+/** 後端回傳的分頁（標題列 + 資料列）轉成跟 gviz 一樣的表格格式，這樣下面原本的欄位辨識與解析程式完全不用改。 */
+function sheetToGvizTable(t) {
+  return { cols: (t.header || []).map((label) => ({ label })), rows: (t.rows || []).map((r) => ({ c: r.map((v) => ({ v })) })) };
+}
+
+/**
+ * 型錄來源：自己的試算表（GigE / USB3 / FA鏡頭 / 遠心鏡頭 四個分頁，由 setup 從原本的公開型錄完整複製，
+ * 德鴻官網規格也寫在「遠心鏡頭」分頁）。自己的分頁還沒有資料時，才退回讀 config.js 的公開型錄。
+ */
+async function loadCatalogs() {
+  const status = document.getElementById('c-catalog-status');
+  const cached = getCached(CATALOG_CACHE_KEY);
+  if (cached && cached.cameras && cached.cameras.length) {
+    cameraCatalog = cached.cameras;
+    lensCatalog = cached.lenses;
+    onCatalogReady();
+    return;
+  }
+  status.textContent = '正在讀取相機 / 鏡頭型錄（我的試算表）...';
+  try {
+    const r = await callApi('getCalcCatalog', {});
+    if (r && r.success && r.catalog) {
+      const c = r.catalog;
+      cameraCatalog = [...parseCameraTable(sheetToGvizTable(c['GigE']), 'GigE'), ...parseCameraTable(sheetToGvizTable(c['USB3']), 'USB 3.0')];
+      lensCatalog = { fa: parseLensTable(sheetToGvizTable(c['FA鏡頭']), false), tele: parseLensTable(sheetToGvizTable(c['遠心鏡頭']), true) };
+      if (cameraCatalog.length) {
+        setCached(CATALOG_CACHE_KEY, { cameras: cameraCatalog, lenses: lensCatalog });
+        onCatalogReady();
+        return;
+      }
+    }
+  } catch (e) {
+    console.error('讀取自己的型錄分頁失敗', e);
+  }
+  cameraCatalog = [];
+  lensCatalog = { fa: [], tele: [] };
+  loadCatalogsFromPublic();
+}
+
+/** 按「同步型錄」：從公開型錄把自己分頁缺的型號補進來（已有的不動），然後重新讀取。 */
+async function syncCatalog() {
+  if (!confirm('要把公開型錄裡「我的試算表還沒有」的相機/鏡頭型號補進來嗎？（已有的型號不會被覆蓋）')) return;
+  const r = await callApi('syncCalcCatalog', {});
+  if (!r.success) return alert(r.message);
+  alert(r.message);
+  reloadCatalog();
+}
+
+function reloadCatalog() {
+  clearCached(CATALOG_CACHE_KEY);
+  clearCached('visionCatalog_v2');
+  cameraCatalog = [];
+  lensCatalog = { fa: [], tele: [] };
+  loadCatalogs();
+}
+
+function loadCatalogsFromPublic() {
   const status = document.getElementById('c-catalog-status');
   const sheetId = typeof CAMERA_CATALOG_SHEET_ID !== 'undefined' ? CAMERA_CATALOG_SHEET_ID : '';
   if (!sheetId) {
