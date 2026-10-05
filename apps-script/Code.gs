@@ -334,7 +334,7 @@ function requirePermission_(action, user) {
 // IMPORT_CUSTOMERS_DATA 是離線用 openpyxl 解析 data.xlsx 產生的結果（55 間公司），
 // 放在 ImportData.gs，setup() 一次到位，不用另外上傳檔案。
 // importLegacyCustomers_() 是「補洞式」匯入：只新增 Customers 裡還沒有的公司名稱，
-// 已存在的公司完全不動，所以可以放心重複執行 setup 不會產生重複資料或覆蓋掉之後手動編輯的內容。
+// 已存在的公司只更新「資料表裡仍是上次匯入舊值」的欄位（資料裡的 Prev），所以重複執行 setup 不會產生重複資料或覆蓋手動編輯的內容。
 // ------------------------------------------------------------
 // IMPORT_CUSTOMERS_DATA 定義在另一個檔案 ImportData.gs（含客戶個資，不放進公開的 GitHub，只在本機保存）。
 // Apps Script 專案裡的多個 .gs 檔案共用同一個全域範圍，把 ImportData.gs 也貼進去就會被讀到；沒貼的話會略過匯入。
@@ -344,13 +344,31 @@ function importLegacyCustomers_(log) {
   if (typeof IMPORT_CUSTOMERS_DATA === 'undefined' || !IMPORT_CUSTOMERS_DATA.length) return;
 
   var existing = {};
-  sheetToObjects(SHEET_CUSTOMERS).rows.forEach(function (r) {
-    existing[r['CompanyName']] = true;
+  sheetToObjects(SHEET_CUSTOMERS).rows.forEach(function (r, i) {
+    existing[r['CompanyName']] = { row: i + 2, data: r };
   });
 
   var added = 0;
+  var updated = 0;
+  var kept = 0;
   IMPORT_CUSTOMERS_DATA.forEach(function (c) {
-    if (!c.CompanyName || existing[c.CompanyName]) return;
+    if (!c.CompanyName) return;
+    var ex = existing[c.CompanyName];
+    if (ex) {
+      // 已存在的公司：只有「資料表裡還是上次匯入的舊值（或空白）」的欄位才更新，手動改過的絕不覆蓋
+      var prev = c.Prev || {};
+      var fields = {};
+      Object.keys(prev).forEach(function (f) {
+        var cur = String(ex.data[f] || '');
+        if (cur === '' || cur === String(prev[f])) fields[f] = c[f] || '';
+        else kept++;
+      });
+      if (Object.keys(fields).length) {
+        updateRowFields(SHEET_CUSTOMERS, ex.row, fields);
+        updated++;
+      }
+      return;
+    }
     appendObjectRow(SHEET_CUSTOMERS, {
       CompanyName: c.CompanyName,
       Contact: c.Contact || '',
@@ -364,7 +382,7 @@ function importLegacyCustomers_(log) {
       HasTransacted: '',
       LastTransactionDate: '',
     });
-    existing[c.CompanyName] = true;
+    existing[c.CompanyName] = { row: 0, data: {} };
     added++;
     (c.ExtraContacts || []).forEach(function (ec) {
       if (!ec.name) return;
@@ -379,7 +397,9 @@ function importLegacyCustomers_(log) {
     });
   });
 
-  if (added && log) log.push('匯入舊資料：新增 ' + added + ' 間客戶公司資料（來源 data.xlsx，已存在的公司名稱不會重複匯入）');
+  if (log && (added || updated || kept)) {
+    log.push('匯入舊資料：新增 ' + added + ' 間客戶、更新 ' + updated + ' 間（來源 data.xlsx / 客戶.xlsx；已存在的公司只更新沒被手動改過的欄位）' + (kept ? '，' + kept + ' 個欄位因為已被手動修改而保留不動' : ''));
+  }
 }
 
 /**

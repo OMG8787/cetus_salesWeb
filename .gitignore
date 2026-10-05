@@ -15,3 +15,6 @@ node_modules/
 # 客戶個資，不公開
 data.xlsx
 apps-script/ImportData.gs
+
+# 客戶個資，不公開
+客戶.xlsx
