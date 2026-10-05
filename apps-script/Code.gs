@@ -4464,7 +4464,26 @@ function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer) {
   }
 }
 
+/** 公司名稱比對用：去頭尾空白與中間空白、全形轉半形、不分大小寫，「ＡＢＣ 公司」和「abc公司」視為同一間。 */
+function normCompanyName_(s) {
+  return String(s || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+}
+
+/** 回傳 Customers 裡已有同名公司的列號（excludeRow 這一列不算，改名時用）；沒有重複回傳 0。 */
+function findDuplicateCustomerRow_(name, excludeRow) {
+  var key = normCompanyName_(name);
+  if (!key) return 0;
+  var rows = sheetToObjects(SHEET_CUSTOMERS).rows;
+  for (var i = 0; i < rows.length; i++) {
+    if (i + 2 !== excludeRow && normCompanyName_(rows[i]['CompanyName']) === key) return i + 2;
+  }
+  return 0;
+}
+
 function handleAddCustomer(body) {
+  if (!String(body.companyName || '').trim()) return { success: false, message: '公司名稱不能空白' };
+  var dup = findDuplicateCustomerRow_(body.companyName, 0);
+  if (dup) return { success: false, message: '已經有「' + String(body.companyName).trim() + '」這間客戶了（第 ' + dup + ' 列），不能重複新增。要補資料請直接編輯那一筆。' };
   var sheet = getSheet(SHEET_CUSTOMERS);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
@@ -4492,6 +4511,11 @@ function handleUpdateCustomer(body) {
   var rowNum = body.rowIndex;
   if (!rowNum) return { success: false, message: '缺少 rowIndex' };
 
+  if (body.fields && body.fields.CompanyName != null) {
+    if (!String(body.fields.CompanyName).trim()) return { success: false, message: '公司名稱不能空白' };
+    var dup = findDuplicateCustomerRow_(body.fields.CompanyName, rowNum);
+    if (dup) return { success: false, message: '已經有「' + String(body.fields.CompanyName).trim() + '」這間客戶了（第 ' + dup + ' 列），不能改成重複的名稱。' };
+  }
   var header = updateRowFields(SHEET_CUSTOMERS, rowNum, body.fields);
   var customer = readRowAsObject(SHEET_CUSTOMERS, rowNum);
   syncCustomerFollowUpToCalendar(rowNum, header, getSheet(SHEET_CUSTOMERS), customer);

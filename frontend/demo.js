@@ -547,6 +547,8 @@ function handleDemoApi(action, params) {
       return { success: true, customers: db.customers.map((c, i) => Object.assign({ RowIndex: i }, c)) };
 
     case 'addCustomer': {
+      if (!String(params.companyName || '').trim()) return { success: false, message: '公司名稱不能空白' };
+      if (db.customers.some((c) => String(c.CompanyName).replace(/\s+/g, '').toLowerCase() === String(params.companyName).replace(/\s+/g, '').toLowerCase())) return { success: false, message: '已經有「' + params.companyName.trim() + '」這間客戶了，不能重複新增。' };
       db.customers.push({
         CompanyName: params.companyName || '',
         Contact: params.contact || '',
