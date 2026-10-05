@@ -334,6 +334,7 @@ body{margin:0;padding:28px 0;font-family:${font.css};color:var(--txt);font-size:
 .rp-card{margin:0 0 16px}
 .rp-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.93em}
 .rp-table td{border:1px solid #e2e8f0;padding:8px 10px;vertical-align:top;word-break:break-word}
+.rp-table tr{break-inside:avoid;page-break-inside:avoid}
 .rp-label{font-weight:700;color:var(--d)}
 .rp-empty{color:#cbd5e1}
 /* 內文 */
@@ -367,7 +368,14 @@ body{margin:0;padding:28px 0;font-family:${font.css};color:var(--txt);font-size:
 .rp-pagebreak{break-after:page;page-break-after:always;height:0}
 .rp-pagebreak-mark{text-align:center;color:#94a3b8;font-size:12px;letter-spacing:2px;margin:18px 0;border-top:1px dashed #cbd5e1;padding-top:4px}
 .rp-placeholder{border:2px dashed #cbd5e1;border-radius:8px;padding:22px;text-align:center;color:#94a3b8;margin:6px 0 16px}
-${opt.forEditor ? `[data-block-id]{cursor:pointer;transition:outline-color .15s;outline:2px solid transparent;outline-offset:4px;border-radius:4px}
+${opt.forEditor ? `/* 預覽版面對齊列印：內容區寬 186mm、每頁可用高度 271mm */
+.rp-sheet{padding:12mm 12mm 14mm}
+.rp-cover{min-height:265mm}
+.rp-sheet>.rp-sim-line{position:absolute;left:0;right:0;height:0;border-top:2px dashed #ef4444;z-index:6;pointer-events:none}
+.rp-sim-line span{position:absolute;right:10px;font-size:11px;font-weight:700;color:#fff;background:#ef4444;padding:0 8px;border-radius:9px;line-height:17px;white-space:nowrap}
+.rp-sim-line .up{bottom:4px}
+.rp-sim-line .down{top:4px;background:#f87171}
+[data-block-id]{cursor:pointer;transition:outline-color .15s;outline:2px solid transparent;outline-offset:4px;border-radius:4px}
 [data-block-id]:hover{outline-color:${hexToRgba(primary, 0.35)}}
 [data-block-id].rp-focus{outline-color:var(--p)}` : ''}
 @page{size:A4;margin:12mm 12mm 14mm}

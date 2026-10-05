@@ -1200,7 +1200,9 @@ function renderPreview() {
   doc.open();
   doc.write(html);
   doc.close();
+  paginatePreview(doc);
   doc.documentElement.style.zoom = $('er-zoom').value;
+  watchPreviewLayout(doc);
   doc.addEventListener('click', (e) => {
     const target = e.target.closest('[data-block-id]');
     if (target) setActiveBlock(target.getAttribute('data-block-id'), true);
@@ -1209,6 +1211,121 @@ function renderPreview() {
   restore();
   requestAnimationFrame(restore);
   highlightPreview(activeBlockId, false);
+}
+
+// ---- 分頁模擬線：預覽上畫出列印成 PDF 時每頁的結尾，不用轉檔就知道會不會切到表格 ----
+const PAGE_CONTENT_MM = 271; // A4 297 - 上邊界 12 - 下邊界 14，要和 evalreport-render.js 的 @page 一致
+
+function paginatePreview(doc) {
+  if (!doc || !doc.body) return;
+  const html = doc.documentElement;
+  const zoom = html.style.zoom;
+  html.style.zoom = '';
+  doc.querySelectorAll('.rp-sim-spacer,.rp-sim-line').forEach((n) => n.remove());
+  const countEl = $('er-page-count');
+  const sheet = doc.querySelector('.rp-sheet');
+  if (!sheet || !$('er-pageguide').checked) {
+    html.style.zoom = zoom;
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  const probe = doc.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;width:1px;height:' + PAGE_CONTENT_MM + 'mm';
+  sheet.appendChild(probe);
+  const PAGE = probe.offsetHeight;
+  probe.remove();
+  const TOL = 2;
+  const baseTop = () => sheet.getBoundingClientRect().top + parseFloat(doc.defaultView.getComputedStyle(sheet).paddingTop);
+  const topOf = (el) => el.getBoundingClientRect().top - baseTop();
+  const heightOf = (el) => el.getBoundingClientRect().height;
+  const posInPage = (y) => y - Math.floor((y + TOL) / PAGE) * PAGE;
+
+  // 在 el 前面塞一段空白，讓 el 剛好從下一頁頂端開始
+  const pushToNextPage = (el) => {
+    const y = topOf(el);
+    const target = (Math.floor((y + TOL) / PAGE) + 1) * PAGE;
+    const isRow = el.tagName === 'TR';
+    const sp = doc.createElement(isRow ? 'tr' : 'div');
+    sp.className = 'rp-sim-spacer';
+    let cell = sp;
+    if (isRow) {
+      cell = doc.createElement('td');
+      cell.colSpan = 99;
+      cell.style.cssText = 'padding:0;border:0';
+      sp.appendChild(cell);
+    }
+    const setH = (h) => { cell.style.height = Math.max(0, h) + 'px'; };
+    setH(target - y);
+    el.parentNode.insertBefore(sp, el);
+    setH(target - y + (target - topOf(el))); // 上下邊距折疊會造成誤差，量一次修正
+  };
+
+  const needsPush = (el, extra) => {
+    const y = topOf(el);
+    const h = heightOf(el) + (extra || 0);
+    if (h > PAGE) return false;
+    return Math.floor((y + h - TOL) / PAGE) > Math.floor((y + TOL) / PAGE);
+  };
+
+  const kids = [...sheet.children].filter((n) => !/rp-watermark|rp-sim-/.test(n.className));
+  const unitsOf = (kid) => {
+    if (kid.classList.contains('rp-cover') || kid.classList.contains('rp-pagebreak')) return [];
+    if (kid.matches('.rp-avoid,.rp-h2,.rp-footer')) {
+      if (heightOf(kid) <= PAGE) return [kid];
+      return [...kid.querySelectorAll('tr')]; // 整塊比一頁還大，退而求其次：表格以「列」為單位不切半
+    }
+    if (kid.classList.contains('rp-images')) return [...kid.querySelectorAll('.rp-figure')];
+    return [];
+  };
+
+  let forceNext = false;
+  kids.forEach((kid, i) => {
+    if (forceNext) {
+      forceNext = false;
+      if (posInPage(topOf(kid)) > TOL) pushToNextPage(kid);
+    }
+    if (kid.classList.contains('rp-cover') || kid.classList.contains('rp-pagebreak')) {
+      forceNext = true;
+      return;
+    }
+    const units = unitsOf(kid);
+    units.forEach((u) => {
+      let extra = 0;
+      if (u === kid && kid.classList.contains('rp-h2') && kids[i + 1]) {
+        // 章節標題不能孤零零留在頁尾，至少要跟著下一個區塊的開頭
+        const nx = unitsOf(kids[i + 1])[0] || kids[i + 1];
+        extra = Math.min(heightOf(nx), 70) + 14;
+      }
+      if (needsPush(u, extra)) pushToNextPage(u);
+    });
+  });
+
+  const last = kids[kids.length - 1];
+  const bottom = last ? last.getBoundingClientRect().bottom - baseTop() : 0;
+  const pages = Math.max(1, Math.floor((bottom - TOL) / PAGE) + 1);
+  const offset = baseTop() - sheet.getBoundingClientRect().top;
+  for (let k = 1; k < pages; k++) {
+    const line = doc.createElement('div');
+    line.className = 'rp-sim-line';
+    line.style.top = offset + k * PAGE + 'px';
+    line.innerHTML = '<span class="up">第 ' + k + ' 頁結束 ▲</span><span class="down">▼ 第 ' + (k + 1) + ' 頁開始</span>';
+    sheet.appendChild(line);
+  }
+  if (countEl) countEl.textContent = '共約 ' + pages + ' 頁（紅線為換頁位置，實際以列印為準）';
+  html.style.zoom = zoom;
+}
+
+/** 圖片、字型載入完高度會變，載入後重算一次分頁線。 */
+function watchPreviewLayout(doc) {
+  let timer = null;
+  const again = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if ($('er-preview-frame').contentDocument === doc) paginatePreview(doc);
+    }, 120);
+  };
+  [...doc.images].forEach((img) => { if (!img.complete) img.addEventListener('load', again); });
+  if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(again);
 }
 
 function highlightPreview(id, scroll) {
@@ -1399,6 +1516,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   $('er-zoom').addEventListener('change', () => {
     const doc = $('er-preview-frame').contentDocument;
     if (doc) doc.documentElement.style.zoom = $('er-zoom').value;
+  });
+  try { $('er-pageguide').checked = localStorage.getItem('er_pageguide') !== '0'; } catch (e) {}
+  $('er-pageguide').addEventListener('change', () => {
+    try { localStorage.setItem('er_pageguide', $('er-pageguide').checked ? '1' : '0'); } catch (e) {}
+    paginatePreview($('er-preview-frame').contentDocument);
   });
   $('er-case').addEventListener('change', () => ($('er-case').value ? loadCase($('er-case').value) : loadFree(false)));
   renderBlocks();
