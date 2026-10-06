@@ -885,6 +885,40 @@ async function importBasler() {
   searchProducts();
 }
 
+async function importMyutron() {
+  if (!confirm('要從 Myutron 官網（myutron.com/ch）抓鏡頭與光源嗎？包含遠心鏡頭、FA 定焦鏡頭、變倍鏡頭、線掃描鏡頭、光源與調光電源，約 900 個型號（不含監控鏡頭與線材、固定座等配件）；遠心與定焦鏡頭會同時寫進選型規格。只會新增還沒有的型號，約需 2～5 分鐘，請不要關閉頁面，不含價格。')) return;
+  const NL = String.fromCharCode(10);
+  let added = 0;
+  let enriched = 0;
+  let step = 0;
+  let offset = 0;
+  const notes = [];
+  try {
+    while (true) {
+      step++;
+      setLoadingText('匯入 Myutron：第 ' + step + ' 段（已新增 ' + added + ' 筆）...');
+      const r = await callApi('importMyutronProducts', { offset });
+      if (!r.success) throw new Error(r.message || '匯入失敗');
+      added += r.added;
+      enriched += r.enriched || 0;
+      if (r.errors && r.errors.length) notes.push(...r.errors);
+      if (r.done || step > 30) break;
+      offset = r.nextOffset;
+      setLoadingText('匯入 Myutron：已讀 ' + offset + ' / ' + r.total + ' 個系列頁...');
+    }
+    const lines = ['匯入完成：新增 ' + added + ' 筆產品、替既有產品補上 ' + enriched + ' 筆規格。'];
+    if (notes.length) lines.push('部分頁面讀取失敗：' + notes.slice(0, 6).join('、') + '（可以再按一次匯入補抓）');
+    alert(lines.join(NL));
+  } catch (e) {
+    alert('匯入中斷：' + (e.message || e) + NL + '已經匯入的資料會保留，再按一次「匯入 Myutron 官網」會接著補。');
+  } finally {
+    setLoadingText('處理中，請稍候...');
+  }
+  clearCached('products_all');
+  clearCached('visionCatalog_v5');
+  searchProducts();
+}
+
 async function importMindvision() {
   if (!confirm('要從邁德威視官網（mindvision.com.cn）抓全系列產品嗎？約 665 筆（面陣/線陣/智能/3D 相機、鏡頭、光源、光源控制器、圖像採集卡），面陣相機會同時寫進選型規格。只會新增還沒有的型號，分段執行約需 5～10 分鐘，請不要關閉頁面，不含價格。')) return;
   const NL = String.fromCharCode(10);
@@ -926,7 +960,7 @@ async function importMindvision() {
 
 /** 一次跑完全部官網匯入：每家各自分段執行，失敗的不影響其他家，最後整理各家新增多少。 */
 async function importAllMissing() {
-  if (!confirm('要一次匯入全部官網的硬體嗎？依序跑：公開型錄 → 德鴻 → FLIR → Basler → 邁德威視。只會新增還沒有的型號、補空白規格，不含價格。全部約需 10～25 分鐘，請不要關閉頁面。')) return;
+  if (!confirm('要一次匯入全部官網的硬體嗎？依序跑：公開型錄 → 德鴻 → FLIR → Basler → 邁德威視 → Myutron。只會新增還沒有的型號、補空白規格，不含價格。全部約需 10～25 分鐘，請不要關閉頁面。')) return;
   const NL = String.fromCharCode(10);
   const results = [];
   const failNote = (r) => (r && r.errors && r.errors.length ? r.errors.length + ' 個頁面失敗' : '');
@@ -996,6 +1030,7 @@ async function importAllMissing() {
   });
   await run('Basler', () => loop('Basler', 'importBaslerProducts', {}));
   await run('邁德威視', () => loop('邁德威視', 'importMindvisionProducts', {}));
+  await run('Myutron', () => loop('Myutron', 'importMyutronProducts', {}));
 
   setLoadingText('處理中，請稍候...');
   let total = 0;

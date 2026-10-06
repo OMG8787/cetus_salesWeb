@@ -69,7 +69,8 @@
       <button class="btn-secondary" onclick="importFlir()" title="從 FLIR 官網抓熱像/研發相機、研發鏡頭，以及 FLIR 可見光工業相機(Blackfly S 等，來源為 Teledyne 官網)的型號與規格（不含價格），只補還沒有的">匯入 FLIR 官網</button>
       <button class="btn-secondary" onclick="importBasler()" title="從 Basler 官方文件站(docs.baslerweb.com)抓相機型號與規格（不含價格；主站有防爬蟲，鏡頭與光源抓不到），只補還沒有的">匯入 Basler 官網</button>
       <button class="btn-secondary" onclick="importMindvision()" title="從邁德威視官網 mindvision.com.cn 抓全系列產品（相機、鏡頭、光源、控制器、採集卡）的型號與規格（不含價格），只補還沒有的">匯入邁德威視官網</button>
-      <button onclick="importAllMissing()" title="一次把德鴻、FLIR、Basler、邁德威視全部跑一遍（只補還沒有的），最後列出各家新增多少">匯入尚未登入的硬體（全部官網）</button>
+      <button class="btn-secondary" onclick="importMyutron()" title="從 Myutron 官網 myutron.com/ch 抓機器視覺鏡頭（遠心、定焦、變倍、線掃描）與光源、調光電源的型號與規格（不含價格），只補還沒有的">匯入 Myutron 官網</button>
+      <button onclick="importAllMissing()" title="一次把德鴻、FLIR、Basler、邁德威視、Myutron 全部跑一遍（只補還沒有的），最後列出各家新增多少">匯入尚未登入的硬體（全部官網）</button>
       <label class="inline-check"><input type="checkbox" id="product-only-fav" onchange="onProductSearchInput()" /> ★ 只看常用</label>
       <label class="inline-check"><input type="checkbox" id="product-only-incomplete" onchange="onProductSearchInput()" /> 只看資料不完整的</label>
     </div>

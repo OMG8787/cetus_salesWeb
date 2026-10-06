@@ -112,6 +112,7 @@ var ROUTES = {
   importFlirProducts:      { auth: true, fn: handleImportFlirProducts },
   importBaslerProducts:    { auth: true, fn: handleImportBaslerProducts },
   importMindvisionProducts: { auth: true, fn: handleImportMindvisionProducts },
+  importMyutronProducts:   { auth: true, fn: handleImportMyutronProducts },
   getCalcCatalog:          { auth: true, fn: handleGetCalcCatalog },
   syncCalcCatalog:         { auth: true, fn: handleSyncCalcCatalog },
 
@@ -310,6 +311,7 @@ PERMISSIONS['dedupeData'] = ['admin'];
 PERMISSIONS['importFlirProducts'] = ['admin', 'sales'];
 PERMISSIONS['importBaslerProducts'] = ['admin', 'sales'];
 PERMISSIONS['importMindvisionProducts'] = ['admin', 'sales'];
+PERMISSIONS['importMyutronProducts'] = ['admin', 'sales'];
 PERMISSIONS['syncCalcCatalog'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
@@ -3452,6 +3454,257 @@ function importMindvisionProducts_(offset) {
 
 function handleImportMindvisionProducts(body) {
   var r = importMindvisionProducts_(Number(body.offset) || 0);
+  r.success = true;
+  return r;
+}
+
+// ------------------------------------------------------------
+// Myutron（日本 MYUTRON INC.，www.myutron.com/ch/）鏡頭與光源匯入
+// 官網是一個系列一頁、頁內一張規格表（型號 / 倍率 / 焦距 / 工作距離 / 最大對應傳感器尺寸…）。
+// 機器視覺鏡頭（遠心、定焦、變倍、線掃描）、光源、調光電源/控制器會寫進 Products；
+// 遠心鏡頭（有「倍率」）與 FA 定焦鏡頭（有「焦距」）同時寫進選型規格。
+// 監控(CCTV)鏡頭、線材、擴散板、固定座、濾鏡等配件不屬於 AOI 選型，不匯入。不含價格。
+// ------------------------------------------------------------
+var MYUTRON_BASE = 'https://www.myutron.com/ch/';
+var MYUTRON_SUPPLIER = 'Myutron';
+var MYUTRON_CHUNK_MS = 150 * 1000;
+// 這些系列頁只有線材、擴散板、固定座、濾鏡、光學零件等配件，不用抓
+var MYUTRON_SKIP_SLUG = /^(lens\/fa\/(mount|filter|opticallens-parts|prism|rear-converter|btl-tele|fg-l)|illumination\/(mkba|mkba_mkr|mkr_mkr-f|mc-mcs2|mc-mcs4|mc-mil-20|mc-mil-26|robot|option|led|branch))$/;
+var MYUTRON_CONTROLLER_SLUG = /^illumination\/(mdgc|mlc|mlp|mjs)$/;
+// 表頭有這些字樣的是配件表（對應哪個光源/鏡頭、線材長度、濾鏡螺孔…），整張略過
+var MYUTRON_ACCESSORY_HEADER = /尺寸\s*[\(（]m[\)）]|對應光源|對應鏡頭|所屬鏡頭|濾鏡螺孔|推薦鏡頭|控制器$|^配件|MHV用|電纜/;
+
+/** 首頁連結 → 要抓的系列頁 slug 清單（lens/fa/xxx、illumination/xxx）。 */
+function myutronListSeries_() {
+  var html = fetchUrl_(MYUTRON_BASE);
+  var seen = {};
+  var out = [];
+  var re = /href="https:\/\/www\.myutron\.com\/ch\/((?:lens\/fa|illumination)\/[^"#\/]+)\/?"/g;
+  var m;
+  while ((m = re.exec(html)) !== null) {
+    var slug = m[1];
+    if (seen[slug] || slug.indexOf('/type/') > -1 || /\/type$/.test(slug) || MYUTRON_SKIP_SLUG.test(slug)) continue;
+    seen[slug] = true;
+    out.push(slug);
+  }
+  return out;
+}
+
+function myutronText_(raw) {
+  return htmlDecode_(String(raw || '').replace(/<br\s*\/?>/gi, ' '))
+    .replace(/[″”“]/g, '"')
+    .replace(/ /g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** <table> → 二維陣列，rowspan / colspan 都展開（官網大量用 rowspan，不展開欄位會對不上）。 */
+function myutronTableGrid_(tableHtml) {
+  var grid = [];
+  var spans = [];
+  (tableHtml.match(/<tr[\s\S]*?<\/tr>/gi) || []).forEach(function (rowHtml) {
+    var row = [];
+    var col = 0;
+    var fill = function () {
+      while (spans[col] && spans[col].left > 0) {
+        row[col] = spans[col].text;
+        spans[col].left--;
+        col++;
+      }
+    };
+    var cre = /<t[hd]([^>]*)>([\s\S]*?)<\/t[hd]>/gi;
+    var c;
+    while ((c = cre.exec(rowHtml)) !== null) {
+      fill();
+      var text = myutronText_(c[2]);
+      var rs = Number((c[1].match(/rowspan="?(\d+)/i) || [0, 1])[1]) || 1;
+      var cs = Number((c[1].match(/colspan="?(\d+)/i) || [0, 1])[1]) || 1;
+      for (var k = 0; k < cs; k++) {
+        row[col] = text;
+        if (rs > 1) spans[col] = { left: rs - 1, text: text };
+        col++;
+      }
+    }
+    fill();
+    if (row.length) grid.push(row);
+  });
+  return grid;
+}
+
+function myutronModel_(s) {
+  var t = String(s || '').replace(/[\(（][^\)）]*[\)）]/g, '').trim().replace(/[\s\-−–]*[□＊*]+$/, '').trim(); // 「HMZ0745（手動變倍）」去掉括號說明
+  if (!/^[A-Za-z][A-Za-z0-9\-\/\.\+×x□＊*·・ ]{1,40}$/.test(t) || !/\d/.test(t)) return '';
+  return t;
+}
+
+/**
+ * 一頁系列頁 → { title, items:[{ model, cells:{表頭:值} }] }。
+ * 橫向表（第一欄「型號」往下一列一型號）與直向表（表頭列第 2 欄起就是型號，例如 MLC / MLP 控制器）都支援；
+ * 型號帶 □ 且後面接著一串顏色代碼（DW、B、G…）的，展開成每個顏色一個型號。
+ */
+function myutronParsePage_(html) {
+  var tm = html.match(/<title>([\s\S]*?)<\/title>/);
+  var title = tm ? htmlDecode_(tm[1]).replace(/\s*\|\s*myutron.*$/i, '').replace(/\s+/g, ' ').trim() : '';
+  var items = [];
+  (html.match(/<table[\s\S]*?<\/table>/gi) || []).forEach(function (t) {
+    var grid = myutronTableGrid_(t);
+    // 有些表第一列是「鏡頭」「專用前變倍鏡」這種標題，真正的表頭在後面
+    var h0 = 0;
+    while (h0 < grid.length && grid[h0][0] !== '型號') h0++;
+    if (h0 >= grid.length - 1) return;
+    grid = grid.slice(h0);
+    var head = grid[0];
+    if (MYUTRON_ACCESSORY_HEADER.test(head.join(' '))) return;
+    var vertical = head.length > 1 && myutronModel_(head[1]) && !/^(倍率|焦距|發光色|顏色|波段|類型)/.test(head[1]);
+    if (vertical) {
+      for (var c = 1; c < head.length; c++) {
+        var vm = myutronModel_(head[c]);
+        if (!vm) continue;
+        var cells = {};
+        for (var r = 1; r < grid.length; r++) {
+          if (grid[r][0] && grid[r][c] != null && grid[r][c] !== '' && grid[r][c] !== '－') cells[grid[r][0]] = grid[r][c];
+        }
+        items.push({ model: vm, cells: cells });
+      }
+      return;
+    }
+    var keys = head.filter(function (h, i) {
+      return i > 0 && h !== '外觀圖' && h !== '外觀圖(寬/長/厚)';
+    });
+    if (!keys.length) return;
+    // 「型號」底下分「Coaxial / Non Coaxial」兩欄（FTV 系列）：每列有兩個型號，其餘欄位往後多一格
+    var twin = !!grid[1] && /^coaxial$/i.test(grid[1][0]);
+    if (twin) head = [head[0]].concat(head.slice(2)); // 表頭的「型號」橫跨兩欄，展開後重複了一格
+    for (var i = twin ? 2 : 1; i < grid.length; i++) {
+      var row = grid[i];
+      var raw = row[0];
+      var variants = [];
+      var rest = row.slice(twin ? 2 : 1);
+      if (/□/.test(raw)) {
+        while (rest.length && /^[A-Z]{1,3}$/.test(rest[0])) variants.push(rest.shift());
+      }
+      var cellsObj = {};
+      head.slice(1).forEach(function (h, k) {
+        if (h && h !== '外觀圖' && h !== '外觀圖(寬/長/厚)' && rest[k] != null && rest[k] !== '' && rest[k] !== '–' && rest[k] !== '－') cellsObj[h] = rest[k];
+      });
+      if (variants.length) {
+        variants.forEach(function (v) {
+          var vmodel = myutronModel_(raw.replace(/□/g, v));
+          if (vmodel) items.push({ model: vmodel, cells: Object.assign({ 發光色: v }, cellsObj) });
+        });
+      } else {
+        var model = myutronModel_(raw);
+        if (model) items.push({ model: model, cells: cellsObj });
+        var model2 = twin ? myutronModel_(row[1]) : '';
+        if (model2) items.push({ model: model2, cells: cellsObj });
+      }
+    }
+  });
+  return { title: title, items: items };
+}
+
+function myutronFirstNum_(v) {
+  var m = String(v == null ? '' : v).match(/\d+(?:\.\d+)?/);
+  return m ? m[0] : '';
+}
+
+/** 一個型號 → Products 欄位 + 選型規格。 */
+function myutronBuildItem_(slug, title, it) {
+  var f = it.cells;
+  var isLens = slug.indexOf('lens/') === 0;
+  var isCtl = MYUTRON_CONTROLLER_SLUG.test(slug);
+  var category = isLens ? '鏡頭' : isCtl ? '調光器' : '光源';
+  var label = isLens ? '機器視覺鏡頭' : isCtl ? '光源控制器' : '工業光源';
+  var sensor = mvInch_(f['最大對應傳感器尺寸'] || f['Image sensor'] || '');
+  var summary = Object.keys(f).slice(0, 8).map(function (k) {
+    return k + ' ' + f[k];
+  }).join('，');
+  var rec = null;
+  if (isLens) {
+    var focal = f['焦距'] ? myutronFirstNum_(f['焦距']) : '';
+    var magText = String(f['倍率'] || f['最大攝像倍率'] || '');
+    var mag = !focal && !/[〜~]|\d\s*x?\s*[-–]\s*\d/.test(magText) ? myutronFirstNum_(magText) : ''; // 變倍鏡頭（0.7x〜4.5x）沒有單一倍率，不寫進選型 // 定焦鏡頭的「最大使用倍率」不是遠心倍率，不能寫進放大倍率，不然選型會被當成遠心鏡頭
+    rec = {
+      model: it.model,
+      brand: MYUTRON_SUPPLIER,
+      sensorSize: sensor,
+      focal: focal,
+      mag: mag,
+      wd: mag ? myutronFirstNum_(f['工作距離'] || f['WD']) : '',
+      focusWd: focal ? myutronFirstNum_(f['工作距離'] || f['最短物距']) : '',
+      dof: mag ? myutronFirstNum_(f['景深']) : '',
+      mount: String(f['接口'] || '').trim(),
+    };
+  }
+  return {
+    category: category,
+    label: label,
+    row: {
+      InternalModel: it.model,
+      SupplierModel: it.model,
+      Supplier: MYUTRON_SUPPLIER,
+      Origin: '日本',
+      Category: category,
+      Notes: 'Myutron 官網 ' + label + '；' + title + (summary ? '；' + summary : ''),
+      LastUpdated: todayStr(),
+      SourceUrl: MYUTRON_BASE + slug + '/',
+      Specs: JSON.stringify(Object.assign({ 系列: title }, f)),
+    },
+    rec: rec,
+  };
+}
+
+function importMyutronProducts_(offset) {
+  var started = new Date().getTime();
+  var errors = [];
+  var tasks = myutronListSeries_();
+  var existing = readProductsLite_().rows;
+  var byModel = {};
+  existing.forEach(function (r, i) {
+    [r['InternalModel'], r['SupplierModel']].forEach(function (x) {
+      if (x) byModel[String(x).toUpperCase()] = { row: i + 2, specs: r['SourceUrl'] };
+    });
+  });
+  var newRows = [];
+  var recs = [];
+  var enriched = 0;
+  var pages = 0;
+  var i = offset;
+  for (; i < tasks.length; i++) {
+    if (i > offset && new Date().getTime() - started > MYUTRON_CHUNK_MS) break;
+    var html;
+    try {
+      html = fetchUrl_(MYUTRON_BASE + tasks[i] + '/');
+      pages++;
+    } catch (e) {
+      errors.push(tasks[i] + '（' + e.message + '）');
+      continue;
+    }
+    var page = myutronParsePage_(html);
+    page.items.forEach(function (it) {
+      var built = myutronBuildItem_(tasks[i], page.title, it);
+      var key = it.model.toUpperCase();
+      var hit = byModel[key];
+      if (hit) {
+        if (!hit.specs && hit.row > 0) {
+          updateRowFields(SHEET_PRODUCTS, hit.row, { Specs: built.row.Specs, SourceUrl: built.row.SourceUrl });
+          hit.specs = built.row.Specs;
+          enriched++;
+        }
+      } else {
+        newRows.push(built.row);
+        byModel[key] = { row: -1, specs: built.row.Specs };
+      }
+      if (built.rec) recs.push(built.rec);
+    });
+  }
+  var added = writeProductRows_(newRows);
+  if (recs.length) upsertHardware_(recs);
+  return { added: added, enriched: enriched, camAdded: 0, done: i >= tasks.length, nextOffset: i, total: tasks.length, pages: pages, errors: errors.slice(0, 3) };
+}
+
+function handleImportMyutronProducts(body) {
+  var r = importMyutronProducts_(Number(body.offset) || 0);
   r.success = true;
   return r;
 }
