@@ -293,9 +293,39 @@ async function ensureSoftwareKnown(inputId) {
   return true;
 }
 
+/** 案件編號（專案名稱）預覽：跟後端 generateCaseId 同一套規則（軟體-待測物件-產品應用-客戶，去特殊符號、每段最多 20 字、空白變 NA）。 */
+function caseIdPart(str) {
+  const s = String(str || '').trim().replace(/[^\w\u4e00-\u9fa5]+/g, '').slice(0, 20);
+  return s || 'NA';
+}
+
+function updateCaseIdPreview() {
+  const el = document.getElementById('case-id-preview');
+  if (!el) return;
+  const v = (id) => document.getElementById(id).value;
+  const id = [v('case-software-name'), v('case-test-object'), v('case-product-application'), v('case-customer')].map(caseIdPart).join('-');
+  const missing = id.split('-').includes('NA');
+  el.innerHTML = `案件編號（專案名稱）預覽：<b>${id}</b>${missing ? ' <span style="color:#c0392b;">（有 NA 代表還有欄位沒填）</span>' : ''}`;
+}
+
+/** 建立案件前檢查：軟體名稱、待測物件、產品應用會組成專案名稱，一定要填。 */
+function requireCaseIdFields() {
+  const fields = [
+    ['case-software-name', '使用軟體名稱'],
+    ['case-test-object', '待測物件'],
+    ['case-product-application', '產品應用'],
+  ];
+  const missing = fields.filter(([id]) => !document.getElementById(id).value.trim());
+  if (!missing.length) return true;
+  alert('這幾個欄位會組成案件編號（專案名稱），請先填寫：\n\n' + missing.map(([, n]) => '．' + n).join('\n') + '\n\n案件編號建立後再改要特別小心，所以請先確認填對。');
+  document.getElementById(missing[0][0]).focus();
+  return false;
+}
+
 async function createCase() {
   const customerName = document.getElementById('case-customer').value;
   if (blockIfCustomerMissing(customerName)) return;
+  if (!requireCaseIdFields()) return;
   if (!(await ensureSoftwareKnown('case-software-name'))) return;
 
   const swCustomization = document.getElementById('case-sw-customization').value;
@@ -429,6 +459,26 @@ function showCaseFollowUp(customerName) {
   }
   const f = followUpInfo(cust.NextFollowUpDate);
   el.innerHTML = `｜下次追蹤：<b style="color:${f.color};">${f.text}</b>${f.note ? `（${f.note}）` : ''}`;
+}
+
+/** 修改專案名稱（案件編號）：改了會影響公司內部對這個案件的登記，所以要確認兩次。 */
+async function renameCasePrompt() {
+  if (!currentCaseId) return;
+  const oldId = currentCaseId;
+  const input = prompt('請輸入新的專案名稱（案件編號）：\n\n目前：' + oldId, oldId);
+  if (input === null) return;
+  const newId = input.trim();
+  if (!newId || newId === oldId) return alert('專案名稱沒有變更');
+  if (/['"<>\\\/?#%]/.test(newId)) return alert('專案名稱不能包含 \' " < > \\ / ? # % 這些符號');
+  if (!confirm('⚠ 修改專案名稱要特別小心\n\n專案名稱就是案件編號，公司內部（需求單、評估單、報價、紙本或其他系統的登記、同事口頭稱呼）可能已經用舊名稱登記。改掉之後，對不上舊名稱的資料就要自己同步修改。\n\n確定要繼續嗎？')) return;
+  if (!confirm('請再次確認：\n\n舊名稱：' + oldId + '\n新名稱：' + newId + '\n\n按「確定」就會改掉這個案件，以及它的 CCD 需求、相關公司、聯繫紀錄與價格紀錄裡的案件編號。')) return;
+  const r = await callApi('renameCase', { caseId: oldId, newCaseId: newId });
+  if (!r.success) return alert(r.message);
+  clearCached('casesPageData');
+  currentCaseId = r.caseId;
+  document.getElementById('cd-case-id').textContent = r.caseId;
+  alert('已修改專案名稱：\n' + oldId + '\n→ ' + r.caseId);
+  await loadCases();
 }
 
 async function deleteCase(caseId) {

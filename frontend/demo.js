@@ -409,6 +409,17 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
+    case 'renameCase': {
+      const cs = db.cases.find((x) => x.CaseID === params.caseId);
+      if (!cs) return { success: false, message: '查無此案件' };
+      const nid = String(params.newCaseId || '').trim();
+      if (!nid) return { success: false, message: '缺少新的專案名稱' };
+      if (db.cases.some((x) => x.CaseID === nid)) return { success: false, message: '已經有一個案件叫「' + nid + '」，請換一個名稱' };
+      cs.CaseID = nid;
+      saveDemoDB(db);
+      return { success: true, caseId: nid, oldCaseId: params.caseId, counts: {} };
+    }
+
     case 'deleteCase': {
       db.cases = db.cases.filter((c) => c.CaseID !== params.caseId);
       saveDemoDB(db);

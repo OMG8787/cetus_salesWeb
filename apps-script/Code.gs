@@ -136,6 +136,7 @@ var ROUTES = {
   deleteSoftware:          { auth: true, fn: handleDeleteSoftware },
   updateCase:              { auth: true, fn: handleUpdateCase },
   deleteCase:              { auth: true, fn: handleDeleteCase },
+  renameCase:              { auth: true, fn: handleRenameCase },
   uploadCaseAttachment:    { auth: true, fn: handleUploadCaseAttachment },
   deleteCaseAttachment:    { auth: true, fn: handleDeleteCaseAttachment },
   getCaseImages:           { auth: true, fn: handleGetCaseImages },
@@ -316,6 +317,7 @@ PERMISSIONS['importMyutronProducts'] = ['admin', 'sales'];
 PERMISSIONS['syncCalcCatalog'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
 PERMISSIONS['deleteCase'] = ['admin', 'sales'];
+PERMISSIONS['renameCase'] = ['admin', 'sales'];
 PERMISSIONS['deletePriceRecord'] = ['admin', 'sales'];
 PERMISSIONS['deleteContactLog'] = ['admin', 'sales'];
 PERMISSIONS['deleteCustomerContact'] = ['admin', 'sales'];
@@ -3900,6 +3902,13 @@ function handleCreateCase(body) {
     return { success: false, message: '「' + body.customerName + '」不在客戶資料表中，請先在「客戶管理」建立這間客戶，或用畫面上的建議清單挑選' };
   }
 
+  // 案件編號（專案名稱）由「軟體名稱-待測物件-產品應用-客戶名稱」組成，這三項空白會變成 NA，所以一定要填
+  var missingParts = [];
+  if (!String(body.softwareName || '').trim()) missingParts.push('使用軟體名稱');
+  if (!String(body.testObject || '').trim()) missingParts.push('待測物件');
+  if (!String(body.productApplication || '').trim()) missingParts.push('產品應用');
+  if (missingParts.length) return { success: false, message: '以下欄位會組成案件編號（專案名稱），請先填寫：' + missingParts.join('、') };
+
   var caseId = generateCaseId(body);
   appendObjectRow(SHEET_CASES, {
     CaseID: caseId,
@@ -4064,6 +4073,57 @@ function handleUpdateCase(body) {
   if (body.relatedCompanies) saveCaseCompaniesForCase(body.caseId, body.relatedCompanies);
 
   return { success: true };
+}
+
+/** 把某分頁 columnName 欄裡等於 oldId 的儲存格改成 newId（文字格式），回傳改了幾格。 */
+function renameCaseIdInSheet_(sheetName, columnName, oldId, newId) {
+  var sheet = getSheet(sheetName);
+  var last = sheet.getLastRow();
+  if (last < 2) return 0;
+  var col = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].indexOf(columnName);
+  if (col < 0) return 0;
+  var range = sheet.getRange(2, col + 1, last - 1, 1);
+  var n = 0;
+  var out = range.getValues().map(function (r) {
+    if (String(r[0]) === oldId) {
+      n++;
+      return [newId];
+    }
+    return [r[0]];
+  });
+  if (n) {
+    range.setNumberFormat('@');
+    range.setValues(out);
+  }
+  return n;
+}
+
+/**
+ * 修改案件編號（專案名稱）。案件編號是各分頁互相對應的鍵，所以一併更新：
+ * Cases、CCDRequirements、CaseCompanies、ContactLogs、PriceHistory。附件在案件資料裡，跟著走。
+ */
+function handleRenameCase(body) {
+  var oldId = String(body.caseId || '').trim();
+  var newId = String(body.newCaseId || '').trim();
+  if (!oldId || !newId) return { success: false, message: '缺少案件編號或新的專案名稱' };
+  if (newId === oldId) return { success: false, message: '新的專案名稱和目前一樣，沒有修改' };
+  if (newId.length > 100) return { success: false, message: '專案名稱太長（最多 100 字）' };
+  if (/['"<>\\\/?#%]/.test(newId)) return { success: false, message: "專案名稱不能包含 ' \" < > \\ / ? # % 這些符號" };
+  var sheet = getSheet(SHEET_CASES);
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var rowNum = findCaseRowIndex(header, oldId);
+  if (rowNum === -1) return { success: false, message: '查無此案件' };
+  if (findCaseRowIndex(header, newId) > -1) return { success: false, message: '已經有一個案件叫「' + newId + '」，請換一個名稱' };
+
+  var counts = {
+    cases: renameCaseIdInSheet_(SHEET_CASES, 'CaseID', oldId, newId),
+    ccd: renameCaseIdInSheet_(SHEET_CCD_REQUIREMENTS, 'CaseID', oldId, newId),
+    companies: renameCaseIdInSheet_(SHEET_CASE_COMPANIES, 'CaseID', oldId, newId),
+    contactLogs: renameCaseIdInSheet_(SHEET_CONTACT_LOGS, 'CaseID', oldId, newId),
+    priceHistory: renameCaseIdInSheet_(SHEET_PRICE_HISTORY, 'CaseID', oldId, newId),
+  };
+  updateRowFields(SHEET_CASES, rowNum, { LastUpdated: todayStr() });
+  return { success: true, caseId: newId, oldCaseId: oldId, counts: counts };
 }
 
 function handleDeleteCase(body) {

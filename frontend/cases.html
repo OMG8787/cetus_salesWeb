@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>案件管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261007h" />
+<link rel="stylesheet" href="style.css?v=20261007i" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -53,7 +53,7 @@
   <h2>建立新案件（發需求單給 FAE）</h2>
   <div id="case-create-panel">
     <label>客戶名稱（必填，一定要是已存在的客戶）：</label>
-    <input id="case-customer" list="case-customer-datalist" placeholder="輸入客戶名稱（會自動帶出建議，沒有的話離開欄位時會問你要不要建立）" onblur="onCaseCustomerBlur(this.id)" />
+    <input id="case-customer" oninput="updateCaseIdPreview()" list="case-customer-datalist" placeholder="輸入客戶名稱（會自動帶出建議，沒有的話離開欄位時會問你要不要建立）" onblur="onCaseCustomerBlur(this.id)" />
     <datalist id="case-customer-datalist"></datalist>
 
     <input id="case-end-customer" placeholder="終端客戶名稱（選填）" />
@@ -72,12 +72,13 @@
     <input id="case-fae" list="case-fae-datalist" placeholder="輸入 FAE 姓名" onblur="onCaseStaffBlur('FAE', 'case-fae')" />
     <datalist id="case-fae-datalist"></datalist>
 
-    <input id="case-product-application" placeholder="產品應用（選填）" />
-    <input id="case-test-object" placeholder="待測物件（選填）" />
+    <input id="case-product-application" placeholder="產品應用（必填，會組成專案名稱）" oninput="updateCaseIdPreview()" />
+    <input id="case-test-object" placeholder="待測物件（必填，會組成專案名稱）" oninput="updateCaseIdPreview()" />
 
-    <label>使用軟體名稱：</label>
-    <input id="case-software-name" list="case-software-datalist" placeholder="輸入或從建議選擇軟體名稱" />
+    <label>使用軟體名稱（必填，會組成專案名稱）：</label>
+    <input id="case-software-name" list="case-software-datalist" placeholder="輸入或從建議選擇軟體名稱" oninput="updateCaseIdPreview()" />
     <datalist id="case-software-datalist"></datalist>
+    <div id="case-id-preview" class="calc-hint" style="margin:4px 0 8px;"></div>
 
     <label>軟體是否需要客製化（選填）：</label>
     <select id="case-sw-customization" onchange="toggleSwCustomizationNote('case')">
@@ -121,6 +122,7 @@
   <div id="case-detail" class="panel" style="display:none;">
     <h3>案件：<span id="cd-case-id"></span>
       <button id="cd-view-customer-btn" onclick="viewCustomerContactLogs()" title="跳到客戶管理，查看這間公司的聯繫紀錄">📇 客戶聯繫紀錄</button>
+      <button id="cd-rename-btn" onclick="renameCasePrompt()" title="案件編號就是專案名稱，輸入錯誤時可以在這裡修改（會有二次確認）">✏️ 修改專案名稱</button>
       <span id="cd-followup" class="calc-hint"></span>
     </h3>
 
@@ -296,9 +298,9 @@
   </div>
 </div>
 
-<script src="config.js?v=20261007h"></script>
-<script src="demo.js?v=20261007h"></script>
-<script src="common.js?v=20261007h"></script>
-<script src="cases.js?v=20261007h"></script>
+<script src="config.js?v=20261007i"></script>
+<script src="demo.js?v=20261007i"></script>
+<script src="common.js?v=20261007i"></script>
+<script src="cases.js?v=20261007i"></script>
 </body>
 </html>
