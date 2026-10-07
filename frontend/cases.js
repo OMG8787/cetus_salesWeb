@@ -117,9 +117,9 @@ function toggleSwCustomizationNote(prefix) {
 function applyCasesPageData(data) {
   softwareList = data.software || softwareList;
   updateSoftwareDatalist();
+  allCustomersForCase = data.customers; // 要先有客戶資料，案件列表才能帶出「下次追蹤」
   renderCaseTable(data.cases);
 
-  allCustomersForCase = data.customers;
   const custList = document.getElementById('case-customer-datalist');
   custList.innerHTML = '';
   [...new Set(allCustomersForCase.map((c) => c.CompanyName).filter(Boolean))].forEach((name) => {
@@ -358,13 +358,74 @@ function renderCaseTable(cases) {
   tbody.innerHTML = '';
   cases.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${c.CaseID}</td><td>${c.CustomerName}</td><td>${c.Status}</td><td>${c.CreatedDate}</td>
+    tr.innerHTML = `<td>${c.CaseID}</td><td>${c.CustomerName}</td><td>${c.Status}</td><td>${followUpCellHtml(c.CustomerName)}</td><td>${c.CreatedDate}</td>
       <td>
         <button onclick="viewCase('${c.CaseID}')">查看</button>
         <button onclick="deleteCase('${c.CaseID}')">刪除</button>
       </td>`;
     tbody.appendChild(tr);
   });
+}
+
+// ---- 案件連動客戶的「下次追蹤日」：看案件就知道下次什麼時候要追蹤，也可以直接改 ----
+function localTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeDateStr(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : s;
+}
+
+/** 追蹤日的狀態：逾期（紅）、今天（橘）、3 天內（黃）、之後（一般）、沒設定。 */
+function followUpInfo(dateStr) {
+  const d = normalizeDateStr(dateStr);
+  if (!d) return { text: '未設定', color: '#999', note: '' };
+  const today = localTodayStr();
+  const days = Math.round((new Date(d + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+  if (isNaN(days)) return { text: d, color: '#333', note: '' };
+  if (days < 0) return { text: d, color: '#c0392b', note: `已逾期 ${-days} 天` };
+  if (days === 0) return { text: d, color: '#d35400', note: '今天要追蹤' };
+  if (days <= 3) return { text: d, color: '#b7950b', note: `${days} 天後` };
+  return { text: d, color: '#333', note: `${days} 天後` };
+}
+
+function followUpCellHtml(customerName) {
+  const cust = findExactCustomer(customerName);
+  if (!cust) return '<span style="color:#999;">（客戶資料中沒有這間公司）</span>';
+  const f = followUpInfo(cust.NextFollowUpDate);
+  return `<span style="color:${f.color};font-weight:${f.note && f.color !== '#333' ? 'bold' : 'normal'};">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}
+    <button class="btn-mini" onclick="editCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'))">改</button>`;
+}
+
+async function editCaseFollowUp(customerName) {
+  const cust = findExactCustomer(customerName);
+  if (!cust) return alert('客戶資料裡找不到「' + customerName + '」，請先到客戶管理建立');
+  const newDate = prompt(`設定「${customerName}」的下次追蹤日 (格式 YYYY-MM-DD，留空＝清除)：`, normalizeDateStr(cust.NextFollowUpDate));
+  if (newDate === null) return;
+  const d = newDate.trim();
+  if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return alert('日期格式要是 YYYY-MM-DD，例如 2026-10-15');
+  const result = await callApi('updateCustomer', { rowIndex: cust.RowIndex, fields: { NextFollowUpDate: d } });
+  if (!result.success) return alert(result.message);
+  clearCached('customers');
+  clearCached('casesPageData');
+  await reloadCustomersForCase();
+  loadCases();
+  if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
+}
+
+function showCaseFollowUp(customerName) {
+  const el = document.getElementById('cd-followup');
+  if (!el) return;
+  const cust = findExactCustomer(customerName);
+  if (!cust) {
+    el.textContent = '';
+    return;
+  }
+  const f = followUpInfo(cust.NextFollowUpDate);
+  el.innerHTML = `｜下次追蹤：<b style="color:${f.color};">${f.text}</b>${f.note ? `（${f.note}）` : ''}`;
 }
 
 async function deleteCase(caseId) {
@@ -388,6 +449,7 @@ async function viewCase(caseId) {
   document.getElementById('case-detail').style.display = 'block';
   document.getElementById('cd-case-id').textContent = caseId;
   document.getElementById('cd-customer').value = c.CustomerName || '';
+  showCaseFollowUp(c.CustomerName);
   document.getElementById('cd-end-customer').value = c.EndCustomerName || '';
   document.getElementById('cd-project-contact').value = c.ProjectContact || '';
   document.getElementById('cd-contact-phone').value = c.ContactPhone || '';

@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>案件管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261007c" />
+<link rel="stylesheet" href="style.css?v=20261007d" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -110,13 +110,14 @@
   </div>
 
   <table id="case-table">
-    <thead><tr><th>案件編號</th><th>客戶</th><th>狀態</th><th>建立日期</th><th>操作</th></tr></thead>
+    <thead><tr><th>案件編號</th><th>客戶</th><th>狀態</th><th>下次追蹤（客戶）</th><th>建立日期</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 
   <div id="case-detail" class="panel" style="display:none;">
     <h3>案件：<span id="cd-case-id"></span>
       <button id="cd-view-customer-btn" onclick="viewCustomerContactLogs()" title="跳到客戶管理，查看這間公司的聯繫紀錄">📇 客戶聯繫紀錄</button>
+      <span id="cd-followup" class="calc-hint"></span>
     </h3>
 
     <h4>案件資料（可修改）</h4>
@@ -288,9 +289,9 @@
   </div>
 </div>
 
-<script src="config.js?v=20261007c"></script>
-<script src="demo.js?v=20261007c"></script>
-<script src="common.js?v=20261007c"></script>
-<script src="cases.js?v=20261007c"></script>
+<script src="config.js?v=20261007d"></script>
+<script src="demo.js?v=20261007d"></script>
+<script src="common.js?v=20261007d"></script>
+<script src="cases.js?v=20261007d"></script>
 </body>
 </html>
