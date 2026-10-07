@@ -365,3 +365,4 @@ th.sortable.desc::after { content: ' ▼'; color: #2c5aa0; }
 /* 載入遮罩不蓋住頁首與導覽列：載入資料時隨時可以換頁 */
 header, .tabs { position: relative; z-index: 300; }
 .nav-refresh { margin-left: auto; color: #2c5aa0; font-weight: bold; }
+.nav-clear-cache { color: #666; }

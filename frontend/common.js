@@ -339,7 +339,7 @@ function getCached(key) {
 // 大量資料（全部產品、型錄…幾千筆）超過 sessionStorage 的容量，而且關掉分頁就沒了，
 // 所以另外存一份在瀏覽器的 IndexedDB：離開頁面再回來、甚至重開瀏覽器，第一眼都是上次的資料，
 // 背景再悄悄更新（不擋畫面）。要強迫重抓時按導覽列右邊的「↻ 重撈資料」。
-const BIGCACHE_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+const BIGCACHE_MAX_AGE_MS = 4 * 3600 * 1000; // 暫存最多留 4 小時，過期的每次開頁面時都會真的刪掉
 const BigCache = (() => {
   let dbPromise = null;
   const open = () => {
@@ -378,6 +378,18 @@ const BigCache = (() => {
     set: (key, data) => run('readwrite', (st) => st.put({ t: Date.now(), d: data }, key)),
     del: (key) => run('readwrite', (st) => st.delete(key)),
     clear: () => run('readwrite', (st) => st.clear()),
+    /** 把過期的暫存真的刪掉（不只是不讀取），避免越存越多。 */
+    purgeExpired: () =>
+      run('readwrite', (st) => {
+        const cur = st.openCursor();
+        cur.onsuccess = () => {
+          const c = cur.result;
+          if (!c) return;
+          if (!c.value || !c.value.t || Date.now() - c.value.t >= BIGCACHE_MAX_AGE_MS) c.delete();
+          c.continue();
+        };
+        return cur;
+      }),
   };
 })();
 
@@ -433,4 +445,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   nav.appendChild(btn);
+
+  const clr = document.createElement('button');
+  clr.type = 'button';
+  clr.className = 'tab-btn nav-clear-cache';
+  clr.textContent = '🗑 清空暫存';
+  clr.title = '把這台電腦上暫存的資料全部刪掉（不重新載入、不影響資料庫）';
+  clr.addEventListener('click', async () => {
+    await clearAllCached();
+    alert('已清空這台電腦暫存的資料。下次進入頁面會重新向資料庫抓。');
+  });
+  nav.appendChild(clr);
+  BigCache.purgeExpired();
 });
