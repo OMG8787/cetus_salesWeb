@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>案件管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261007g" />
+<link rel="stylesheet" href="style.css?v=20261007h" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -87,6 +87,9 @@
     </select>
     <textarea id="case-sw-customization-note" placeholder="客製化說明" style="display:none;"></textarea>
 
+    <label>案件緊急程度：</label>
+    <select id="case-urgency"><option value="高">高</option><option value="中" selected>中</option><option value="低">低</option></select>
+
     <textarea id="case-requirement" placeholder="需求細節描述"></textarea>
 
     <h3>檢測需求（可新增/刪除多組 CCD，因為 AOI 可能接多相機）</h3>
@@ -111,7 +114,7 @@
   </div>
 
   <table id="case-table">
-    <thead><tr><th>案件編號</th><th>客戶</th><th>狀態</th><th>下次追蹤（客戶）</th><th>建立日期</th><th>操作</th></tr></thead>
+    <thead><tr><th>案件編號</th><th>客戶</th><th>緊急</th><th>狀態</th><th>下次追蹤（客戶）</th><th>建立日期</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 
@@ -157,6 +160,9 @@
         <option value="評估單已發出">評估單已發出</option>
         <option value="已結案">已結案</option>
       </select>
+      <label>案件緊急程度：</label>
+      <select id="cd-urgency"><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
+
       <textarea id="cd-requirement" placeholder="需求細節描述"></textarea>
 
       <h4>檢測需求（可新增/刪除多組 CCD）</h4>
@@ -290,9 +296,9 @@
   </div>
 </div>
 
-<script src="config.js?v=20261007g"></script>
-<script src="demo.js?v=20261007g"></script>
-<script src="common.js?v=20261007g"></script>
-<script src="cases.js?v=20261007g"></script>
+<script src="config.js?v=20261007h"></script>
+<script src="demo.js?v=20261007h"></script>
+<script src="common.js?v=20261007h"></script>
+<script src="cases.js?v=20261007h"></script>
 </body>
 </html>

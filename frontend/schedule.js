@@ -44,8 +44,8 @@ function schSort(a, b) {
   const db = daysUntil(b.NextFollowUpDate);
   const dka = da == null ? 99999 : da;
   const dkb = db == null ? 99999 : db;
-  if (mode === 'date') return dka - dkb || ua - ub;
-  return ua - ub || dka - dkb;
+  if (mode === 'urgency') return ua - ub || dka - dkb;
+  return dka - dkb || ua - ub; // 預設：先依追蹤日（逾期最前面），同一天再依緊急程度
 }
 
 function rangeLimit() {
@@ -108,7 +108,7 @@ function renderSchedule() {
     .filter((c) => c.Status !== '已結案')
     .map((c) => {
       const cust = custByName[c.CustomerName] || {};
-      return Object.assign({}, c, { Urgency: cust.Urgency || '中', NextFollowUpDate: cust.NextFollowUpDate || '', _cust: cust });
+      return Object.assign({}, c, { Urgency: c.Urgency || cust.Urgency || '中', NextFollowUpDate: cust.NextFollowUpDate || '', _cust: cust });
     })
     .filter((c) => {
       if (urgencyFilter && c.Urgency !== urgencyFilter) return false;
@@ -173,7 +173,10 @@ function schDone(companyName, caseId) {
     contact: cust.Contact || '',
     currentDate: cust.NextFollowUpDate,
     caseId: caseId || '',
-    onDone: () => loadScheduleData(),
+    onDone: () => {
+      loadScheduleData();
+      loadDailyReport();
+    },
   });
 }
 
@@ -189,6 +192,60 @@ async function schChangeDate(companyName) {
   clearCached('customers');
   clearCached('casesPageData');
   loadScheduleData();
+}
+
+// ④ 今日已完成的工作（工作日報）：這天的客戶聯繫紀錄，整理成可以直接複製貼到日報的文字
+let repLogs = [];
+
+async function loadDailyReport() {
+  const date = document.getElementById('rep-date').value || localTodayStr();
+  const r = await callApi('getContactLogs', { date }, { silent: true });
+  if (!r.success) {
+    document.getElementById('rep-text').value = r.message || '讀取失敗';
+    return;
+  }
+  repLogs = r.logs || [];
+  renderDailyReport();
+}
+
+function renderDailyReport() {
+  const date = document.getElementById('rep-date').value || localTodayStr();
+  const mineOnly = document.getElementById('rep-mine').checked;
+  const me = typeof currentUsername !== 'undefined' ? currentUsername : '';
+  const logs = repLogs
+    .filter((l) => !mineOnly || !l.Salesperson || l.Salesperson === me)
+    .slice()
+    .sort((a, b) => a.RowIndex - b.RowIndex); // 試算表由上到下＝記錄的先後順序
+  const caseById = {};
+  schCases.forEach((c) => (caseById[c.CaseID] = c));
+
+  const lines = [`${date} 工作內容${me ? '（' + me + '）' : ''}`];
+  if (!logs.length) lines.push('（這天還沒有記錄任何追蹤 / 聯繫。完成追蹤後在上面按「追蹤完畢」，就會出現在這裡。）');
+  logs.forEach((l, i) => {
+    const cs = l.CaseID ? caseById[l.CaseID] : null;
+    lines.push(`${i + 1}. ${l.CompanyName}${l.Contact ? '（聯絡人：' + l.Contact + '）' : ''}`);
+    lines.push(`   方式：${l.Method || '—'}`);
+    if (l.CaseID) lines.push(`   案件：${l.CaseID}${cs ? '（' + (cs.ProductApplication || cs.TestObject || cs.Status || '') + '）' : ''}`.replace(/（）$/, ''));
+    lines.push(`   內容：${String(l.Summary || '').replace(/\n+/g, '\n         ')}`);
+    const cust = schCustomers.find((x) => x.CompanyName === l.CompanyName);
+    if (cust && normalizeDateStr(cust.NextFollowUpDate)) lines.push(`   下次追蹤：${normalizeDateStr(cust.NextFollowUpDate)}`);
+  });
+  document.getElementById('rep-text').value = lines.join('\n');
+  document.getElementById('rep-count').textContent = `共 ${logs.length} 筆`;
+}
+
+async function copyDailyReport() {
+  const box = document.getElementById('rep-text');
+  try {
+    await navigator.clipboard.writeText(box.value);
+  } catch (e) {
+    box.select();
+    document.execCommand('copy');
+  }
+  const btn = document.getElementById('rep-copy');
+  const old = btn.textContent;
+  btn.textContent = '已複製 ✓';
+  setTimeout(() => (btn.textContent = old), 1500);
 }
 
 // ① Google 日曆行程（客戶追蹤日也會被加進日曆，這裡略過那些，因為下面清單已經列出）
@@ -220,12 +277,16 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (!(await ensureAuth())) return;
   renderHeaderUser();
   applyAdminOnlyVisibility();
+  document.getElementById('rep-date').value = localTodayStr();
+  document.getElementById('rep-date').addEventListener('change', loadDailyReport);
+  document.getElementById('rep-mine').addEventListener('change', renderDailyReport);
   ['sch-urgency', 'sch-range', 'sch-sort'].forEach((id) => document.getElementById(id).addEventListener('change', renderSchedule));
   document.getElementById('sch-keyword').addEventListener('input', renderSchedule);
   document.getElementById('sch-days').addEventListener('change', loadScheduleEvents);
   loadScheduleEvents();
   loadScheduleData();
+  loadDailyReport();
 });
 
 // 導覽列「↻ 重撈資料」
-window.refreshPageData = () => Promise.all([loadScheduleData(), loadScheduleEvents()]);
+window.refreshPageData = () => Promise.all([loadScheduleData(), loadScheduleEvents(), loadDailyReport()]);

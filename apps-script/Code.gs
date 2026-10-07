@@ -30,7 +30,7 @@
  *                    Salesperson, FAE, ProductApplication, TestObject, SoftwareName,
  *                    SoftwareCustomization, SoftwareCustomizationNote, Status, CreatedDate,
  *                    RequirementDetails, AttachmentLinksJson,
- *                    EvaluationResult, EvaluationReportHtml, LastUpdated
+ *                    EvaluationResult, EvaluationReportHtml, LastUpdated, Urgency（案件緊急程度：高/中/低）
  *   CCDRequirements - CaseID, CcdIndex, Description, FovLengthMm, FovWidthMm, WdMm,
  *                    AccuracyUm, FlyingSpeedMmS, InspectionSpeedPs, LightingNote
  *                    （一個案件可能對應多列，用 CaseID 關聯）
@@ -234,7 +234,7 @@ function jsonOutput(obj) {
 var SCHEMA = {};
 SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated', 'SourceUrl', 'Specs', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD'];
 SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Price', 'Currency', 'CaseID', 'Notes'];
-SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated'];
+SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
 SCHEMA[SHEET_STAFF] = ['Name', 'Role'];
 SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate'];
@@ -3921,6 +3921,7 @@ function handleCreateCase(body) {
     EvaluationResult: '',
     EvaluationReportHtml: '',
     LastUpdated: Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd'),
+    Urgency: ['高', '中', '低'].indexOf(body.urgency) > -1 ? body.urgency : '中',
   });
   saveCcdRequirementsForCase(caseId, body.ccdRequirements || []);
   saveCaseCompaniesForCase(caseId, body.relatedCompanies || []);

@@ -312,6 +312,7 @@ async function createCase() {
     softwareCustomization: swCustomization,
     softwareCustomizationNote: swCustomization === '是' ? document.getElementById('case-sw-customization-note').value : '',
     requirementDetails: document.getElementById('case-requirement').value,
+    urgency: document.getElementById('case-urgency').value,
     ccdRequirements: createCcdList,
     relatedCompanies: createRelatedCompanies,
   };
@@ -326,6 +327,7 @@ async function createCase() {
       'case-software-name', 'case-requirement', 'case-sw-customization-note',
     ].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('case-sw-customization').value = '';
+    document.getElementById('case-urgency').value = '中';
     document.getElementById('case-sw-customization-note').style.display = 'none';
     createCcdList = [];
     renderCcdBlocks('create');
@@ -358,7 +360,7 @@ function renderCaseTable(cases) {
   tbody.innerHTML = '';
   cases.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${c.CaseID}</td><td>${c.CustomerName}</td><td>${c.Status}</td><td>${followUpCellHtml(c.CustomerName, c.CaseID)}</td><td>${c.CreatedDate}</td>
+    tr.innerHTML = `<td>${c.CaseID}</td><td>${c.CustomerName}</td><td>${caseUrgencyBadge(c.Urgency)}</td><td>${c.Status}</td><td>${followUpCellHtml(c.CustomerName, c.CaseID)}</td><td>${c.CreatedDate}</td>
       <td>
         <button onclick="viewCase('${c.CaseID}')">查看</button>
         <button onclick="deleteCase('${c.CaseID}')">刪除</button>
@@ -368,6 +370,12 @@ function renderCaseTable(cases) {
 }
 
 // ---- 案件連動客戶的「下次追蹤日」：看案件就知道下次什麼時候要追蹤，也可以直接改 ----
+function caseUrgencyBadge(u) {
+  const t = u || '中';
+  const style = { 高: 'background:#c0392b;color:#fff;', 中: 'background:#e67e22;color:#fff;', 低: 'background:#7f8c8d;color:#fff;' }[t] || '';
+  return `<span style="${style}padding:1px 8px;border-radius:10px;font-size:12px;font-weight:bold;">${t}</span>`;
+}
+
 function followUpCellHtml(customerName, caseId) {
   const cust = findExactCustomer(customerName);
   if (!cust) return '<span style="color:#999;">（客戶資料中沒有這間公司）</span>';
@@ -452,6 +460,7 @@ async function viewCase(caseId) {
   document.getElementById('cd-fae').value = c.FAE || '';
   document.getElementById('cd-product-application').value = c.ProductApplication || '';
   document.getElementById('cd-test-object').value = c.TestObject || '';
+  document.getElementById('cd-urgency').value = c.Urgency || '中';
   document.getElementById('cd-software-name').value = c.SoftwareName || '';
   document.getElementById('cd-sw-customization').value = c.SoftwareCustomization || '';
   document.getElementById('cd-sw-customization-note').value = c.SoftwareCustomizationNote || '';
@@ -495,6 +504,7 @@ async function saveCaseEdit() {
     SoftwareCustomizationNote: swCustomization === '是' ? document.getElementById('cd-sw-customization-note').value : '',
     Status: document.getElementById('cd-status').value,
     RequirementDetails: document.getElementById('cd-requirement').value,
+    Urgency: document.getElementById('cd-urgency').value,
   };
   const result = await callApi('updateCase', { caseId: currentCaseId, fields, ccdRequirements: detailCcdList, relatedCompanies: detailRelatedCompanies });
   if (result.success) {

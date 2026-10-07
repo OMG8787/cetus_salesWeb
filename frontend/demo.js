@@ -355,6 +355,7 @@ function handleDemoApi(action, params) {
         SoftwareCustomization: params.softwareCustomization || '',
         SoftwareCustomizationNote: params.softwareCustomizationNote || '',
         Status: '需求單已發出',
+        Urgency: params.urgency || '中',
         CreatedDate: new Date().toISOString().slice(0, 10),
         RequirementDetails: params.requirementDetails || '',
         CcdRequirements: params.ccdRequirements || [],

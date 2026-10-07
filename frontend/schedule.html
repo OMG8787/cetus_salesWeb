@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>業務行事曆 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261007g" />
+<link rel="stylesheet" href="style.css?v=20261007h" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -72,8 +72,8 @@
       </select></label>
     <label>排序
       <select id="sch-sort">
-        <option value="urgency" selected>緊急程度優先（再依追蹤日）</option>
-        <option value="date">追蹤日優先（再依緊急程度）</option>
+        <option value="date" selected>追蹤日優先（再依緊急程度）</option>
+        <option value="urgency">緊急程度優先（再依追蹤日）</option>
       </select></label>
     <input id="sch-keyword" placeholder="搜尋公司 / 聯絡人 / 案件 / 業務" />
   </div>
@@ -110,11 +110,23 @@
     </table>
     <div id="sch-case-empty" class="calc-hint" style="display:none;">目前沒有進行中的案件。</div>
   </div>
+  <div class="panel">
+    <h3 style="margin-top:0;">④ 今日已完成的工作（工作日報）
+      <span class="card-actions">
+        <input id="rep-date" type="date" />
+        <label style="font-weight:normal;font-size:13px;"><input type="checkbox" id="rep-mine" checked /> 只看我自己</label>
+        <span id="rep-count" class="calc-hint"></span>
+        <button id="rep-copy" class="btn-secondary" onclick="copyDailyReport()">複製</button>
+      </span>
+    </h3>
+    <div class="calc-hint">整理這天按過「追蹤完畢」記下的內容（客戶、聯絡人、方式、案件、結果、下次追蹤日），可以直接複製貼到工作日報；也能在文字框裡先修改再複製。</div>
+    <textarea id="rep-text" rows="12" style="width:100%;margin-top:8px;font-family:inherit;"></textarea>
+  </div>
 </section>
 
-<script src="config.js?v=20261007g"></script>
-<script src="demo.js?v=20261007g"></script>
-<script src="common.js?v=20261007g"></script>
-<script src="schedule.js?v=20261007g"></script>
+<script src="config.js?v=20261007h"></script>
+<script src="demo.js?v=20261007h"></script>
+<script src="common.js?v=20261007h"></script>
+<script src="schedule.js?v=20261007h"></script>
 </body>
 </html>
