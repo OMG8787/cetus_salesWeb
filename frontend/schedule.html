@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>業務行事曆 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css?v=20261007g" />
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
+<link rel="apple-touch-icon" href="img/icon-192.png" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs tabs-grouped">
+  <button class="tab-btn nav-single" onclick="location.href='home.html'">首頁</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+      <button class="tab-btn active" onclick="location.href='schedule.html'">業務行事曆</button>
+      <button class="tab-btn" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">登入紀錄</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
+</nav>
+
+<section class="tab-content">
+  <div class="calc-toolbar">
+    <h2 style="margin:0;">業務行事曆</h2>
+    <span class="calc-hint">上班照著這頁做：先看行程，再依緊急程度處理要追蹤的客戶與進行中的案件；追蹤完按「追蹤完畢」就會記下結果並排好下次追蹤日。</span>
+  </div>
+
+  <div class="panel sch-filter">
+    <label>緊急程度
+      <select id="sch-urgency">
+        <option value="">全部</option>
+        <option value="高">高</option>
+        <option value="中">中</option>
+        <option value="低">低</option>
+      </select></label>
+    <label>追蹤範圍
+      <select id="sch-range">
+        <option value="0" selected>今天與已逾期</option>
+        <option value="3">3 天內</option>
+        <option value="7">7 天內</option>
+        <option value="30">30 天內</option>
+        <option value="all">全部（含很久以後）</option>
+      </select></label>
+    <label>排序
+      <select id="sch-sort">
+        <option value="urgency" selected>緊急程度優先（再依追蹤日）</option>
+        <option value="date">追蹤日優先（再依緊急程度）</option>
+      </select></label>
+    <input id="sch-keyword" placeholder="搜尋公司 / 聯絡人 / 案件 / 業務" />
+  </div>
+  <div id="sch-summary" class="sch-summary"></div>
+
+  <div class="panel">
+    <h3 style="margin-top:0;">① 行事曆
+      <span class="card-actions">
+        <select id="sch-days">
+          <option value="1">今天</option>
+          <option value="7" selected>未來 7 天</option>
+          <option value="30">未來 30 天</option>
+        </select>
+      </span>
+    </h3>
+    <div id="sch-events"></div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0;">② 需要追蹤、但還沒建立案件的客戶</h3>
+    <table id="sch-nocase-table">
+      <thead><tr><th>緊急</th><th>公司</th><th>聯絡人</th><th>電話</th><th>下次追蹤</th><th>備註</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="sch-nocase-empty" class="calc-hint" style="display:none;">這個範圍內沒有需要追蹤的客戶 🎉</div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0;">③ 已建立的案件（進行中）</h3>
+    <div class="calc-hint">所有進行中的案件都會列出（不受上面「追蹤範圍」影響），依緊急程度與追蹤日排序，已逾期、今天要追蹤的會標色；追蹤日與緊急程度來自客戶管理，沒設定追蹤日的會顯示「未設定」提醒你補上。已結案的不會出現。</div>
+    <table id="sch-case-table">
+      <thead><tr><th>緊急</th><th>案件編號</th><th>客戶</th><th>狀態</th><th>下次追蹤</th><th>業務 / FAE</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="sch-case-empty" class="calc-hint" style="display:none;">目前沒有進行中的案件。</div>
+  </div>
+</section>
+
+<script src="config.js?v=20261007g"></script>
+<script src="demo.js?v=20261007g"></script>
+<script src="common.js?v=20261007g"></script>
+<script src="schedule.js?v=20261007g"></script>
+</body>
+</html>
