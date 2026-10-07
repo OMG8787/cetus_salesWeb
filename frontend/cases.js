@@ -704,6 +704,32 @@ function previewManualReport() {
 // ------------------------------------------------------------
 // 初始化
 // ------------------------------------------------------------
+/** 從客戶管理「建立案件」連過來：把這間客戶的資料套進「建立新案件」，使用者只要再填案件內容。 */
+function prefillNewCaseFromCustomer(companyName) {
+  const cust = findExactCustomer(companyName);
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el && v) el.value = v;
+  };
+  set('case-customer', cust ? cust.CompanyName : companyName);
+  if (cust) {
+    set('case-project-contact', cust.Contact);
+    set('case-contact-phone', cust.Phone);
+  }
+  set('case-salesperson', currentUsername);
+  const panel = document.getElementById('case-create-panel');
+  const hint = document.createElement('div');
+  hint.className = 'calc-hint';
+  hint.style.cssText = 'background:#eaf6ee;border:1px solid #b7e1c4;border-radius:6px;padding:8px 10px;margin-bottom:8px;';
+  hint.textContent = cust
+    ? `已帶入「${cust.CompanyName}」的客戶、聯絡人、電話與業務，請接著填寫案件內容（產品應用、待測物件、軟體、需求細節、CCD…）後按「建立案件」。`
+    : `客戶資料裡找不到「${companyName}」，請確認客戶名稱後再填寫案件內容。`;
+  panel.insertBefore(hint, panel.firstChild);
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const next = document.getElementById('case-product-application');
+  if (next) setTimeout(() => next.focus({ preventScroll: true }), 400);
+}
+
 /** 支援從別的頁面連過來：?caseId=X 直接開啟該案件詳情；?company=X 只顯示那間公司相關的案件。 */
 async function applyCaseQueryParams() {
   const params = new URL(location.href).searchParams;
@@ -715,6 +741,8 @@ async function applyCaseQueryParams() {
     hint.innerHTML = `目前只顯示「${company}」相關的案件（含主要客戶與相關公司）。<button type="button" onclick="clearCompanyFilter()">顯示全部案件</button>`;
     await loadCases();
   }
+  const newFor = params.get('newCaseFor');
+  if (newFor) prefillNewCaseFromCustomer(newFor);
   const caseId = params.get('caseId');
   if (caseId) {
     await viewCase(caseId);

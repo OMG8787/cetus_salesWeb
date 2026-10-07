@@ -94,6 +94,7 @@ function renderCustomerTable() {
       <td>
         <button onclick="openCustomerContactsModal('${escapeAttr(c.CompanyName)}')">聯絡窗口</button>
         <button onclick="viewCasesForCompany('${escapeAttr(c.CompanyName)}')">相關案件</button>
+        <button style="background:#8e44ad;" onclick="createCaseForCompany('${escapeAttr(c.CompanyName)}')">建立案件</button>
         <button onclick="openCustomerEditModal(${c.RowIndex})">編輯</button>
         <button style="background:#27ae60;" onclick="doneCustomerFollowUp(${c.RowIndex})">追蹤完畢</button>
         <button onclick="editCustomerFollowUp(${c.RowIndex}, '${c.NextFollowUpDate || ''}')">編輯追蹤日</button>
@@ -204,6 +205,11 @@ async function deleteCustomerRow(rowIndex) {
   } else {
     alert(result.message);
   }
+}
+
+/** 客戶列表按「建立案件」：跳到案件管理的「建立新案件」，客戶名稱、聯絡人、電話、業務先帶好，只要再填案件內容。 */
+function createCaseForCompany(companyName) {
+  location.href = `cases.html?newCaseFor=${encodeURIComponent(companyName)}`;
 }
 
 /** 客戶列表按「相關案件」：直接跳去案件管理，帶著公司名稱只顯示跟這間公司有關的案件。 */
