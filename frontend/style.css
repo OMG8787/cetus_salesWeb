@@ -375,3 +375,6 @@ header, .tabs { position: relative; z-index: 300; }
 .sch-notes { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #667; font-size: 13px; }
 #sch-nocase-table td, #sch-case-table td { vertical-align: top; }
 #sch-days { margin-left: 12px; }
+
+/* 下次追蹤說明（接續上次進度用） */
+.fu-note { font-size: 12px; color: #555; background: #fffbe6; border-left: 3px solid #f1c40f; padding: 2px 6px; margin-top: 3px; white-space: pre-wrap; max-width: 260px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

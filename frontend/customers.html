@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>客戶管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261007i" />
+<link rel="stylesheet" href="style.css?v=20261007j" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -70,6 +70,7 @@
     </select>
     <label>下次追蹤日：</label>
     <input id="cust-followup" type="date" />
+    <textarea id="cust-followup-note" rows="2" placeholder="下次追蹤說明（下次要做什麼、現在進度到哪，選填）"></textarea>
     <label class="er-check"><input type="checkbox" id="cust-has-transacted" /> 已交易過</label>
     <label>上次交易日：</label>
     <input id="cust-last-transaction" type="date" />
@@ -148,6 +149,7 @@
     <label>急迫性：</label>
     <select id="ce-urgency"><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
     <label>下次追蹤日：</label><input id="ce-followup" type="date" />
+    <label>下次追蹤說明：</label><textarea id="ce-followup-note" rows="2" placeholder="下次要做什麼、現在進度到哪"></textarea>
     <label class="er-check"><input type="checkbox" id="ce-has-transacted" /> 已交易過</label>
     <label>上次交易日：</label><input id="ce-last-transaction" type="date" />
     <textarea id="ce-notes" placeholder="備註" rows="6"></textarea>
@@ -182,9 +184,9 @@
   </div>
 </div>
 
-<script src="config.js?v=20261007i"></script>
-<script src="demo.js?v=20261007i"></script>
-<script src="common.js?v=20261007i"></script>
-<script src="customers.js?v=20261007i"></script>
+<script src="config.js?v=20261007j"></script>
+<script src="demo.js?v=20261007j"></script>
+<script src="common.js?v=20261007j"></script>
+<script src="customers.js?v=20261007j"></script>
 </body>
 </html>

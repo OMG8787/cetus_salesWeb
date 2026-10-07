@@ -14,6 +14,7 @@ async function addCustomer() {
     phone: document.getElementById('cust-phone').value,
     email: document.getElementById('cust-email').value,
     nextFollowUpDate: document.getElementById('cust-followup').value,
+    nextFollowUpNote: document.getElementById('cust-followup-note').value,
     category: document.getElementById('cust-category').value,
     urgency: document.getElementById('cust-urgency').value,
     hasTransacted: document.getElementById('cust-has-transacted').checked,
@@ -23,7 +24,7 @@ async function addCustomer() {
     clearCached('customers');
     clearCached('casesPageData');
     alert('已新增客戶');
-    ['cust-company', 'cust-contact', 'cust-phone', 'cust-email', 'cust-followup', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
+    ['cust-company', 'cust-contact', 'cust-phone', 'cust-email', 'cust-followup', 'cust-followup-note', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('cust-has-transacted').checked = false;
     loadCustomers();
   } else {
@@ -90,14 +91,14 @@ function renderCustomerTable() {
   rows.forEach((c) => {
     const tr = document.createElement('tr');
     const transactedText = c.HasTransacted === '是' ? `已交易${c.LastTransactionDate ? '（' + c.LastTransactionDate + '）' : ''}` : '未交易';
-    tr.innerHTML = `<td>${c.CompanyName}</td><td>${c.Contact}</td><td>${c.Phone}</td><td>${c.Category || ''}</td><td>${c.Urgency || ''}</td><td>${customerFollowUpHtml(c.NextFollowUpDate)}</td><td>${transactedText}</td>
+    tr.innerHTML = `<td>${c.CompanyName}</td><td>${c.Contact}</td><td>${c.Phone}</td><td>${c.Category || ''}</td><td>${c.Urgency || ''}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote)}</td><td>${transactedText}</td>
       <td>
         <button onclick="openCustomerContactsModal('${escapeAttr(c.CompanyName)}')">聯絡窗口</button>
         <button onclick="viewCasesForCompany('${escapeAttr(c.CompanyName)}')">相關案件</button>
         <button style="background:#8e44ad;" onclick="createCaseForCompany('${escapeAttr(c.CompanyName)}')">建立案件</button>
         <button onclick="openCustomerEditModal(${c.RowIndex})">編輯</button>
         <button style="background:#27ae60;" onclick="doneCustomerFollowUp(${c.RowIndex})">追蹤完畢</button>
-        <button onclick="editCustomerFollowUp(${c.RowIndex}, '${c.NextFollowUpDate || ''}')">編輯追蹤日</button>
+        <button onclick="editCustomerFollowUp(${c.RowIndex})">編輯追蹤日</button>
         <button onclick="editCustomerTransaction(${c.RowIndex}, '${c.LastTransactionDate || ''}')">編輯交易狀態</button>
         <button onclick="deleteCustomerRow(${c.RowIndex})">刪除</button>
       </td>`;
@@ -110,10 +111,10 @@ function escapeAttr(str) {
 }
 
 /** 追蹤日欄位：逾期紅字、今天橘字、3 天內黃字，一眼看出誰該追蹤了。 */
-function customerFollowUpHtml(dateStr) {
-  if (!normalizeDateStr(dateStr)) return '（未設定）';
+function customerFollowUpHtml(dateStr, note) {
+  if (!normalizeDateStr(dateStr)) return '（未設定）' + followNoteHtml(note);
   const f = followUpInfo(dateStr);
-  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}`;
+  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(note)}`;
 }
 
 function doneCustomerFollowUp(rowIndex) {
@@ -124,6 +125,7 @@ function doneCustomerFollowUp(rowIndex) {
     rowIndex,
     contact: c.Contact || '',
     currentDate: c.NextFollowUpDate,
+    currentNote: c.NextFollowUpNote,
     onDone: () => {
       loadCustomers();
       if (typeof loadContactLogs === 'function') loadContactLogs();
@@ -131,17 +133,17 @@ function doneCustomerFollowUp(rowIndex) {
   });
 }
 
-async function editCustomerFollowUp(rowIndex, currentDate) {
-  const newDate = prompt('設定下次追蹤日 (格式 YYYY-MM-DD)：', currentDate || '');
-  if (newDate === null) return;
-  const result = await callApi('updateCustomer', { rowIndex, fields: { NextFollowUpDate: newDate } });
-  if (result.success) {
-    clearCached('customers');
-    clearCached('casesPageData');
-    loadCustomers();
-  } else {
-    alert(result.message);
-  }
+function editCustomerFollowUp(rowIndex) {
+  const c = allCustomers.find((x) => x.RowIndex === rowIndex);
+  if (!c) return;
+  openFollowUpDialog({
+    companyName: c.CompanyName,
+    rowIndex,
+    currentDate: c.NextFollowUpDate,
+    currentNote: c.NextFollowUpNote,
+    editOnly: true,
+    onDone: () => loadCustomers(),
+  });
 }
 
 let editingCustomerRow = null;
@@ -152,7 +154,7 @@ function openCustomerEditModal(rowIndex) {
   editingCustomerRow = rowIndex;
   const set = (id, v) => (document.getElementById(id).value = v || '');
   set('ce-company', c.CompanyName); set('ce-contact', c.Contact); set('ce-phone', c.Phone); set('ce-email', c.Email);
-  set('ce-category', c.Category || '一般客戶'); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate);
+  set('ce-category', c.Category || '一般客戶'); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate); set('ce-followup-note', c.NextFollowUpNote);
   document.getElementById('ce-has-transacted').checked = c.HasTransacted === '是';
   set('ce-last-transaction', c.LastTransactionDate); set('ce-notes', c.Notes);
   document.getElementById('customer-edit-modal').style.display = 'flex';
@@ -172,7 +174,7 @@ async function saveCustomerEdit() {
     rowIndex: editingCustomerRow,
     fields: {
       CompanyName: val('ce-company').trim(), Contact: val('ce-contact'), Phone: val('ce-phone'), Email: val('ce-email'),
-      Category: val('ce-category'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'),
+      Category: val('ce-category'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'), NextFollowUpNote: val('ce-followup-note'),
       HasTransacted: hasTx ? '是' : '', LastTransactionDate: last, Notes: val('ce-notes'),
     },
   });

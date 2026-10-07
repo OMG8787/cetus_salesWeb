@@ -38,7 +38,8 @@
  *                    用 CaseID 關聯；CustomerName 欄位仍是這個案件的「主要客戶」，這裡是額外的相關公司）
  *   Staff         - Name, Role（業務/FAE 自動完成 + 快速新增用）
  *   Customers     - CompanyName, Contact, Phone, Email, NextFollowUpDate, Category,
- *                    Urgency, Notes, CalendarEventId, HasTransacted, LastTransactionDate
+ *                    Urgency, Notes, CalendarEventId, HasTransacted, LastTransactionDate,
+ *                    NextFollowUpNote（下次追蹤說明：這次進度到哪、下次要做什麼）
  *                    （Contact/Phone/Email 是主要聯絡人，多個聯絡窗口/電話/信箱存在 CustomerContacts；
  *                    Category 固定四選一：AOI同業資料／器材原廠／機構合作設備商／一般客戶）
  *   CustomerContacts - CompanyName, ContactName, Phone, Email, Title, Notes
@@ -238,7 +239,7 @@ SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Pric
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
 SCHEMA[SHEET_STAFF] = ['Name', 'Role'];
-SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate'];
+SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote'];
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
@@ -4812,17 +4813,19 @@ function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer) {
     var date = new Date(customer['NextFollowUpDate']);
     var eventIdCol = header.indexOf('CalendarEventId');
     var existingId = eventIdCol > -1 ? customer['CalendarEventId'] : '';
+    var desc = customer['NextFollowUpNote'] ? '下次追蹤說明：\n' + customer['NextFollowUpNote'] : '';
 
     if (existingId) {
       var existingEvent = calendar.getEventById(existingId);
       if (existingEvent) {
         existingEvent.setTitle(title);
         existingEvent.setAllDayDate(date);
+        existingEvent.setDescription(desc);
         return;
       }
     }
 
-    var newEvent = calendar.createAllDayEvent(title, date);
+    var newEvent = calendar.createAllDayEvent(title, date, { description: desc });
     if (eventIdCol > -1) {
       sheet.getRange(rowNum, eventIdCol + 1).setValue(newEvent.getId());
     }
@@ -4865,6 +4868,7 @@ function handleAddCustomer(body) {
     Notes: body.notes || '',
     HasTransacted: body.hasTransacted ? '是' : '',
     LastTransactionDate: body.lastTransactionDate || '',
+    NextFollowUpNote: body.nextFollowUpNote || '',
   };
 
   appendObjectRow(SHEET_CUSTOMERS, customer);

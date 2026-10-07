@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>業務行事曆 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261007i" />
+<link rel="stylesheet" href="style.css?v=20261007j" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -95,7 +95,7 @@
   <div class="panel">
     <h3 style="margin-top:0;">② 需要追蹤、但還沒建立案件的客戶</h3>
     <table id="sch-nocase-table">
-      <thead><tr><th>緊急</th><th>公司</th><th>聯絡人</th><th>電話</th><th>下次追蹤</th><th>備註</th><th>操作</th></tr></thead>
+      <thead><tr><th>緊急</th><th>公司</th><th>聯絡人</th><th>電話</th><th>下次追蹤（日期 / 說明）</th><th>客戶備註</th><th>操作</th></tr></thead>
       <tbody></tbody>
     </table>
     <div id="sch-nocase-empty" class="calc-hint" style="display:none;">這個範圍內沒有需要追蹤的客戶 🎉</div>
@@ -105,7 +105,7 @@
     <h3 style="margin-top:0;">③ 已建立的案件（進行中）</h3>
     <div class="calc-hint">所有進行中的案件都會列出（不受上面「追蹤範圍」影響），依緊急程度與追蹤日排序，已逾期、今天要追蹤的會標色；追蹤日與緊急程度來自客戶管理，沒設定追蹤日的會顯示「未設定」提醒你補上。已結案的不會出現。</div>
     <table id="sch-case-table">
-      <thead><tr><th>緊急</th><th>案件編號</th><th>客戶</th><th>狀態</th><th>下次追蹤</th><th>業務 / FAE</th><th>操作</th></tr></thead>
+      <thead><tr><th>緊急</th><th>案件編號</th><th>客戶</th><th>狀態</th><th>下次追蹤（日期 / 說明）</th><th>業務 / FAE</th><th>操作</th></tr></thead>
       <tbody></tbody>
     </table>
     <div id="sch-case-empty" class="calc-hint" style="display:none;">目前沒有進行中的案件。</div>
@@ -124,9 +124,9 @@
   </div>
 </section>
 
-<script src="config.js?v=20261007i"></script>
-<script src="demo.js?v=20261007i"></script>
-<script src="common.js?v=20261007i"></script>
-<script src="schedule.js?v=20261007i"></script>
+<script src="config.js?v=20261007j"></script>
+<script src="demo.js?v=20261007j"></script>
+<script src="common.js?v=20261007j"></script>
+<script src="schedule.js?v=20261007j"></script>
 </body>
 </html>

@@ -410,7 +410,7 @@ function followUpCellHtml(customerName, caseId) {
   const cust = findExactCustomer(customerName);
   if (!cust) return '<span style="color:#999;">（客戶資料中沒有這間公司）</span>';
   const f = followUpInfo(cust.NextFollowUpDate);
-  return `<span style="color:${f.color};font-weight:${f.note && f.color !== '#333' ? 'bold' : 'normal'};">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}
+  return `<span style="color:${f.color};font-weight:${f.note && f.color !== '#333' ? 'bold' : 'normal'};">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(cust.NextFollowUpNote)}
     <button class="btn-mini" onclick="editCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'))">改</button>
     <button class="btn-mini" style="background:#27ae60;" onclick="doneCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'), decodeURIComponent('${encodeURIComponent(caseId || '')}'))">追蹤完畢</button>`;
 }
@@ -424,6 +424,7 @@ function doneCaseFollowUp(customerName, caseId) {
     rowIndex: cust.RowIndex,
     contact: cust.Contact || '',
     currentDate: cust.NextFollowUpDate,
+    currentNote: cust.NextFollowUpNote,
     caseId: caseId || '',
     onDone: async () => {
       await reloadCustomersForCase();
@@ -433,20 +434,21 @@ function doneCaseFollowUp(customerName, caseId) {
   });
 }
 
-async function editCaseFollowUp(customerName) {
+function editCaseFollowUp(customerName) {
   const cust = findExactCustomer(customerName);
   if (!cust) return alert('客戶資料裡找不到「' + customerName + '」，請先到客戶管理建立');
-  const newDate = prompt(`設定「${customerName}」的下次追蹤日 (格式 YYYY-MM-DD，留空＝清除)：`, normalizeDateStr(cust.NextFollowUpDate));
-  if (newDate === null) return;
-  const d = newDate.trim();
-  if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return alert('日期格式要是 YYYY-MM-DD，例如 2026-10-15');
-  const result = await callApi('updateCustomer', { rowIndex: cust.RowIndex, fields: { NextFollowUpDate: d } });
-  if (!result.success) return alert(result.message);
-  clearCached('customers');
-  clearCached('casesPageData');
-  await reloadCustomersForCase();
-  loadCases();
-  if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
+  openFollowUpDialog({
+    companyName: customerName,
+    rowIndex: cust.RowIndex,
+    currentDate: cust.NextFollowUpDate,
+    currentNote: cust.NextFollowUpNote,
+    editOnly: true,
+    onDone: async () => {
+      await reloadCustomersForCase();
+      loadCases();
+      if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
+    },
+  });
 }
 
 function showCaseFollowUp(customerName) {
@@ -458,7 +460,7 @@ function showCaseFollowUp(customerName) {
     return;
   }
   const f = followUpInfo(cust.NextFollowUpDate);
-  el.innerHTML = `｜下次追蹤：<b style="color:${f.color};">${f.text}</b>${f.note ? `（${f.note}）` : ''}`;
+  el.innerHTML = `｜下次追蹤：<b style="color:${f.color};">${f.text}</b>${f.note ? `（${f.note}）` : ''}${followNoteHtml(cust.NextFollowUpNote)}`;
 }
 
 /** 修改專案名稱（案件編號）：改了會影響公司內部對這個案件的登記，所以要確認兩次。 */

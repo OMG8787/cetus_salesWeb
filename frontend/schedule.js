@@ -76,7 +76,7 @@ async function loadScheduleData() {
 function followCell(c) {
   const f = followUpInfo(c.NextFollowUpDate);
   if (!normalizeDateStr(c.NextFollowUpDate)) return '<span style="color:#999;">未設定</span>';
-  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}`;
+  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(c.NextFollowUpNote)}`;
 }
 
 function renderSchedule() {
@@ -99,7 +99,7 @@ function renderSchedule() {
       if (d == null || d > limit) return false;
       if ((casesByCustomer[c.CompanyName] || []).length) return false;
       if (urgencyFilter && (c.Urgency || '中') !== urgencyFilter) return false;
-      return matchKeyword([c.CompanyName, c.Contact, c.Phone, c.Notes]);
+      return matchKeyword([c.CompanyName, c.Contact, c.Phone, c.Notes, c.NextFollowUpNote]);
     })
     .sort(schSort);
 
@@ -172,6 +172,7 @@ function schDone(companyName, caseId) {
     rowIndex: cust.RowIndex,
     contact: cust.Contact || '',
     currentDate: cust.NextFollowUpDate,
+    currentNote: cust.NextFollowUpNote,
     caseId: caseId || '',
     onDone: () => {
       loadScheduleData();
@@ -180,18 +181,17 @@ function schDone(companyName, caseId) {
   });
 }
 
-async function schChangeDate(companyName) {
+function schChangeDate(companyName) {
   const cust = schCustomers.find((c) => c.CompanyName === companyName);
   if (!cust) return;
-  const input = prompt(`設定「${companyName}」的下次追蹤日 (格式 YYYY-MM-DD，留空＝清除)：`, normalizeDateStr(cust.NextFollowUpDate));
-  if (input === null) return;
-  const d = input.trim();
-  if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return alert('日期格式要是 YYYY-MM-DD，例如 2026-10-15');
-  const r = await callApi('updateCustomer', { rowIndex: cust.RowIndex, fields: { NextFollowUpDate: d } });
-  if (!r.success) return alert(r.message);
-  clearCached('customers');
-  clearCached('casesPageData');
-  loadScheduleData();
+  openFollowUpDialog({
+    companyName,
+    rowIndex: cust.RowIndex,
+    currentDate: cust.NextFollowUpDate,
+    currentNote: cust.NextFollowUpNote,
+    editOnly: true,
+    onDone: () => loadScheduleData(),
+  });
 }
 
 // ④ 今日已完成的工作（工作日報）：這天的客戶聯繫紀錄，整理成可以直接複製貼到日報的文字
@@ -228,7 +228,7 @@ function renderDailyReport() {
     if (l.CaseID) lines.push(`   案件：${l.CaseID}${cs ? '（' + (cs.ProductApplication || cs.TestObject || cs.Status || '') + '）' : ''}`.replace(/（）$/, ''));
     lines.push(`   內容：${String(l.Summary || '').replace(/\n+/g, '\n         ')}`);
     const cust = schCustomers.find((x) => x.CompanyName === l.CompanyName);
-    if (cust && normalizeDateStr(cust.NextFollowUpDate)) lines.push(`   下次追蹤：${normalizeDateStr(cust.NextFollowUpDate)}`);
+    if (cust && normalizeDateStr(cust.NextFollowUpDate)) lines.push(`   下次追蹤：${normalizeDateStr(cust.NextFollowUpDate)}${cust.NextFollowUpNote ? '　' + String(cust.NextFollowUpNote).replace(/\n+/g, ' ') : ''}`);
   });
   document.getElementById('rep-text').value = lines.join('\n');
   document.getElementById('rep-count').textContent = `共 ${logs.length} 筆`;

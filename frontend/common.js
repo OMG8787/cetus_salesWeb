@@ -486,9 +486,18 @@ function followUpInfo(dateStr) {
   return { text: d, color: '#333', note: `${days} 天後` };
 }
 
+/** 下次追蹤說明的小標籤（沒有說明回傳空字串；滑過可看全文）。 */
+function followNoteHtml(note) {
+  const t = String(note == null ? '' : note).trim();
+  if (!t) return '';
+  const esc = t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<div class="fu-note" title="${esc}">📝 ${esc}</div>`;
+}
+
 /**
  * 「追蹤完畢」小視窗：記下這次聯繫的結果（寫進客戶聯繫紀錄）+ 設定下次追蹤日（或不再追蹤），一次完成。
- * opts: { companyName, rowIndex, contact, currentDate, caseId, onDone }
+ * opts: { companyName, rowIndex, contact, currentDate, currentNote, caseId, editOnly, onDone }
+ * editOnly = true：只改下次追蹤日與說明（不記聯繫紀錄）。
  */
 function openFollowUpDialog(opts) {
   const old = document.getElementById('followup-dialog');
@@ -504,15 +513,17 @@ function openFollowUpDialog(opts) {
   wrap.className = 'modal-overlay';
   wrap.innerHTML = `
     <div class="modal-box" style="max-width:520px;">
-      <div class="modal-header"><h3 style="margin:0;">追蹤完畢：${esc(opts.companyName)}</h3><button type="button" id="fu-close">關閉</button></div>
-      <div class="calc-hint" style="margin-bottom:8px;">這次追蹤的結果會記進「客戶聯繫紀錄」，並更新客戶的下次追蹤日（也會同步到行事曆）。${opts.caseId ? '<br>所屬案件：' + esc(opts.caseId) : ''}</div>
-      <label>聯繫方式：
+      <div class="modal-header"><h3 style="margin:0;">${opts.editOnly ? '修改下次追蹤' : '追蹤完畢'}：${esc(opts.companyName)}</h3><button type="button" id="fu-close">關閉</button></div>
+      <div class="calc-hint" style="margin-bottom:8px;">${opts.editOnly ? '只修改下次追蹤日與說明，不會新增聯繫紀錄。' : '這次追蹤的結果會記進「客戶聯繫紀錄」，並更新客戶的下次追蹤日與說明（也會同步到行事曆）。'}${opts.caseId ? '<br>所屬案件：' + esc(opts.caseId) : ''}</div>
+      ${opts.editOnly ? '' : `<label>聯繫方式：
         <select id="fu-method"><option>電話</option><option>Email</option><option>LINE</option><option>拜訪</option><option>其他</option></select></label>
       <label>聯絡人：<input id="fu-contact" value="${esc(opts.contact)}" /></label>
-      <label>追蹤結果 / 聯繫內容：</label>
-      <textarea id="fu-summary" rows="4" style="width:100%;" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>
-      <label>下次追蹤日：<input id="fu-date" type="date" value="${addDays(7)}" /></label>
+      <label>追蹤結果 / 聯繫內容（這次做了什麼、談到哪）：</label>
+      <textarea id="fu-summary" rows="4" style="width:100%;" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>`}
+      <label>下次追蹤日：<input id="fu-date" type="date" value="${esc(normalizeDateStr(opts.currentDate)) || addDays(7)}" /></label>
       <span id="fu-quick"></span>
+      <label style="display:block;margin-top:6px;">下次追蹤說明（下次要做什麼、現在進度到哪，下次打開就能接著做）：</label>
+      <textarea id="fu-note" rows="3" style="width:100%;" placeholder="例如：等客戶主管確認預算後，回覆報價；先備好 500 萬相機 + 2 倍鏡頭的報價單">${esc(opts.currentNote)}</textarea>
       <label style="display:block;margin-top:6px;"><input type="checkbox" id="fu-stop" /> 不再追蹤（清除下次追蹤日，例如已結案、客戶表示不需要）</label>
       <div style="margin-top:12px;"><button type="button" id="fu-save">儲存</button></div>
     </div>`;
@@ -536,22 +547,26 @@ function openFollowUpDialog(opts) {
   const close = () => wrap.remove();
   $('fu-close').onclick = close;
   $('fu-save').onclick = async () => {
-    const summary = $('fu-summary').value.trim();
-    if (!summary) return alert('請填寫這次追蹤的結果 / 聯繫內容');
+    const summary = opts.editOnly ? '' : $('fu-summary').value.trim();
+    if (!opts.editOnly && !summary) return alert('請填寫這次追蹤的結果 / 聯繫內容');
     const stop = $('fu-stop').checked;
     const date = stop ? '' : $('fu-date').value;
     if (!stop && !date) return alert('請選擇下次追蹤日，或勾選「不再追蹤」');
-    const log = await callApi('addContactLog', {
-      companyName: opts.companyName,
-      contact: $('fu-contact').value,
-      method: $('fu-method').value,
-      summary,
-      salesperson: typeof currentUsername !== 'undefined' ? currentUsername : '',
-      caseId: opts.caseId || '',
-    });
-    if (!log.success) return alert(log.message);
-    const upd = await callApi('updateCustomer', { rowIndex: opts.rowIndex, fields: { NextFollowUpDate: date } });
-    if (!upd.success) return alert('聯繫紀錄已存，但更新追蹤日失敗：' + upd.message);
+    const note = stop ? '' : $('fu-note').value.trim();
+    if (!stop && !note && !confirm('還沒有填「下次追蹤說明」，之後可能會忘記下次要做什麼。\n\n還是要儲存嗎？')) return;
+    if (!opts.editOnly) {
+      const log = await callApi('addContactLog', {
+        companyName: opts.companyName,
+        contact: $('fu-contact').value,
+        method: $('fu-method').value,
+        summary,
+        salesperson: typeof currentUsername !== 'undefined' ? currentUsername : '',
+        caseId: opts.caseId || '',
+      });
+      if (!log.success) return alert(log.message);
+    }
+    const upd = await callApi('updateCustomer', { rowIndex: opts.rowIndex, fields: { NextFollowUpDate: date, NextFollowUpNote: note } });
+    if (!upd.success) return alert((opts.editOnly ? '' : '聯繫紀錄已存，但') + '更新追蹤日失敗：' + upd.message);
     clearCached('customers');
     clearCached('casesPageData');
     close();
