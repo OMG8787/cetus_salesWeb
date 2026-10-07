@@ -23,7 +23,7 @@ const CATALOG_CACHE_KEY = 'visionCatalog_v5';
 const CALC_INPUT_IDS = [
   'c-fov-l', 'c-fov-s', 'c-acc-tol', 'c-acc', 'c-acc-unit', 'c-ppf', 'c-wd',
   'c-brand-all', 'c-origin-all', 'c-lens-brand', 'c-lens-origin', 'c-light-model', 'c-ctl-model', 'c-host-model', 'q-type', 'q-mult', 'q-customer', 'q-format',
-  'c-cam-source', 'c-cam-quick', 'c-cam-iface', 'c-brand', 'c-origin', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
+  'c-cam-source', 'c-cam-iface', 'c-brand', 'c-origin', 'c-cam-model', 'c-px-side', 'c-res-w', 'c-res-h', 'c-pix', 'c-fps',
   'c-lens-type', 'c-lens-model', 'c-f-user', 'c-mag-user',
   'c-speed', 'c-motion', 'c-exp', 'c-exp-unit', 'c-blur', 'c-pps',
 ];
@@ -183,36 +183,15 @@ function calcRequirement(add) {
 function calcCamera(req, add) {
   const cam = pickCamera(req, add);
   if (!cam) {
-    ['o-cam', 'o-sensor', 'o-px-cam', 'o-feat-cam'].forEach((id) => setOut(id, ''));
+    ['o-cam', 'o-sensor'].forEach((id) => setOut(id, ''));
     if (req.ok) add('info', '請選擇相機（需要相機像素數才算得出空間解析度）', ['c-cam-model', 'c-res-w']);
     return null;
   }
   setOut('o-cam', `${cam.name}｜${cam.resW} × ${cam.resH}${cam.fps ? `｜${cam.fps} fps` : ''}`, `${fmt(cam.mp, 1)} MP${cam.iface ? `，${cam.iface}` : ''}${cam.size ? `，靶面 ${cam.size}` : ''}`);
 
-  // 只要有檢測範圍（FOV）與相機解析度就能算空間解析度，不需要像素尺寸 / 鏡頭（快速選單用）
-  if (req.fovL > 0 && req.fovS > 0) {
-    const pxL = req.fovL / cam.resW;
-    const pxS = req.fovS / cam.resH;
-    const useS = val('c-px-side') !== 'l';
-    const px = useS ? pxS : pxL;
-    setOut('o-px-cam', `${fmtPx(px)}（${useS ? '短邊' : '長邊'}）`, [
-      `短邊：視野 ${fmt(req.fovS)} mm ÷ ${cam.resH} px = ${fmtPx(pxS)}`,
-      `長邊：視野 ${fmt(req.fovL)} mm ÷ ${cam.resW} px = ${fmtPx(pxL)}`,
-    ]);
-    if (req.ok) setOut('o-feat-cam', `${fmt(req.acc / px, 1)} px`, `= 計算用精度 ${fmt(req.acc * 1000)} µm ÷ ${fmtPx(px)}（需 ≥ ${req.ppf} px）`);
-    else setOut('o-feat-cam', '');
-  } else {
-    setOut('o-px-cam', '');
-    setOut('o-feat-cam', '');
-  }
-
   if (!(cam.pixelW > 0 && cam.pixelH > 0)) {
     setOut('o-sensor', '');
-    if (cam.name === '手動輸入') {
-      add('info', '手動輸入還沒填像素尺寸：目前只算空間解析度；要算感測器尺寸與鏡頭請再填像素尺寸', ['c-pix']);
-    } else {
-      add('error', '相機缺少像素尺寸，算不出感測器尺寸、鏡頭與空間解析度', ['c-pix']);
-    }
+    add('error', '相機缺少像素尺寸，算不出感測器尺寸、鏡頭與空間解析度', ['c-pix']);
     return cam;
   }
   cam.sensorW = (cam.resW * cam.pixelW) / 1000;
@@ -1369,18 +1348,6 @@ function toggleCamSource() {
   document.getElementById('c-cam-iface-wrap').style.display = manual ? 'none' : '';
 }
 
-/** 快速選單：選常用解析度 → 自動切到手動輸入並填入長邊/短邊，之後只要輸入 FOV 就會算出空間解析度。 */
-function onCamQuickChange() {
-  const v = val('c-cam-quick');
-  if (!v) return;
-  const [w, h] = v.split('x');
-  document.getElementById('c-cam-source').value = 'manual';
-  toggleCamSource();
-  document.getElementById('c-res-w').value = w;
-  document.getElementById('c-res-h').value = h;
-  recalc();
-}
-
 window.addEventListener('DOMContentLoaded', async () => {
   if (!(await ensureAuth())) return;
   renderHeaderUser();
@@ -1414,7 +1381,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', recalc);
   });
   document.getElementById('c-cam-source').addEventListener('change', toggleCamSource);
-  document.getElementById('c-cam-quick').addEventListener('change', onCamQuickChange);
   toggleCamSource();
 
   recalc();
