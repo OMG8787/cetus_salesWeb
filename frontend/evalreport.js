@@ -768,9 +768,9 @@ function dropZone(text, multiple, onAdd) {
 // 打完離開欄位時，如果不在資料表裡就問要不要順便存進去
 // ------------------------------------------------------------
 async function loadProductCatalog() {
-  const cached = getCached('products_all');
+  const cached = await getCachedAsync('products_all');
   if (cached) productCatalog = cached;
-  const result = await callApi('searchProducts', { keyword: '' });
+  const result = await callApi('searchProducts', { keyword: '' }, { silent: !!cached });
   if (!result.success) return;
   productCatalog = result.products;
   setCached('products_all', productCatalog);
@@ -1443,9 +1443,9 @@ async function loadCaseList(selectedId) {
       select.value = selectedId;
     }
   };
-  const cached = getCached('calcCaseList');
+  const cached = await getCachedAsync('calcCaseList');
   if (cached) fill(cached);
-  const result = await callApi('getCases', {});
+  const result = await callApi('getCases', {}, { silent: !!cached });
   if (!result.success) return;
   const slim = result.cases.map((c) => ({ CaseID: c.CaseID, CustomerName: c.CustomerName }));
   setCached('calcCaseList', slim);
@@ -1537,3 +1537,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 window.addEventListener('beforeunload', () => {
   if (saveTimer) saveDraft();
 });
+
+// 導覽列「↻ 重撈資料」：只重載產品型號與案件清單，不影響正在編輯的報告
+window.refreshPageData = () => Promise.all([loadProductCatalog(), loadCaseList($('er-case').value)]);

@@ -134,10 +134,10 @@ function applyCasesPageData(data) {
 
 async function loadCasesPageInit() {
   // 先用上次的暫存資料立刻畫出畫面（如果有的話），不用整頁乾等
-  const cached = getCached('casesPageData');
+  const cached = await getCachedAsync('casesPageData');
   if (cached) applyCasesPageData(cached);
 
-  const result = await callApi('getCasesPageData', {});
+  const result = await callApi('getCasesPageData', {}, { silent: !!cached });
   if (!result.success) return;
   setCached('casesPageData', result);
   applyCasesPageData(result);
@@ -675,3 +675,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindEnterSubmit('#case-search-panel', loadCases);
   bindEnterSubmit('#case-edit-panel', saveCaseEdit);
 });
+
+// 導覽列「↻ 重撈資料」
+window.refreshPageData = () => loadCasesPageInit();

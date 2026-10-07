@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>選型計算 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261002d" />
+<link rel="stylesheet" href="style.css?v=20261007a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -113,6 +113,15 @@
             <select id="c-origin"><option value="">依客戶需求</option></select></label>
           <label id="c-cam-model-wrap">型號
             <select id="c-cam-model"><option value="">自動（最小符合需求）</option></select></label>
+          <label>快速選單（常用解析度，選了就自動填入）
+            <select id="c-cam-quick" title="選一個常用的相機畫素，會自動切到手動輸入並填入解析度；再輸入檢測範圍 FOV 就會算出空間解析度（不用先選型號、也不用填像素尺寸）">
+              <option value="">（不使用）</option>
+              <option value="640x480">30 萬　640 × 480</option>
+              <option value="1280x960">130 萬　1280 × 960</option>
+              <option value="2448x2048">500 萬　2448 × 2048</option>
+              <option value="4096x3072">1200 萬　4096 × 3072</option>
+              <option value="5448x3672">2000 萬　5448 × 3672</option>
+            </select></label>
           <label>空間解析度基準邊
             <select id="c-px-side">
               <option value="s">短邊（預設）</option>
@@ -132,6 +141,8 @@
         <div class="calc-out-row">
           <div class="calc-out"><span>採用相機</span><strong id="o-cam">-</strong></div>
           <div class="calc-out"><span>感測器尺寸</span><strong id="o-sensor">-</strong></div>
+          <div class="calc-out"><span>空間解析度（相機拍滿視野）</span><strong id="o-px-cam">-</strong></div>
+          <div class="calc-out"><span>最小特徵佔（拍滿視野）</span><strong id="o-feat-cam">-</strong></div>
         </div>
       </div>
 
@@ -302,10 +313,10 @@
   </div>
 </div>
 
-<script src="config.js?v=20261002b"></script>
-<script src="demo.js?v=20261002b"></script>
-<script src="common.js?v=20261002b"></script>
-<script src="calc.js?v=20261002b"></script>
-<script src="calc-quote.js?v=20261002b"></script>
+<script src="config.js?v=20261007a"></script>
+<script src="demo.js?v=20261007a"></script>
+<script src="common.js?v=20261007a"></script>
+<script src="calc.js?v=20261007a"></script>
+<script src="calc-quote.js?v=20261007a"></script>
 </body>
 </html>

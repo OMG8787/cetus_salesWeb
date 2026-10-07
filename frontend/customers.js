@@ -32,14 +32,14 @@ async function addCustomer() {
 }
 
 async function loadCustomers() {
-  const cached = getCached('customers');
+  const cached = await getCachedAsync('customers');
   if (cached) {
     allCustomers = cached;
     renderCustomerTable();
     updateCustomerDatalist();
   }
 
-  const result = await callApi('getCustomers', {});
+  const result = await callApi('getCustomers', {}, { silent: !!cached });
   if (!result.success) return;
   allCustomers = result.customers;
   setCached('customers', allCustomers);
@@ -360,3 +360,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindEnterSubmit('#contact-log-panel', addContactLog);
   bindEnterSubmit('#customer-contact-add-panel', addCustomerContact);
 });
+
+// 導覽列「↻ 重撈資料」
+window.refreshPageData = () => loadCustomers();

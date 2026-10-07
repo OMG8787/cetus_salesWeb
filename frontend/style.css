@@ -361,3 +361,7 @@ th.sortable.desc::after { content: ' ▼'; color: #2c5aa0; }
 .tab-content button.btn-outline-danger { background: white; color: #dc3545; border: 1px solid #dc3545; }
 .home-card label { display: block; font-size: 14px; margin-top: 6px; }
 .home-card .toolbar label { display: inline-flex; margin-top: 0; }
+
+/* 載入遮罩不蓋住頁首與導覽列：載入資料時隨時可以換頁 */
+header, .tabs { position: relative; z-index: 300; }
+.nav-refresh { margin-left: auto; color: #2c5aa0; font-weight: bold; }

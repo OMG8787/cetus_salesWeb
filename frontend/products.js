@@ -69,13 +69,14 @@ let productPage = 1;
 
 /** 從後端重新抓全部產品（新增/修改/刪除產品後也呼叫這個）。 */
 async function searchProducts() {
-  const cached = getCached('products_all');
+  const cached = await getCachedAsync('products_all');
   if (cached) {
     allProducts = cached;
     applyProductFilter();
   }
 
-  const result = await callApi('searchProducts', { keyword: '' });
+  // 有暫存就先畫出來，背景更新不擋畫面（可以直接切換頁面）；沒有暫存才顯示載入遮罩
+  const result = await callApi('searchProducts', { keyword: '' }, { silent: !!cached });
   if (!result.success) return alert(result.message);
   allProducts = result.products;
   setCached('products_all', allProducts);
@@ -1071,3 +1072,6 @@ async function dedupeData() {
   clearCached('visionCatalog_v5');
   searchProducts();
 }
+
+// 導覽列「↻ 重撈資料」：暫存已清掉，重新向資料庫抓全部產品
+window.refreshPageData = () => searchProducts();

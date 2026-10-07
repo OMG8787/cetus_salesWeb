@@ -65,6 +65,7 @@ function refreshSession() {
 function goToLogin() {
   clearDeviceCookies();
   sessionStorage.clear();
+  clearAllCached();
   location.href = 'index.html';
 }
 
@@ -113,8 +114,10 @@ function hideLoading() {
 // ------------------------------------------------------------
 // 呼叫 API（示範模式 = 走 demo.js 的本機假資料；正式模式 = 呼叫 Apps Script）
 // ------------------------------------------------------------
-async function callApi(action, params) {
-  showLoading();
+async function callApi(action, params, opts) {
+  // opts.silent：背景更新用（畫面已經先用暫存資料畫出來了），不顯示載入遮罩，使用者可以直接繼續操作
+  const silent = !!(opts && opts.silent);
+  if (!silent) showLoading();
   try {
     if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -138,7 +141,7 @@ async function callApi(action, params) {
     }
     return result;
   } finally {
-    hideLoading();
+    if (!silent) hideLoading();
   }
 }
 
@@ -213,6 +216,7 @@ async function logout() {
   }
   clearDeviceCookies();
   sessionStorage.clear();
+  await clearAllCached();
   location.href = 'index.html';
 }
 
@@ -332,14 +336,101 @@ function getCached(key) {
   }
 }
 
+// 大量資料（全部產品、型錄…幾千筆）超過 sessionStorage 的容量，而且關掉分頁就沒了，
+// 所以另外存一份在瀏覽器的 IndexedDB：離開頁面再回來、甚至重開瀏覽器，第一眼都是上次的資料，
+// 背景再悄悄更新（不擋畫面）。要強迫重抓時按導覽列右邊的「↻ 重撈資料」。
+const BIGCACHE_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+const BigCache = (() => {
+  let dbPromise = null;
+  const open = () => {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve) => {
+      try {
+        const req = indexedDB.open('aoi_cache', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('kv');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+    return dbPromise;
+  };
+  const run = async (mode, fn) => {
+    const db = await open();
+    if (!db) return null;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('kv', mode);
+        const req = fn(tx.objectStore('kv'));
+        tx.oncomplete = () => resolve(req ? req.result : null);
+        tx.onerror = tx.onabort = () => resolve(null);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  };
+  return {
+    get: async (key) => {
+      const rec = await run('readonly', (st) => st.get(key));
+      return rec && rec.t && Date.now() - rec.t < BIGCACHE_MAX_AGE_MS ? rec.d : null;
+    },
+    set: (key, data) => run('readwrite', (st) => st.put({ t: Date.now(), d: data }, key)),
+    del: (key) => run('readwrite', (st) => st.delete(key)),
+    clear: () => run('readwrite', (st) => st.clear()),
+  };
+})();
+
 function setCached(key, data) {
   try {
     sessionStorage.setItem('cache_' + key, JSON.stringify(data));
   } catch (e) {
-    // sessionStorage 滿了或不可用就算了，不影響功能，只是少了這個加速
+    // sessionStorage 滿了或不可用就算了，下面的 IndexedDB 還是會存
   }
+  BigCache.set(key, data);
+}
+
+/** 先看 sessionStorage，沒有再看 IndexedDB（離開頁面回來、重開瀏覽器都還在）。 */
+async function getCachedAsync(key) {
+  const quick = getCached(key);
+  if (quick) return quick;
+  return await BigCache.get(key);
 }
 
 function clearCached(key) {
   sessionStorage.removeItem('cache_' + key);
+  BigCache.del(key);
 }
+
+/** 清掉所有暫存資料（登出、或按「重撈資料」時用）。 */
+function clearAllCached() {
+  Object.keys(sessionStorage)
+    .filter((k) => k.indexOf('cache_') === 0)
+    .forEach((k) => sessionStorage.removeItem(k));
+  return BigCache.clear();
+}
+
+// 導覽列右邊的「↻ 重撈資料」：清掉暫存、重新向資料庫要最新資料。
+// 各頁可以定義 window.refreshPageData（只重載該頁的資料，不會清掉你正在填的欄位）；沒定義的頁面就整頁重新載入。
+document.addEventListener('DOMContentLoaded', () => {
+  const nav = document.querySelector('nav.tabs');
+  if (!nav || nav.querySelector('.nav-refresh')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tab-btn nav-refresh';
+  btn.textContent = '↻ 重撈資料';
+  btn.title = '清除這台電腦暫存的資料，重新從資料庫抓最新的（資料量大時會花一點時間）';
+  btn.addEventListener('click', async () => {
+    await clearAllCached();
+    if (typeof window.refreshPageData === 'function') {
+      try {
+        await window.refreshPageData();
+      } catch (e) {
+        alert('重撈失敗：' + (e.message || e));
+      }
+    } else {
+      location.reload();
+    }
+  });
+  nav.appendChild(btn);
+});
