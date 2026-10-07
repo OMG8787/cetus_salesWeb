@@ -264,6 +264,7 @@ TEXT_COLUMNS[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'AccuracyUm'];
 TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone'];
+TEXT_COLUMNS[SHEET_CUSTOMER_CONTACTS] = ['Phone'];
 TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday'];
 TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
 TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash', 'LoginTime', 'LastSeenTime'];
@@ -405,6 +406,43 @@ function importLegacyCustomers_(log) {
 }
 
 /**
+ * 修復電話欄位：整欄設成純文字；已經被 Sheets 當成數字吃掉開頭 0 的補回來。
+ *  - 數字格式的 8～9 位數（例如 987496694、47631366）一定是掉了 0 → 補 0；
+ *  - 文字格式但剛好是 9 位數且 9 開頭（例如 932680670）一定是手機掉了 0 → 補 0；
+ *  其他（已經有 0、括號、加號、分機等）不動。
+ */
+function repairPhoneColumns_(log) {
+  var targets = [[SHEET_CUSTOMERS, 'Phone'], [SHEET_CUSTOMER_CONTACTS, 'Phone'], [SHEET_CASES, 'ContactPhone'], [SHEET_USERS, 'Phone']];
+  var fixed = 0;
+  targets.forEach(function (t) {
+    var sheet = getDb_(false).getSheetByName(t[0]);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+    var idx = header.indexOf(t[1]);
+    if (idx < 0) return;
+    var n = sheet.getLastRow() - 1;
+    var range = sheet.getRange(2, idx + 1, n, 1);
+    var vals = range.getValues();
+    var out = vals.map(function (r) {
+      var v = r[0];
+      if (v === '' || v == null) return [''];
+      var str = typeof v === 'number' ? String(Math.round(v)) : String(v).trim();
+      var fix = false;
+      if (typeof v === 'number' && /^[1-9]\d{7,8}$/.test(str)) fix = true;
+      else if (typeof v !== 'number' && /^9\d{8}$/.test(str)) fix = true;
+      if (fix) {
+        str = '0' + str;
+        fixed++;
+      }
+      return [str];
+    });
+    sheet.getRange(2, idx + 1, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+    range.setValues(out);
+  });
+  if (fixed && log) log.push('修復電話欄位：補回 ' + fixed + ' 筆被吃掉的開頭 0');
+}
+
+/**
  * 【新環境第一次使用】在 Apps Script 編輯器上方選「setup」→ 按「執行」。
  * 第一次會跳出授權視窗，全部同意即可。可以重複執行，不會刪資料，只會補缺的東西。
  * 完成後看下方「執行紀錄」，會列出做了什麼，以及第一次建立的管理員帳號密碼。
@@ -417,6 +455,11 @@ function setup() {
     ensureSheet_(ss, name, SCHEMA[name], TEXT_COLUMNS[name] || [], log);
   });
 
+  try {
+    repairPhoneColumns_(log);
+  } catch (e) {
+    log.push('修復電話開頭 0 失敗：' + e.message);
+  }
   importLegacyCustomers_(log);
   seedSoftwareFromCases_(log);
   try {
@@ -625,17 +668,27 @@ function appendObjectRow(sheetName, obj) {
   var row = header.map(function (h) {
     return obj.hasOwnProperty(h) ? obj[h] : '';
   });
-  sheet.appendRow(row);
-  return sheet.getLastRow();
+  // 電話、編號這類文字欄位要先把儲存格設成「純文字」再寫入，不然 0912... 會被 Sheets 當數字吃掉開頭的 0
+  var target = sheet.getLastRow() + 1;
+  (TEXT_COLUMNS[sheetName] || []).forEach(function (c) {
+    var i = header.indexOf(c);
+    if (i > -1) sheet.getRange(target, i + 1).setNumberFormat('@');
+  });
+  sheet.getRange(target, 1, 1, row.length).setValues([row]);
+  return target;
 }
 
 /** 依欄位名稱更新某一列的部分欄位。fields = {欄位名: 新值}。 */
 function updateRowFields(sheetName, rowNum, fields) {
   var sheet = getSheet(sheetName);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var textCols = TEXT_COLUMNS[sheetName] || [];
   Object.keys(fields || {}).forEach(function (key) {
     var col = header.indexOf(key);
-    if (col > -1) sheet.getRange(rowNum, col + 1).setValue(fields[key]);
+    if (col < 0) return;
+    var cell = sheet.getRange(rowNum, col + 1);
+    if (textCols.indexOf(key) > -1) cell.setNumberFormat('@'); // 電話等文字欄位：先設純文字再寫，避免開頭的 0 消失
+    cell.setValue(fields[key]);
   });
   return header;
 }
