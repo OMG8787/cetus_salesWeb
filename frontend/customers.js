@@ -90,11 +90,12 @@ function renderCustomerTable() {
   rows.forEach((c) => {
     const tr = document.createElement('tr');
     const transactedText = c.HasTransacted === '是' ? `已交易${c.LastTransactionDate ? '（' + c.LastTransactionDate + '）' : ''}` : '未交易';
-    tr.innerHTML = `<td>${c.CompanyName}</td><td>${c.Contact}</td><td>${c.Phone}</td><td>${c.Category || ''}</td><td>${c.Urgency || ''}</td><td>${c.NextFollowUpDate || '（未設定）'}</td><td>${transactedText}</td>
+    tr.innerHTML = `<td>${c.CompanyName}</td><td>${c.Contact}</td><td>${c.Phone}</td><td>${c.Category || ''}</td><td>${c.Urgency || ''}</td><td>${customerFollowUpHtml(c.NextFollowUpDate)}</td><td>${transactedText}</td>
       <td>
         <button onclick="openCustomerContactsModal('${escapeAttr(c.CompanyName)}')">聯絡窗口</button>
         <button onclick="viewCasesForCompany('${escapeAttr(c.CompanyName)}')">相關案件</button>
         <button onclick="openCustomerEditModal(${c.RowIndex})">編輯</button>
+        <button style="background:#27ae60;" onclick="doneCustomerFollowUp(${c.RowIndex})">追蹤完畢</button>
         <button onclick="editCustomerFollowUp(${c.RowIndex}, '${c.NextFollowUpDate || ''}')">編輯追蹤日</button>
         <button onclick="editCustomerTransaction(${c.RowIndex}, '${c.LastTransactionDate || ''}')">編輯交易狀態</button>
         <button onclick="deleteCustomerRow(${c.RowIndex})">刪除</button>
@@ -105,6 +106,28 @@ function renderCustomerTable() {
 
 function escapeAttr(str) {
   return String(str == null ? '' : str).replace(/'/g, "\\'");
+}
+
+/** 追蹤日欄位：逾期紅字、今天橘字、3 天內黃字，一眼看出誰該追蹤了。 */
+function customerFollowUpHtml(dateStr) {
+  if (!normalizeDateStr(dateStr)) return '（未設定）';
+  const f = followUpInfo(dateStr);
+  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}`;
+}
+
+function doneCustomerFollowUp(rowIndex) {
+  const c = allCustomers.find((x) => x.RowIndex === rowIndex);
+  if (!c) return;
+  openFollowUpDialog({
+    companyName: c.CompanyName,
+    rowIndex,
+    contact: c.Contact || '',
+    currentDate: c.NextFollowUpDate,
+    onDone: () => {
+      loadCustomers();
+      if (typeof loadContactLogs === 'function') loadContactLogs();
+    },
+  });
 }
 
 async function editCustomerFollowUp(rowIndex, currentDate) {

@@ -458,3 +458,103 @@ document.addEventListener('DOMContentLoaded', () => {
   nav.appendChild(clr);
   BigCache.purgeExpired();
 });
+
+// ------------------------------------------------------------
+// 追蹤進度（案件頁、客戶頁共用）
+// ------------------------------------------------------------
+function localTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeDateStr(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : s;
+}
+
+/** 追蹤日的狀態：逾期（紅）、今天（橘）、3 天內（黃）、之後（一般）、沒設定。 */
+function followUpInfo(dateStr) {
+  const d = normalizeDateStr(dateStr);
+  if (!d) return { text: '未設定', color: '#999', note: '' };
+  const today = localTodayStr();
+  const days = Math.round((new Date(d + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+  if (isNaN(days)) return { text: d, color: '#333', note: '' };
+  if (days < 0) return { text: d, color: '#c0392b', note: `已逾期 ${-days} 天` };
+  if (days === 0) return { text: d, color: '#d35400', note: '今天要追蹤' };
+  if (days <= 3) return { text: d, color: '#b7950b', note: `${days} 天後` };
+  return { text: d, color: '#333', note: `${days} 天後` };
+}
+
+/**
+ * 「追蹤完畢」小視窗：記下這次聯繫的結果（寫進客戶聯繫紀錄）+ 設定下次追蹤日（或不再追蹤），一次完成。
+ * opts: { companyName, rowIndex, contact, currentDate, caseId, onDone }
+ */
+function openFollowUpDialog(opts) {
+  const old = document.getElementById('followup-dialog');
+  if (old) old.remove();
+  const addDays = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const wrap = document.createElement('div');
+  wrap.id = 'followup-dialog';
+  wrap.className = 'modal-overlay';
+  wrap.innerHTML = `
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header"><h3 style="margin:0;">追蹤完畢：${esc(opts.companyName)}</h3><button type="button" id="fu-close">關閉</button></div>
+      <div class="calc-hint" style="margin-bottom:8px;">這次追蹤的結果會記進「客戶聯繫紀錄」，並更新客戶的下次追蹤日（也會同步到行事曆）。${opts.caseId ? '<br>所屬案件：' + esc(opts.caseId) : ''}</div>
+      <label>聯繫方式：
+        <select id="fu-method"><option>電話</option><option>Email</option><option>LINE</option><option>拜訪</option><option>其他</option></select></label>
+      <label>聯絡人：<input id="fu-contact" value="${esc(opts.contact)}" /></label>
+      <label>追蹤結果 / 聯繫內容：</label>
+      <textarea id="fu-summary" rows="4" style="width:100%;" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>
+      <label>下次追蹤日：<input id="fu-date" type="date" value="${addDays(7)}" /></label>
+      <span id="fu-quick"></span>
+      <label style="display:block;margin-top:6px;"><input type="checkbox" id="fu-stop" /> 不再追蹤（清除下次追蹤日，例如已結案、客戶表示不需要）</label>
+      <div style="margin-top:12px;"><button type="button" id="fu-save">儲存</button></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const $ = (id) => document.getElementById(id);
+  [['明天', 1], ['3 天後', 3], ['1 週後', 7], ['2 週後', 14], ['1 個月後', 30]].forEach(([label, n]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn-mini';
+    b.textContent = label;
+    b.onclick = () => {
+      $('fu-date').value = addDays(n);
+      $('fu-stop').checked = false;
+      $('fu-date').disabled = false;
+    };
+    $('fu-quick').appendChild(b);
+  });
+  $('fu-stop').onchange = () => {
+    $('fu-date').disabled = $('fu-stop').checked;
+  };
+  const close = () => wrap.remove();
+  $('fu-close').onclick = close;
+  $('fu-save').onclick = async () => {
+    const summary = $('fu-summary').value.trim();
+    if (!summary) return alert('請填寫這次追蹤的結果 / 聯繫內容');
+    const stop = $('fu-stop').checked;
+    const date = stop ? '' : $('fu-date').value;
+    if (!stop && !date) return alert('請選擇下次追蹤日，或勾選「不再追蹤」');
+    const log = await callApi('addContactLog', {
+      companyName: opts.companyName,
+      contact: $('fu-contact').value,
+      method: $('fu-method').value,
+      summary,
+      salesperson: typeof currentUsername !== 'undefined' ? currentUsername : '',
+      caseId: opts.caseId || '',
+    });
+    if (!log.success) return alert(log.message);
+    const upd = await callApi('updateCustomer', { rowIndex: opts.rowIndex, fields: { NextFollowUpDate: date } });
+    if (!upd.success) return alert('聯繫紀錄已存，但更新追蹤日失敗：' + upd.message);
+    clearCached('customers');
+    clearCached('casesPageData');
+    close();
+    if (typeof opts.onDone === 'function') opts.onDone();
+  };
+}

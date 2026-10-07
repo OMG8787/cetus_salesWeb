@@ -358,7 +358,7 @@ function renderCaseTable(cases) {
   tbody.innerHTML = '';
   cases.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${c.CaseID}</td><td>${c.CustomerName}</td><td>${c.Status}</td><td>${followUpCellHtml(c.CustomerName)}</td><td>${c.CreatedDate}</td>
+    tr.innerHTML = `<td>${c.CaseID}</td><td>${c.CustomerName}</td><td>${c.Status}</td><td>${followUpCellHtml(c.CustomerName, c.CaseID)}</td><td>${c.CreatedDate}</td>
       <td>
         <button onclick="viewCase('${c.CaseID}')">查看</button>
         <button onclick="deleteCase('${c.CaseID}')">刪除</button>
@@ -368,36 +368,31 @@ function renderCaseTable(cases) {
 }
 
 // ---- 案件連動客戶的「下次追蹤日」：看案件就知道下次什麼時候要追蹤，也可以直接改 ----
-function localTodayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function normalizeDateStr(v) {
-  const s = String(v || '').trim();
-  const m = s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-  return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : s;
-}
-
-/** 追蹤日的狀態：逾期（紅）、今天（橘）、3 天內（黃）、之後（一般）、沒設定。 */
-function followUpInfo(dateStr) {
-  const d = normalizeDateStr(dateStr);
-  if (!d) return { text: '未設定', color: '#999', note: '' };
-  const today = localTodayStr();
-  const days = Math.round((new Date(d + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
-  if (isNaN(days)) return { text: d, color: '#333', note: '' };
-  if (days < 0) return { text: d, color: '#c0392b', note: `已逾期 ${-days} 天` };
-  if (days === 0) return { text: d, color: '#d35400', note: '今天要追蹤' };
-  if (days <= 3) return { text: d, color: '#b7950b', note: `${days} 天後` };
-  return { text: d, color: '#333', note: `${days} 天後` };
-}
-
-function followUpCellHtml(customerName) {
+function followUpCellHtml(customerName, caseId) {
   const cust = findExactCustomer(customerName);
   if (!cust) return '<span style="color:#999;">（客戶資料中沒有這間公司）</span>';
   const f = followUpInfo(cust.NextFollowUpDate);
   return `<span style="color:${f.color};font-weight:${f.note && f.color !== '#333' ? 'bold' : 'normal'};">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}
-    <button class="btn-mini" onclick="editCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'))">改</button>`;
+    <button class="btn-mini" onclick="editCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'))">改</button>
+    <button class="btn-mini" style="background:#27ae60;" onclick="doneCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'), decodeURIComponent('${encodeURIComponent(caseId || '')}'))">追蹤完畢</button>`;
+}
+
+/** 追蹤完畢：一次記下這次聯繫的結果（寫進客戶聯繫紀錄）並設定下次追蹤日。 */
+function doneCaseFollowUp(customerName, caseId) {
+  const cust = findExactCustomer(customerName);
+  if (!cust) return alert('客戶資料裡找不到「' + customerName + '」，請先到客戶管理建立');
+  openFollowUpDialog({
+    companyName: customerName,
+    rowIndex: cust.RowIndex,
+    contact: cust.Contact || '',
+    currentDate: cust.NextFollowUpDate,
+    caseId: caseId || '',
+    onDone: async () => {
+      await reloadCustomersForCase();
+      loadCases();
+      if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
+    },
+  });
 }
 
 async function editCaseFollowUp(customerName) {
