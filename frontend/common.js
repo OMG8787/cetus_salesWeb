@@ -499,6 +499,36 @@ function followNoteHtml(note) {
  * opts: { companyName, rowIndex, contact, currentDate, currentNote, caseId, editOnly, onDone }
  * editOnly = true：只改下次追蹤日與說明（不記聯繫紀錄）。
  */
+/** 追蹤視窗上方的「本案資料」：客戶與案件的聯絡人、電話、Email、案件重點，打電話前一眼看到。 */
+function followInfoHtml(opts) {
+  const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const cust = opts.customer || {};
+  const cs = opts.caseData || {};
+  const phone = (p) => {
+    const t = String(p || '').trim();
+    return t ? `<a href="tel:${esc(t.replace(/[^\d+#,]/g, ''))}">${esc(t)}</a>` : '—';
+  };
+  const mail = (m) => {
+    const t = String(m || '').trim();
+    return t ? `<a href="mailto:${esc(t)}">${esc(t)}</a>` : '—';
+  };
+  const row = (label, html) => `<tr><th style="white-space:nowrap;width:1%;text-align:left;font-weight:normal;color:#667;">${label}</th><td>${html}</td></tr>`;
+  const rows = [];
+  if (cs.CaseID) {
+    rows.push(row('案件', `<b>${esc(cs.CaseID)}</b>${cs.Status ? '　<span class="calc-hint">' + esc(cs.Status) + '</span>' : ''}${cs.Urgency ? '　緊急：' + esc(cs.Urgency) : ''}`));
+    const what = [cs.ProductApplication && '應用：' + cs.ProductApplication, cs.TestObject && '待測物：' + cs.TestObject, cs.SoftwareName && '軟體：' + cs.SoftwareName].filter(Boolean);
+    if (what.length) rows.push(row('內容', esc(what.join('　'))));
+    if (cs.ProjectContact || cs.ContactPhone) rows.push(row('案件聯絡人', `${esc(cs.ProjectContact) || '—'}　${phone(cs.ContactPhone)}`));
+    if (cs.EndCustomerName) rows.push(row('終端客戶', esc(cs.EndCustomerName)));
+    if (cs.Salesperson || cs.FAE) rows.push(row('業務 / FAE', esc([cs.Salesperson, cs.FAE].filter(Boolean).join(' / '))));
+  }
+  rows.push(row('客戶', `<b>${esc(opts.companyName)}</b>${cust.Category ? '　<span class="calc-hint">' + esc(cust.Category) + '</span>' : ''}`));
+  rows.push(row('聯絡人', `${esc(cust.Contact) || '—'}　${phone(cust.Phone)}`));
+  if (cust.Email) rows.push(row('Email', mail(cust.Email)));
+  return `<table style="width:100%;margin:0 0 8px;font-size:13px;background:#f7f9fc;border:1px solid #dde5f0;"><tbody>${rows.join('')}</tbody></table>
+    <div id="fu-recent" class="calc-hint" style="margin-bottom:8px;"></div>`;
+}
+
 function openFollowUpDialog(opts) {
   const old = document.getElementById('followup-dialog');
   if (old) old.remove();
@@ -512,12 +542,13 @@ function openFollowUpDialog(opts) {
   wrap.id = 'followup-dialog';
   wrap.className = 'modal-overlay';
   wrap.innerHTML = `
-    <div class="modal-box" style="max-width:520px;">
+    <div class="modal-box" style="max-width:620px;">
       <div class="modal-header"><h3 style="margin:0;">${opts.editOnly ? '修改下次追蹤' : '追蹤完畢'}：${esc(opts.companyName)}</h3><button type="button" id="fu-close">關閉</button></div>
-      <div class="calc-hint" style="margin-bottom:8px;">${opts.editOnly ? '只修改下次追蹤日與說明，不會新增聯繫紀錄。' : '這次追蹤的結果會記進「客戶聯繫紀錄」，並更新客戶的下次追蹤日與說明（也會同步到行事曆）。'}${opts.caseId ? '<br>所屬案件：' + esc(opts.caseId) : ''}</div>
+      ${followInfoHtml(opts)}
+      <div class="calc-hint" style="margin-bottom:8px;">${opts.editOnly ? '只修改下次追蹤日與說明，不會新增聯繫紀錄。' : '這次追蹤的結果會記進「客戶聯繫紀錄」，並更新客戶的下次追蹤日與說明（也會同步到行事曆）。'}</div>
       ${opts.editOnly ? '' : `<label>聯繫方式：
         <select id="fu-method"><option>電話</option><option>Email</option><option>LINE</option><option>拜訪</option><option>其他</option></select></label>
-      <label>聯絡人：<input id="fu-contact" value="${esc(opts.contact)}" /></label>
+      <label>聯絡人：<input id="fu-contact" value="${esc((opts.caseData && opts.caseData.ProjectContact) || opts.contact)}" /></label>
       <label>追蹤結果 / 聯繫內容（這次做了什麼、談到哪）：</label>
       <textarea id="fu-summary" rows="4" style="width:100%;" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>`}
       <label>下次追蹤日：<input id="fu-date" type="date" value="${esc(normalizeDateStr(opts.currentDate)) || addDays(7)}" /></label>
@@ -529,6 +560,22 @@ function openFollowUpDialog(opts) {
     </div>`;
   document.body.appendChild(wrap);
   const $ = (id) => document.getElementById(id);
+  // 最近幾筆聯繫紀錄（同案件優先），接續上次進度用
+  callApi('getContactLogs', { companyName: opts.companyName }, { silent: true }).then((r) => {
+    const box = $('fu-recent');
+    if (!box || !r || !r.success) return;
+    let logs = r.logs || [];
+    if (opts.caseId) {
+      const mine = logs.filter((l) => l.CaseID === opts.caseId);
+      if (mine.length) logs = mine;
+    }
+    logs = logs.slice(0, 3);
+    if (!logs.length) {
+      box.textContent = '（還沒有這間客戶的聯繫紀錄）';
+      return;
+    }
+    box.innerHTML = '<b>最近聯繫紀錄：</b>' + logs.map((l) => `<div style="margin-top:2px;">${esc(l.Date)}　${esc(l.Method)}${l.Contact ? '（' + esc(l.Contact) + '）' : ''}：${esc(String(l.Summary || '').replace(/\n+/g, ' ').slice(0, 80))}</div>`).join('');
+  });
   [['明天', 1], ['3 天後', 3], ['1 週後', 7], ['2 週後', 14], ['1 個月後', 30]].forEach(([label, n]) => {
     const b = document.createElement('button');
     b.type = 'button';

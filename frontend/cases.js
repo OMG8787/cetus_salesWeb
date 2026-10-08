@@ -385,7 +385,10 @@ function clearCompanyFilter() {
   loadCases();
 }
 
+let renderedCases = []; // 目前列表上的案件（追蹤視窗要顯示案件資料用）
+
 function renderCaseTable(cases) {
+  renderedCases = cases || [];
   const tbody = document.querySelector('#case-table tbody');
   tbody.innerHTML = '';
   cases.forEach((c) => {
@@ -423,6 +426,8 @@ function doneCaseFollowUp(customerName, caseId) {
     companyName: customerName,
     rowIndex: cust.RowIndex,
     contact: cust.Contact || '',
+    customer: cust,
+    caseData: renderedCases.find((x) => x.CaseID === caseId) || null,
     currentDate: cust.NextFollowUpDate,
     currentNote: cust.NextFollowUpNote,
     caseId: caseId || '',
@@ -440,6 +445,7 @@ function editCaseFollowUp(customerName) {
   openFollowUpDialog({
     companyName: customerName,
     rowIndex: cust.RowIndex,
+    customer: cust,
     currentDate: cust.NextFollowUpDate,
     currentNote: cust.NextFollowUpNote,
     editOnly: true,

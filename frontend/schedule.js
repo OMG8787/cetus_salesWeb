@@ -171,6 +171,8 @@ function schDone(companyName, caseId) {
     companyName,
     rowIndex: cust.RowIndex,
     contact: cust.Contact || '',
+    customer: cust,
+    caseData: schCases.find((x) => x.CaseID === caseId) || null,
     currentDate: cust.NextFollowUpDate,
     currentNote: cust.NextFollowUpNote,
     caseId: caseId || '',
@@ -187,6 +189,7 @@ function schChangeDate(companyName) {
   openFollowUpDialog({
     companyName,
     rowIndex: cust.RowIndex,
+    customer: cust,
     currentDate: cust.NextFollowUpDate,
     currentNote: cust.NextFollowUpNote,
     editOnly: true,

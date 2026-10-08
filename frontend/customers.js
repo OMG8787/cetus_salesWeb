@@ -124,6 +124,7 @@ function doneCustomerFollowUp(rowIndex) {
     companyName: c.CompanyName,
     rowIndex,
     contact: c.Contact || '',
+    customer: c,
     currentDate: c.NextFollowUpDate,
     currentNote: c.NextFollowUpNote,
     onDone: () => {
@@ -139,6 +140,7 @@ function editCustomerFollowUp(rowIndex) {
   openFollowUpDialog({
     companyName: c.CompanyName,
     rowIndex,
+    customer: c,
     currentDate: c.NextFollowUpDate,
     currentNote: c.NextFollowUpNote,
     editOnly: true,
