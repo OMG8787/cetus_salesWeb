@@ -486,6 +486,16 @@ function followUpInfo(dateStr) {
   return { text: d, color: '#333', note: `${days} 天後` };
 }
 
+/** 這次要洽談的內容：先用上次寫的「下次追蹤說明」；還沒寫過就退回客戶備註最後面的一段（舊資料都記在備註）。 */
+function discussText(cust) {
+  const note = String((cust && cust.NextFollowUpNote) || '').trim();
+  if (note) return { text: note, fromNotes: false };
+  const notes = String((cust && cust.Notes) || '').trim();
+  if (!notes) return { text: '', fromNotes: false };
+  const tail = notes.length > 200 ? '…' + notes.slice(-200) : notes;
+  return { text: tail, fromNotes: true };
+}
+
 /** 下次追蹤說明的小標籤（沒有說明回傳空字串；滑過可看全文）。 */
 function followNoteHtml(note) {
   const t = String(note == null ? '' : note).trim();
@@ -514,6 +524,10 @@ function followInfoHtml(opts) {
   };
   const row = (label, html) => `<tr><th style="white-space:nowrap;width:1%;text-align:left;font-weight:normal;color:#667;">${label}</th><td>${html}</td></tr>`;
   const rows = [];
+  const dis = discussText(cust.CompanyName ? cust : { NextFollowUpNote: opts.currentNote, Notes: '' });
+  if (dis.text) {
+    rows.push(row('本次需要洽談', `<div style="background:#fffbe6;border-left:3px solid #f1c40f;padding:4px 8px;white-space:pre-wrap;font-weight:600;">${esc(dis.text)}</div>${dis.fromNotes ? '<div class="calc-hint">（還沒寫過「下次追蹤說明」，這是客戶備註最後的內容）</div>' : ''}`));
+  }
   if (cs.CaseID) {
     rows.push(row('案件', `<b>${esc(cs.CaseID)}</b>${cs.Status ? '　<span class="calc-hint">' + esc(cs.Status) + '</span>' : ''}${cs.Urgency ? '　緊急：' + esc(cs.Urgency) : ''}`));
     const what = [cs.ProductApplication && '應用：' + cs.ProductApplication, cs.TestObject && '待測物：' + cs.TestObject, cs.SoftwareName && '軟體：' + cs.SoftwareName].filter(Boolean);
@@ -553,8 +567,9 @@ function openFollowUpDialog(opts) {
       <textarea id="fu-summary" rows="4" style="width:100%;" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>`}
       <label>下次追蹤日：<input id="fu-date" type="date" value="${esc(normalizeDateStr(opts.currentDate)) || addDays(7)}" /></label>
       <span id="fu-quick"></span>
-      <label style="display:block;margin-top:6px;">下次追蹤說明（下次要做什麼、現在進度到哪，下次打開就能接著做）：</label>
-      <textarea id="fu-note" rows="3" style="width:100%;" placeholder="例如：等客戶主管確認預算後，回覆報價；先備好 500 萬相機 + 2 倍鏡頭的報價單">${esc(opts.currentNote)}</textarea>
+      <label style="display:block;margin-top:6px;">${opts.editOnly ? '下次洽談內容（下次追蹤時要談什麼）：' : '下次洽談內容（下次追蹤時要談什麼、準備什麼；上面「本次需要洽談」是這次的）：'}
+        ${!opts.editOnly && opts.currentNote ? '<button type="button" class="btn-mini" id="fu-reuse">沿用本次內容</button>' : ''}</label>
+      <textarea id="fu-note" rows="3" style="width:100%;" placeholder="例如：等客戶主管確認預算後，回覆報價；先備好 500 萬相機 + 2 倍鏡頭的報價單">${opts.editOnly ? esc(opts.currentNote) : ''}</textarea>
       <label style="display:block;margin-top:6px;"><input type="checkbox" id="fu-stop" /> 不再追蹤（清除下次追蹤日，例如已結案、客戶表示不需要）</label>
       <div style="margin-top:12px;"><button type="button" id="fu-save">儲存</button></div>
     </div>`;
@@ -592,6 +607,7 @@ function openFollowUpDialog(opts) {
     $('fu-date').disabled = $('fu-stop').checked;
   };
   const close = () => wrap.remove();
+  if ($('fu-reuse')) $('fu-reuse').onclick = () => ($('fu-note').value = String(opts.currentNote || ''));
   $('fu-close').onclick = close;
   $('fu-save').onclick = async () => {
     const summary = opts.editOnly ? '' : $('fu-summary').value.trim();
@@ -600,7 +616,7 @@ function openFollowUpDialog(opts) {
     const date = stop ? '' : $('fu-date').value;
     if (!stop && !date) return alert('請選擇下次追蹤日，或勾選「不再追蹤」');
     const note = stop ? '' : $('fu-note').value.trim();
-    if (!stop && !note && !confirm('還沒有填「下次追蹤說明」，之後可能會忘記下次要做什麼。\n\n還是要儲存嗎？')) return;
+    if (!stop && !note && !confirm('還沒有填「下次洽談內容」，之後可能會忘記下次要談什麼。\n\n還是要儲存嗎？')) return;
     if (!opts.editOnly) {
       const log = await callApi('addContactLog', {
         companyName: opts.companyName,

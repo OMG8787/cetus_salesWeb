@@ -96,11 +96,11 @@ async function loadScheduleLogs() {
 
 /** 「本次需要洽談」：上次追蹤時寫的「下次追蹤說明」，今天打電話前先看這格；下面小字是上次聯繫的結果。 */
 function discussCell(c) {
-  const note = String(c.NextFollowUpNote || '').trim();
+  const dis = discussText(c);
   const last = schLastLog[c.CompanyName || c.CustomerName];
-  const main = note
-    ? `<div class="sch-discuss">${esc(note)}</div>`
-    : '<div class="calc-hint">（還沒寫這次要談什麼，按「改日」補上說明）</div>';
+  const main = dis.text
+    ? `<div class="sch-discuss"${dis.fromNotes ? ' style="font-weight:400;"' : ''}>${esc(dis.text)}</div>${dis.fromNotes ? '<div class="calc-hint">（取自客戶備註；按「改日」寫下次洽談內容後會改顯示那份）</div>' : ''}`
+    : '<div class="calc-hint">（還沒寫這次要談什麼，按「改日」補上洽談內容）</div>';
   const lastHtml = last
     ? `<div class="calc-hint" style="margin-top:3px;" title="${esc(last.Summary)}">上次聯繫 ${esc(String(last.Date).slice(5))}${last.Method ? ' ' + esc(last.Method) : ''}：${esc(String(last.Summary || '').replace(/[\r\n]+/g, ' ').slice(0, 60))}</div>`
     : '';
@@ -182,7 +182,7 @@ function renderSchedule() {
   openCases.forEach((c) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CaseID)}</td><td>${esc(c.CustomerName)}</td><td>${esc(c.Status)}</td><td>${followCell(c)}</td>
-      <td>${discussCell(Object.assign({}, c, { CompanyName: c.CustomerName }))}</td>
+      <td>${discussCell(Object.assign({}, c._cust || {}, { CompanyName: c.CustomerName, NextFollowUpNote: (c._cust || {}).NextFollowUpNote }))}</td>
       <td>${esc(c.Salesperson)}${c.FAE ? '<br><small class="calc-hint">FAE：' + esc(c.FAE) + '</small>' : ''}</td>
       <td>
         <button class="btn-mini" onclick="location.href='cases.html?caseId=${argAttr(c.CaseID)}'">查看案件</button>
