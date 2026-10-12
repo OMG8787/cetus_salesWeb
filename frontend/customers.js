@@ -396,3 +396,145 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 // 導覽列「↻ 重撈資料」
 window.refreshPageData = () => loadCustomers();
+
+// ------------------------------------------------------------
+// 從客戶直接建立案件（編輯客戶視窗的「建立案件」）
+// ------------------------------------------------------------
+let ncCustomer = null;
+let ncSoftware = [];
+
+function ncCasePart(str) {
+  const t = String(str || '').trim().replace(/[^\w\u4e00-\u9fa5]+/g, '').slice(0, 20);
+  return t || 'NA';
+}
+
+/** 案件編號（專案名稱）預覽：跟後端同一套規則。 */
+function updateNewCasePreview() {
+  const el = document.getElementById('nc-preview');
+  if (!el) return;
+  const v = (id) => document.getElementById(id).value;
+  const id = [v('nc-software'), v('nc-obj'), v('nc-app'), v('nc-customer')].map(ncCasePart).join('-');
+  el.innerHTML = `案件編號（專案名稱）預覽：<b>${id}</b>${id.split('-').includes('NA') ? ' <span style="color:#c0392b;">（有 NA 代表還有欄位沒填）</span>' : ''}`;
+}
+
+async function loadNewCaseLists() {
+  const fill = (id, names) => {
+    const dl = document.getElementById(id);
+    dl.innerHTML = '';
+    [...new Set(names.filter(Boolean))].forEach((n) => {
+      const o = document.createElement('option');
+      o.value = n;
+      dl.appendChild(o);
+    });
+  };
+  const apply = (d) => {
+    ncSoftware = d.software || [];
+    fill('nc-software-list', ncSoftware);
+    fill('nc-sales-list', (d.staff || []).filter((x) => x.Role === '業務').map((x) => x.Name));
+    fill('nc-fae-list', (d.staff || []).filter((x) => x.Role === 'FAE').map((x) => x.Name));
+  };
+  const cached = await getCachedAsync('casesPageData');
+  if (cached) apply(cached);
+  const r = await callApi('getCasesPageData', {}, { silent: true });
+  if (r && r.success) {
+    setCached('casesPageData', r);
+    apply(r);
+  }
+}
+
+function openNewCaseModal() {
+  const c = allCustomers.find((x) => x.RowIndex === editingCustomerRow);
+  if (!c) return;
+  if (document.getElementById('ce-company').value.trim() !== String(c.CompanyName).trim()) {
+    return alert('公司名稱已經被修改但還沒儲存，請先按「儲存」再建立案件。');
+  }
+  ncCustomer = c;
+  const set = (id, v) => (document.getElementById(id).value = v || '');
+  document.getElementById('nc-title').textContent = c.CompanyName;
+  set('nc-customer', c.CompanyName);
+  set('nc-end-customer', '');
+  set('nc-contact', document.getElementById('ce-contact').value || c.Contact);
+  set('nc-phone', document.getElementById('ce-phone').value || c.Phone);
+  set('nc-sales', typeof currentUsername !== 'undefined' ? currentUsername : '');
+  ['nc-fae', 'nc-app', 'nc-obj', 'nc-software', 'nc-requirement', 'nc-followup-note'].forEach((id) => set(id, ''));
+  document.getElementById('nc-urgency').value = c.Urgency || '中';
+  document.getElementById('nc-open-case').checked = false;
+  const addDays = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  set('nc-followup', addDays(3));
+  const quick = document.getElementById('nc-quick');
+  quick.innerHTML = '';
+  [['明天', 1], ['3 天後', 3], ['1 週後', 7], ['2 週後', 14]].forEach(([label, n]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn-mini';
+    b.textContent = label;
+    b.onclick = () => (document.getElementById('nc-followup').value = addDays(n));
+    quick.appendChild(b);
+  });
+  updateNewCasePreview();
+  document.getElementById('customer-edit-modal').style.display = 'none';
+  document.getElementById('newcase-modal').style.display = 'flex';
+  loadNewCaseLists();
+}
+
+function closeNewCaseModal() {
+  document.getElementById('newcase-modal').style.display = 'none';
+}
+
+async function submitNewCase() {
+  if (!ncCustomer) return;
+  const v = (id) => document.getElementById(id).value.trim();
+  const missing = [['nc-software', '使用軟體名稱'], ['nc-obj', '待測物件'], ['nc-app', '產品應用']].filter(([id]) => !v(id));
+  if (missing.length) {
+    alert('這幾個欄位會組成案件編號（專案名稱），請先填寫：\n\n' + missing.map(([, n]) => '．' + n).join('\n'));
+    document.getElementById(missing[0][0]).focus();
+    return;
+  }
+  // 軟體名稱不在資料庫時，問要不要新增（跟案件頁一樣）
+  const sw = v('nc-software');
+  const known = ncSoftware.find((n) => n.toLowerCase() === sw.toLowerCase());
+  if (!known) {
+    if (!confirm(`「${sw}」不在軟體名稱資料庫內，是否新增？`)) return;
+    const a = await callApi('addSoftware', { name: sw });
+    if (!a.success) return alert(a.message);
+    ncSoftware.push(sw);
+    clearCached('casesPageData');
+  } else {
+    document.getElementById('nc-software').value = known;
+  }
+  const followup = document.getElementById('nc-followup').value;
+  const r = await callApi('createCase', {
+    customerName: ncCustomer.CompanyName,
+    endCustomerName: v('nc-end-customer'),
+    projectContact: v('nc-contact'),
+    contactPhone: v('nc-phone'),
+    salesperson: v('nc-sales'),
+    fae: v('nc-fae'),
+    productApplication: v('nc-app'),
+    testObject: v('nc-obj'),
+    softwareName: known || sw,
+    requirementDetails: document.getElementById('nc-requirement').value,
+    urgency: document.getElementById('nc-urgency').value,
+    ccdRequirements: [],
+    relatedCompanies: [],
+  });
+  if (!r.success) return alert(r.message);
+  let msg = '案件已建立：' + r.caseId;
+  if (followup) {
+    const u = await callApi('updateCustomer', { rowIndex: ncCustomer.RowIndex, fields: { NextFollowUpDate: followup, NextFollowUpNote: document.getElementById('nc-followup-note').value.trim() } });
+    msg += u.success ? '\n下次追蹤日已設定為 ' + followup : '\n（案件已建立，但追蹤日設定失敗：' + u.message + '）';
+  }
+  clearCached('customers');
+  clearCached('casesPageData');
+  closeNewCaseModal();
+  alert(msg);
+  if (document.getElementById('nc-open-case').checked) {
+    location.href = 'cases.html?caseId=' + encodeURIComponent(r.caseId);
+    return;
+  }
+  loadCustomers();
+}

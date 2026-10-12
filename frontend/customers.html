@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>客戶管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261008a" />
+<link rel="stylesheet" href="style.css?v=20261012a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -154,6 +154,39 @@
     <label>上次交易日：</label><input id="ce-last-transaction" type="date" />
     <textarea id="ce-notes" placeholder="備註" rows="6"></textarea>
     <button onclick="saveCustomerEdit()">儲存</button>
+    <button type="button" style="background:#8e44ad;" onclick="openNewCaseModal()" title="用這間客戶的資料直接建立案件，並設定下次追蹤日">建立案件</button>
+  </div>
+</div>
+
+<!-- 從客戶直接建立案件：客戶資料先帶好，填案件內容與追蹤日即可 -->
+<div id="newcase-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:640px;">
+    <div class="modal-header"><h3 style="margin:0;">建立案件：<span id="nc-title"></span></h3><button type="button" onclick="closeNewCaseModal()">關閉</button></div>
+    <div class="calc-hint">客戶、聯絡人、電話已帶入；案件編號（專案名稱）由「軟體-待測物件-產品應用-客戶」組成，這三項一定要填。CCD 檢測需求與相關公司可以建立後到「案件管理」補。</div>
+    <label>客戶：</label><input id="nc-customer" readonly />
+    <input id="nc-end-customer" placeholder="終端客戶名稱（選填）" />
+    <input id="nc-contact" placeholder="專案聯絡人（選填）" />
+    <input id="nc-phone" placeholder="聯絡電話（選填）" />
+    <label>業務：</label><input id="nc-sales" list="nc-sales-list" placeholder="業務" />
+    <datalist id="nc-sales-list"></datalist>
+    <label>FAE：</label><input id="nc-fae" list="nc-fae-list" placeholder="FAE（選填）" />
+    <datalist id="nc-fae-list"></datalist>
+    <input id="nc-app" placeholder="產品應用（必填，會組成專案名稱）" oninput="updateNewCasePreview()" />
+    <input id="nc-obj" placeholder="待測物件（必填，會組成專案名稱）" oninput="updateNewCasePreview()" />
+    <label>使用軟體名稱（必填，會組成專案名稱）：</label>
+    <input id="nc-software" list="nc-software-list" placeholder="輸入或從建議選擇軟體名稱" oninput="updateNewCasePreview()" />
+    <datalist id="nc-software-list"></datalist>
+    <div id="nc-preview" class="calc-hint" style="margin:4px 0 8px;"></div>
+    <label>案件緊急程度：</label>
+    <select id="nc-urgency"><option value="高">高</option><option value="中" selected>中</option><option value="低">低</option></select>
+    <textarea id="nc-requirement" placeholder="需求細節描述（選填）" rows="3"></textarea>
+    <h4 style="margin:10px 0 4px;">追蹤</h4>
+    <label>下次追蹤日：<input id="nc-followup" type="date" /></label>
+    <span id="nc-quick"></span>
+    <label style="display:block;margin-top:6px;">下次追蹤說明（下次要做什麼）：</label>
+    <textarea id="nc-followup-note" rows="2" placeholder="例如：寄出需求單後，3 天後電話確認是否收到"></textarea>
+    <label style="display:block;margin-top:6px;"><input type="checkbox" id="nc-open-case" /> 建立後開啟案件頁（補 CCD 需求、相關公司、附件）</label>
+    <div style="margin-top:10px;"><button type="button" onclick="submitNewCase()">建立案件並設定追蹤</button></div>
   </div>
 </div>
 
@@ -184,9 +217,9 @@
   </div>
 </div>
 
-<script src="config.js?v=20261008a"></script>
-<script src="demo.js?v=20261008a"></script>
-<script src="common.js?v=20261008a"></script>
-<script src="customers.js?v=20261008a"></script>
+<script src="config.js?v=20261012a"></script>
+<script src="demo.js?v=20261012a"></script>
+<script src="common.js?v=20261012a"></script>
+<script src="customers.js?v=20261012a"></script>
 </body>
 </html>
