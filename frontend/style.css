@@ -379,3 +379,21 @@ header, .tabs { position: relative; z-index: 300; }
 /* 下次追蹤說明（接續上次進度用） */
 .fu-note { font-size: 12px; color: #555; background: #fffbe6; border-left: 3px solid #f1c40f; padding: 2px 6px; margin-top: 3px; white-space: pre-wrap; max-width: 260px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .sch-discuss { background: #fffbe6; border-left: 3px solid #f1c40f; padding: 4px 8px; min-width: 200px; max-width: 320px; white-space: pre-wrap; font-size: 14px; font-weight: 600; color: #333; }
+
+/* 業務行事曆：公司欄放寬、備註收成「…」（滑過才顯示全文） */
+#sch-nocase-table, #sch-case-table { table-layout: fixed; }
+#sch-nocase-table th:nth-child(1), #sch-case-table th:nth-child(1) { width: 52px; }
+#sch-nocase-table th:nth-child(2) { width: 20%; }
+#sch-nocase-table th:nth-child(3) { width: 9%; }
+#sch-nocase-table th:nth-child(4) { width: 11%; }
+#sch-nocase-table th:nth-child(5), #sch-case-table th:nth-child(5) { width: 96px; }
+#sch-nocase-table th:nth-child(7) { width: 46px; text-align: center; }
+#sch-nocase-table th:nth-child(8) { width: 96px; }
+#sch-case-table th:nth-child(2) { width: 22%; }
+#sch-case-table th:nth-child(3) { width: 14%; }
+#sch-case-table th:nth-child(4) { width: 84px; }
+#sch-case-table th:nth-child(7) { width: 9%; }
+#sch-case-table th:nth-child(8) { width: 96px; }
+#sch-nocase-table td, #sch-case-table td { word-break: break-word; }
+.sch-notes-dot { position: relative; text-align: center; color: #667; font-weight: bold; cursor: default; }
+.sch-notes-dot[data-full]:hover::after { content: attr(data-full); position: absolute; right: 100%; top: 0; z-index: 50; width: 320px; max-height: 260px; overflow: auto; padding: 8px 10px; background: #fff; color: #333; font-weight: normal; text-align: left; font-size: 13px; white-space: pre-wrap; border: 1px solid #ccd; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.18); }

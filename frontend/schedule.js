@@ -166,7 +166,7 @@ function renderSchedule() {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CompanyName)}</td><td>${esc(c.Contact)}</td><td>${esc(c.Phone)}</td><td>${followCell(c)}</td>
       <td>${discussCell(c)}</td>
-      <td class="sch-notes" title="${esc(c.Notes)}">${esc(String(c.Notes || '').slice(0, 60))}</td>
+      <td class="sch-notes-dot" ${c.Notes ? `data-full="${esc(c.Notes)}" title="${esc(c.Notes)}"` : ''}>${c.Notes ? '…' : ''}</td>
       <td>
         <button class="btn-mini" style="background:#27ae60;" onclick="schDone(decodeURIComponent('${argAttr(c.CompanyName)}'), '')">追蹤完畢</button>
         <button class="btn-mini" style="background:#8e44ad;" onclick="location.href='cases.html?newCaseFor=${argAttr(c.CompanyName)}'">建立案件</button>
