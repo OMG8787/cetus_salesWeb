@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>客戶管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261012e" />
+<link rel="stylesheet" href="style.css?v=20261013a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -70,6 +70,7 @@
     </select>
     <label>下次追蹤日：</label>
     <input id="cust-followup" type="date" />
+    <input id="cust-followup-time" type="time" title="預約時間（選填）" />
     <textarea id="cust-followup-note" rows="2" placeholder="下次洽談內容（下次追蹤時要談什麼，選填）"></textarea>
     <label class="er-check"><input type="checkbox" id="cust-has-transacted" /> 已交易過</label>
     <label>上次交易日：</label>
@@ -149,6 +150,7 @@
     <label>急迫性：</label>
     <select id="ce-urgency"><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
     <label>下次追蹤日：</label><input id="ce-followup" type="date" />
+    <label>預約時間：</label><input id="ce-followup-time" type="time" title="跟客戶約的時間點；沒約時間就留空" />
     <label>下次洽談內容：</label><textarea id="ce-followup-note" rows="3" placeholder="下次追蹤時要談什麼、準備什麼（會顯示在業務行事曆的「本次需要洽談」）"></textarea>
     <label class="er-check"><input type="checkbox" id="ce-has-transacted" /> 已交易過</label>
     <label>上次交易日：</label><input id="ce-last-transaction" type="date" />
@@ -182,6 +184,7 @@
     <textarea id="nc-requirement" placeholder="需求細節描述（選填）" rows="3"></textarea>
     <h4 style="margin:10px 0 4px;">追蹤</h4>
     <label>下次追蹤日：<input id="nc-followup" type="date" /></label>
+    <label>預約時間：<input id="nc-followup-time" type="time" /></label>
     <span id="nc-quick"></span>
     <label style="display:block;margin-top:6px;">下次洽談內容（下次追蹤時要談什麼）：</label>
     <textarea id="nc-followup-note" rows="2" placeholder="例如：寄出需求單後，3 天後電話確認是否收到"></textarea>
@@ -217,9 +220,9 @@
   </div>
 </div>
 
-<script src="config.js?v=20261012e"></script>
-<script src="demo.js?v=20261012e"></script>
-<script src="common.js?v=20261012e"></script>
-<script src="customers.js?v=20261012e"></script>
+<script src="config.js?v=20261013a"></script>
+<script src="demo.js?v=20261013a"></script>
+<script src="common.js?v=20261013a"></script>
+<script src="customers.js?v=20261013a"></script>
 </body>
 </html>

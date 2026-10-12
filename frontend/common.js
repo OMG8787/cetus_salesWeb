@@ -474,16 +474,16 @@ function normalizeDateStr(v) {
 }
 
 /** 追蹤日的狀態：逾期（紅）、今天（橘）、3 天內（黃）、之後（一般）、沒設定。 */
-function followUpInfo(dateStr) {
+function followUpInfo(dateStr, timeStr) {
   const d = normalizeDateStr(dateStr);
   if (!d) return { text: '未設定', color: '#999', note: '' };
   const today = localTodayStr();
   const days = Math.round((new Date(d + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
-  if (isNaN(days)) return { text: d, color: '#333', note: '' };
-  if (days < 0) return { text: d, color: '#c0392b', note: `已逾期 ${-days} 天` };
-  if (days === 0) return { text: d, color: '#d35400', note: '今天要追蹤' };
-  if (days <= 3) return { text: d, color: '#b7950b', note: `${days} 天後` };
-  return { text: d, color: '#333', note: `${days} 天後` };
+  if (isNaN(days)) return { text: d + (timeStr ? ' ' + timeStr : ''), color: '#333', note: '' };
+  if (days < 0) return { text: d + (timeStr ? ' ' + timeStr : ''), color: '#c0392b', note: `已逾期 ${-days} 天` };
+  if (days === 0) return { text: d + (timeStr ? ' ' + timeStr : ''), color: '#d35400', note: '今天要追蹤' };
+  if (days <= 3) return { text: d + (timeStr ? ' ' + timeStr : ''), color: '#b7950b', note: `${days} 天後` };
+  return { text: d + (timeStr ? ' ' + timeStr : ''), color: '#333', note: `${days} 天後` };
 }
 
 /** 這次要洽談的內容：先用上次寫的「下次追蹤說明」；還沒寫過就退回客戶備註最後面的一段（舊資料都記在備註）。 */
@@ -494,6 +494,19 @@ function discussText(cust) {
   if (!notes) return { text: '', fromNotes: false };
   const tail = notes.length > 200 ? '…' + notes.slice(-200) : notes;
   return { text: tail, fromNotes: true };
+}
+
+/** 日期 + 預約時間的顯示字串，例如「2026-10-13 09:30」；沒有預約時間就只有日期。 */
+function followWhenText(dateStr, timeStr) {
+  const d = normalizeDateStr(dateStr);
+  const t = String(timeStr || '').trim();
+  return d ? (t ? d + ' ' + t : d) : '';
+}
+
+/** 同一天內排序用的分鐘數：有預約時間照時間排，沒有的排在後面。 */
+function timeMinutes(timeStr) {
+  const m = String(timeStr || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 24 * 60;
 }
 
 /** 下次追蹤說明的小標籤（沒有說明回傳空字串；滑過可看全文）。 */
@@ -569,6 +582,8 @@ function openFollowUpDialog(opts) {
       <label>追蹤結果 / 聯繫內容（這次做了什麼、談到哪）：</label>
       <textarea id="fu-summary" rows="4" style="width:100%;" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>`}
       <label>下次追蹤日：<input id="fu-date" type="date" value="${esc(normalizeDateStr(opts.currentDate)) || addDays(7)}" /></label>
+      <label>預約時間：<input id="fu-time" type="time" value="${esc((opts.customer && opts.customer.NextFollowUpTime) || '')}" title="跟客戶約的時間點；沒約時間就留空（日曆會是整天行程）" /></label>
+      <button type="button" class="btn-mini" onclick="document.getElementById('fu-time').value=''">清除時間</button>
       <span id="fu-quick"></span>
       <label style="display:block;margin-top:6px;">${opts.editOnly ? '下次洽談內容（下次追蹤時要談什麼）：' : '下次洽談內容（下次追蹤時要談什麼、準備什麼；上面「本次需要洽談」是這次的）：'}
         ${!opts.editOnly && opts.currentNote ? '<button type="button" class="btn-mini" id="fu-reuse">沿用本次內容</button>' : ''}</label>
@@ -608,6 +623,7 @@ function openFollowUpDialog(opts) {
   });
   $('fu-stop').onchange = () => {
     $('fu-date').disabled = $('fu-stop').checked;
+    $('fu-time').disabled = $('fu-stop').checked;
   };
   const close = () => wrap.remove();
   if ($('fu-reuse')) $('fu-reuse').onclick = () => ($('fu-note').value = String(opts.currentNote || ''));
@@ -619,6 +635,7 @@ function openFollowUpDialog(opts) {
     const date = stop ? '' : $('fu-date').value;
     if (!stop && !date) return alert('請選擇下次追蹤日，或勾選「不再追蹤」');
     const note = stop ? '' : $('fu-note').value.trim();
+    const time = stop ? '' : $('fu-time').value;
     if (!stop && !note && !confirm('還沒有填「下次洽談內容」，之後可能會忘記下次要談什麼。\n\n還是要儲存嗎？')) return;
     if (!opts.editOnly) {
       const log = await callApi('addContactLog', {
@@ -631,7 +648,7 @@ function openFollowUpDialog(opts) {
       });
       if (!log.success) return alert(log.message);
     }
-    const upd = await callApi('updateCustomer', { rowIndex: opts.rowIndex, fields: { NextFollowUpDate: date, NextFollowUpNote: note } });
+    const upd = await callApi('updateCustomer', { rowIndex: opts.rowIndex, fields: { NextFollowUpDate: date, NextFollowUpNote: note, NextFollowUpTime: time } });
     if (!upd.success) return alert((opts.editOnly ? '' : '聯繫紀錄已存，但') + '更新追蹤日失敗：' + upd.message);
     clearCached('customers');
     clearCached('casesPageData');

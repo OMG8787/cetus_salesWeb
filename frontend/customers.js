@@ -14,6 +14,7 @@ async function addCustomer() {
     phone: document.getElementById('cust-phone').value,
     email: document.getElementById('cust-email').value,
     nextFollowUpDate: document.getElementById('cust-followup').value,
+    nextFollowUpTime: document.getElementById('cust-followup-time').value,
     nextFollowUpNote: document.getElementById('cust-followup-note').value,
     category: document.getElementById('cust-category').value,
     urgency: document.getElementById('cust-urgency').value,
@@ -24,7 +25,7 @@ async function addCustomer() {
     clearCached('customers');
     clearCached('casesPageData');
     alert('已新增客戶');
-    ['cust-company', 'cust-contact', 'cust-phone', 'cust-email', 'cust-followup', 'cust-followup-note', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
+    ['cust-company', 'cust-contact', 'cust-phone', 'cust-email', 'cust-followup', 'cust-followup-time', 'cust-followup-note', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('cust-has-transacted').checked = false;
     loadCustomers();
   } else {
@@ -83,7 +84,7 @@ function renderCustomerTable() {
   rows.sort((a, b) => {
     if (!a.NextFollowUpDate) return 1;
     if (!b.NextFollowUpDate) return -1;
-    return new Date(a.NextFollowUpDate) - new Date(b.NextFollowUpDate);
+    return new Date(a.NextFollowUpDate) - new Date(b.NextFollowUpDate) || timeMinutes(a.NextFollowUpTime) - timeMinutes(b.NextFollowUpTime);
   });
 
   const tbody = document.querySelector('#customer-table tbody');
@@ -91,7 +92,7 @@ function renderCustomerTable() {
   rows.forEach((c) => {
     const tr = document.createElement('tr');
     const transactedText = c.HasTransacted === '是' ? `已交易${c.LastTransactionDate ? '（' + c.LastTransactionDate + '）' : ''}` : '未交易';
-    tr.innerHTML = `<td>${c.CompanyName}</td><td>${c.Contact}</td><td>${c.Phone}</td><td>${c.Category || ''}</td><td>${c.Urgency || ''}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote)}</td><td>${transactedText}</td>
+    tr.innerHTML = `<td>${c.CompanyName}</td><td>${c.Contact}</td><td>${c.Phone}</td><td>${c.Category || ''}</td><td>${c.Urgency || ''}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote, c.NextFollowUpTime)}</td><td>${transactedText}</td>
       <td>
         <button onclick="openCustomerContactsModal('${escapeAttr(c.CompanyName)}')">聯絡窗口</button>
         <button onclick="viewCasesForCompany('${escapeAttr(c.CompanyName)}')">相關案件</button>
@@ -111,9 +112,9 @@ function escapeAttr(str) {
 }
 
 /** 追蹤日欄位：逾期紅字、今天橘字、3 天內黃字，一眼看出誰該追蹤了。 */
-function customerFollowUpHtml(dateStr, note) {
+function customerFollowUpHtml(dateStr, note, timeStr) {
   if (!normalizeDateStr(dateStr)) return '（未設定）' + followNoteHtml(note);
-  const f = followUpInfo(dateStr);
+  const f = followUpInfo(dateStr, timeStr);
   return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(note)}`;
 }
 
@@ -156,7 +157,7 @@ function openCustomerEditModal(rowIndex) {
   editingCustomerRow = rowIndex;
   const set = (id, v) => (document.getElementById(id).value = v || '');
   set('ce-company', c.CompanyName); set('ce-contact', c.Contact); set('ce-phone', c.Phone); set('ce-email', c.Email);
-  set('ce-category', c.Category || '一般客戶'); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate); set('ce-followup-note', c.NextFollowUpNote);
+  set('ce-category', c.Category || '一般客戶'); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate); set('ce-followup-time', c.NextFollowUpTime); set('ce-followup-note', c.NextFollowUpNote);
   document.getElementById('ce-has-transacted').checked = c.HasTransacted === '是';
   set('ce-last-transaction', c.LastTransactionDate); set('ce-notes', c.Notes);
   document.getElementById('customer-edit-modal').style.display = 'flex';
@@ -176,7 +177,7 @@ async function saveCustomerEdit() {
     rowIndex: editingCustomerRow,
     fields: {
       CompanyName: val('ce-company').trim(), Contact: val('ce-contact'), Phone: val('ce-phone'), Email: val('ce-email'),
-      Category: val('ce-category'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'), NextFollowUpNote: val('ce-followup-note'),
+      Category: val('ce-category'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'), NextFollowUpTime: val('ce-followup-time'), NextFollowUpNote: val('ce-followup-note'),
       HasTransacted: hasTx ? '是' : '', LastTransactionDate: last, Notes: val('ce-notes'),
     },
   });
@@ -465,6 +466,7 @@ function openNewCaseModal() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   set('nc-followup', addDays(3));
+  set('nc-followup-time', '');
   const quick = document.getElementById('nc-quick');
   quick.innerHTML = '';
   [['明天', 1], ['3 天後', 3], ['1 週後', 7], ['2 週後', 14]].forEach(([label, n]) => {
@@ -525,7 +527,7 @@ async function submitNewCase() {
   if (!r.success) return alert(r.message);
   let msg = '案件已建立：' + r.caseId;
   if (followup) {
-    const u = await callApi('updateCustomer', { rowIndex: ncCustomer.RowIndex, fields: { NextFollowUpDate: followup, NextFollowUpNote: document.getElementById('nc-followup-note').value.trim() } });
+    const u = await callApi('updateCustomer', { rowIndex: ncCustomer.RowIndex, fields: { NextFollowUpDate: followup, NextFollowUpTime: document.getElementById('nc-followup-time').value, NextFollowUpNote: document.getElementById('nc-followup-note').value.trim() } });
     msg += u.success ? '\n下次追蹤日已設定為 ' + followup : '\n（案件已建立，但追蹤日設定失敗：' + u.message + '）';
   }
   clearCached('customers');

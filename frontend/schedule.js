@@ -44,8 +44,10 @@ function schSort(a, b) {
   const db = daysUntil(b.NextFollowUpDate);
   const dka = da == null ? 99999 : da;
   const dkb = db == null ? 99999 : db;
-  if (mode === 'urgency') return ua - ub || dka - dkb;
-  return dka - dkb || ua - ub; // 預設：先依追蹤日（逾期最前面），同一天再依緊急程度
+  const ta = timeMinutes(a.NextFollowUpTime);
+  const tb = timeMinutes(b.NextFollowUpTime);
+  if (mode === 'urgency') return ua - ub || dka - dkb || ta - tb;
+  return dka - dkb || ta - tb || ua - ub; // 預設：先依追蹤日（逾期最前面），同一天先看預約時間，再依緊急程度
 }
 
 function rangeLimit() {
@@ -74,7 +76,7 @@ async function loadScheduleData() {
 }
 
 function followCell(c) {
-  const f = followUpInfo(c.NextFollowUpDate);
+  const f = followUpInfo(c.NextFollowUpDate, c.NextFollowUpTime);
   if (!normalizeDateStr(c.NextFollowUpDate)) return '<span style="color:#999;">未設定</span>';
   return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}`;
 }
@@ -137,7 +139,7 @@ function renderSchedule() {
     .filter((c) => c.Status !== '已結案')
     .map((c) => {
       const cust = custByName[c.CustomerName] || {};
-      return Object.assign({}, c, { Urgency: c.Urgency || cust.Urgency || '中', NextFollowUpDate: cust.NextFollowUpDate || '', _cust: cust });
+      return Object.assign({}, c, { Urgency: c.Urgency || cust.Urgency || '中', NextFollowUpDate: cust.NextFollowUpDate || '', NextFollowUpTime: cust.NextFollowUpTime || '', _cust: cust });
     })
     .filter((c) => {
       if (urgencyFilter && c.Urgency !== urgencyFilter) return false;
@@ -263,7 +265,7 @@ function renderDailyReport() {
     if (l.CaseID) lines.push(`   案件：${l.CaseID}${cs ? '（' + (cs.ProductApplication || cs.TestObject || cs.Status || '') + '）' : ''}`.replace(/（）$/, ''));
     lines.push(`   內容：${String(l.Summary || '').replace(/\n+/g, '\n         ')}`);
     const cust = schCustomers.find((x) => x.CompanyName === l.CompanyName);
-    if (cust && normalizeDateStr(cust.NextFollowUpDate)) lines.push(`   下次追蹤：${normalizeDateStr(cust.NextFollowUpDate)}${cust.NextFollowUpNote ? '　' + String(cust.NextFollowUpNote).replace(/\n+/g, ' ') : ''}`);
+    if (cust && normalizeDateStr(cust.NextFollowUpDate)) lines.push(`   下次追蹤：${followWhenText(cust.NextFollowUpDate, cust.NextFollowUpTime)}${cust.NextFollowUpNote ? '　' + String(cust.NextFollowUpNote).replace(/\n+/g, ' ') : ''}`);
   });
   document.getElementById('rep-text').value = lines.join('\n');
   document.getElementById('rep-count').textContent = `共 ${logs.length} 筆`;

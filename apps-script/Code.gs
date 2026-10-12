@@ -39,7 +39,7 @@
  *   Staff         - Name, Role（業務/FAE 自動完成 + 快速新增用）
  *   Customers     - CompanyName, Contact, Phone, Email, NextFollowUpDate, Category,
  *                    Urgency, Notes, CalendarEventId, HasTransacted, LastTransactionDate,
- *                    NextFollowUpNote（下次追蹤說明：這次進度到哪、下次要做什麼）
+ *                    NextFollowUpNote（下次追蹤說明：這次進度到哪、下次要做什麼）, NextFollowUpTime（預約時間 HH:mm，沒有就是整天）
  *                    （Contact/Phone/Email 是主要聯絡人，多個聯絡窗口/電話/信箱存在 CustomerContacts；
  *                    Category 固定四選一：AOI同業資料／器材原廠／機構合作設備商／一般客戶）
  *   CustomerContacts - CompanyName, ContactName, Phone, Email, Title, Notes
@@ -239,7 +239,7 @@ SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Pric
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
 SCHEMA[SHEET_STAFF] = ['Name', 'Role'];
-SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote'];
+SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime'];
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
@@ -265,7 +265,7 @@ TEXT_COLUMNS[SHEET_CASES] = ['ContactPhone', 'CaseID'];
 TEXT_COLUMNS[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'AccuracyUm'];
 TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
-TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone'];
+TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
 TEXT_COLUMNS[SHEET_CUSTOMER_CONTACTS] = ['Phone'];
 TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday'];
 TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
@@ -4791,6 +4791,14 @@ function handleGenerateQuoteDoc(body) {
 // ------------------------------------------------------------
 // 客戶管理 (含分類/急迫性) + 行事曆同步
 // ------------------------------------------------------------
+/** 預約時間統一成 HH:mm 字串（儲存格如果被轉成時間值也還原）；空值回傳空字串。 */
+function normTimeStr_(v) {
+  if (v === '' || v == null) return '';
+  if (v instanceof Date) return Utilities.formatDate(v, 'GMT+8', 'HH:mm');
+  var m = String(v).trim().match(/^(\d{1,2}):(\d{2})/);
+  return m ? ('0' + m[1]).slice(-2) + ':' + m[2] : '';
+}
+
 function handleGetCustomers(body) {
   var sheet = getSheet(SHEET_CUSTOMERS);
   var data = sheet.getDataRange().getValues();
@@ -4799,6 +4807,8 @@ function handleGetCustomers(body) {
   var customers = data.slice(1).map(function (r, i) {
     var obj = rowToObject(header, r);
     obj.RowIndex = i + 2;
+    var ti = header.indexOf('NextFollowUpTime');
+    if (ti > -1) obj.NextFollowUpTime = normTimeStr_(r[ti]);
     return obj;
   });
   return { success: true, customers: customers };
@@ -4811,21 +4821,37 @@ function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer) {
     var calendar = CalendarApp.getDefaultCalendar();
     var title = '[AOI客戶追蹤] ' + customer['CompanyName'] + (customer['Contact'] ? '（' + customer['Contact'] + '）' : '');
     var date = new Date(customer['NextFollowUpDate']);
+    var time = normTimeStr_(customer['NextFollowUpTime']);
     var eventIdCol = header.indexOf('CalendarEventId');
     var existingId = eventIdCol > -1 ? customer['CalendarEventId'] : '';
-    var desc = customer['NextFollowUpNote'] ? '下次追蹤說明：\n' + customer['NextFollowUpNote'] : '';
+    var desc = (time ? '預約時間：' + time + '\n' : '') + (customer['NextFollowUpNote'] ? '下次追蹤說明：\n' + customer['NextFollowUpNote'] : '');
+    // 有預約時間 → 有時間的行程（預設 1 小時）；沒有 → 整天行程
+    var start = null;
+    var end = null;
+    if (time) {
+      var ds = Utilities.formatDate(date, 'GMT+8', 'yyyy-MM-dd');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(customer['NextFollowUpDate']))) ds = String(customer['NextFollowUpDate']);
+      start = new Date(ds + 'T' + time + ':00+08:00');
+      end = new Date(start.getTime() + 60 * 60 * 1000);
+    }
 
     if (existingId) {
       var existingEvent = calendar.getEventById(existingId);
       if (existingEvent) {
-        existingEvent.setTitle(title);
-        existingEvent.setAllDayDate(date);
-        existingEvent.setDescription(desc);
-        return;
+        // 整天 ↔ 有時間 互相切換時沒辦法直接改，刪掉重建
+        if (existingEvent.isAllDayEvent() === !!time) {
+          existingEvent.deleteEvent();
+        } else {
+          existingEvent.setTitle(title);
+          if (time) existingEvent.setTime(start, end);
+          else existingEvent.setAllDayDate(date);
+          existingEvent.setDescription(desc);
+          return;
+        }
       }
     }
 
-    var newEvent = calendar.createAllDayEvent(title, date, { description: desc });
+    var newEvent = time ? calendar.createEvent(title, start, end, { description: desc }) : calendar.createAllDayEvent(title, date, { description: desc });
     if (eventIdCol > -1) {
       sheet.getRange(rowNum, eventIdCol + 1).setValue(newEvent.getId());
     }
@@ -4869,6 +4895,7 @@ function handleAddCustomer(body) {
     HasTransacted: body.hasTransacted ? '是' : '',
     LastTransactionDate: body.lastTransactionDate || '',
     NextFollowUpNote: body.nextFollowUpNote || '',
+    NextFollowUpTime: normTimeStr_(body.nextFollowUpTime),
   };
 
   appendObjectRow(SHEET_CUSTOMERS, customer);
@@ -4887,6 +4914,7 @@ function handleUpdateCustomer(body) {
     var dup = findDuplicateCustomerRow_(body.fields.CompanyName, rowNum);
     if (dup) return { success: false, message: '已經有「' + String(body.fields.CompanyName).trim() + '」這間客戶了（第 ' + dup + ' 列），不能改成重複的名稱。' };
   }
+  if (body.fields && body.fields.NextFollowUpTime !== undefined) body.fields.NextFollowUpTime = normTimeStr_(body.fields.NextFollowUpTime);
   var header = updateRowFields(SHEET_CUSTOMERS, rowNum, body.fields);
   var customer = readRowAsObject(SHEET_CUSTOMERS, rowNum);
   syncCustomerFollowUpToCalendar(rowNum, header, getSheet(SHEET_CUSTOMERS), customer);

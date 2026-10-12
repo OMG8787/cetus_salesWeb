@@ -412,7 +412,7 @@ function caseUrgencyBadge(u) {
 function followUpCellHtml(customerName, caseId) {
   const cust = findExactCustomer(customerName);
   if (!cust) return '<span style="color:#999;">（客戶資料中沒有這間公司）</span>';
-  const f = followUpInfo(cust.NextFollowUpDate);
+  const f = followUpInfo(cust.NextFollowUpDate, cust.NextFollowUpTime);
   return `<span style="color:${f.color};font-weight:${f.note && f.color !== '#333' ? 'bold' : 'normal'};">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(cust.NextFollowUpNote)}
     <button class="btn-mini" onclick="editCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'))">改</button>
     <button class="btn-mini" style="background:#27ae60;" onclick="doneCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'), decodeURIComponent('${encodeURIComponent(caseId || '')}'))">追蹤完畢</button>`;
@@ -465,7 +465,7 @@ function showCaseFollowUp(customerName) {
     el.textContent = '';
     return;
   }
-  const f = followUpInfo(cust.NextFollowUpDate);
+  const f = followUpInfo(cust.NextFollowUpDate, cust.NextFollowUpTime);
   el.innerHTML = `｜下次追蹤：<b style="color:${f.color};">${f.text}</b>${f.note ? `（${f.note}）` : ''}${followNoteHtml(cust.NextFollowUpNote)}`;
 }
 
