@@ -524,9 +524,12 @@ function followInfoHtml(opts) {
   };
   const row = (label, html) => `<tr><th style="white-space:nowrap;width:1%;text-align:left;font-weight:normal;color:#667;">${label}</th><td>${html}</td></tr>`;
   const rows = [];
-  const dis = discussText(cust.CompanyName ? cust : { NextFollowUpNote: opts.currentNote, Notes: '' });
-  if (dis.text) {
-    rows.push(row('本次需要洽談', `<div style="background:#fffbe6;border-left:3px solid #f1c40f;padding:4px 8px;white-space:pre-wrap;font-weight:600;">${esc(dis.text)}</div>${dis.fromNotes ? '<div class="calc-hint">（還沒寫過「下次追蹤說明」，這是客戶備註最後的內容）</div>' : ''}`));
+  const planned = String((cust.CompanyName ? cust.NextFollowUpNote : opts.currentNote) || '').trim();
+  if (planned) {
+    rows.push(row('本次需要洽談', `<div style="background:#fffbe6;border-left:3px solid #f1c40f;padding:4px 8px;white-space:pre-wrap;font-weight:600;">${esc(planned)}</div>`));
+  } else {
+    const dis = discussText(cust);
+    if (dis.text) rows.push(row('客戶備註', `<div style="white-space:pre-wrap;color:#555;max-height:110px;overflow:auto;">${esc(dis.text)}</div><div class="calc-hint">（還沒寫「本次需要洽談」，這是客戶備註最後的內容，僅供參考）</div>`));
   }
   if (cs.CaseID) {
     rows.push(row('案件', `<b>${esc(cs.CaseID)}</b>${cs.Status ? '　<span class="calc-hint">' + esc(cs.Status) + '</span>' : ''}${cs.Urgency ? '　緊急：' + esc(cs.Urgency) : ''}`));

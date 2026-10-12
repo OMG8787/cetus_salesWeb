@@ -96,10 +96,11 @@ async function loadScheduleLogs() {
 
 /** 「本次需要洽談」：上次追蹤時寫的「下次追蹤說明」，今天打電話前先看這格；下面小字是上次聯繫的結果。 */
 function discussCell(c) {
-  const dis = discussText(c);
+  // 只顯示專門寫的「下次洽談內容」；客戶備註已經在旁邊的「…」，不在這裡重複顯示
+  const note = String(c.NextFollowUpNote || '').trim();
   const last = schLastLog[c.CompanyName || c.CustomerName];
-  const main = dis.text
-    ? `<div class="sch-discuss"${dis.fromNotes ? ' style="font-weight:400;"' : ''}>${esc(dis.text)}</div>${dis.fromNotes ? '<div class="calc-hint">（取自客戶備註；按「改日」寫下次洽談內容後會改顯示那份）</div>' : ''}`
+  const main = note
+    ? `<div class="sch-discuss">${esc(note)}</div>`
     : '<div class="calc-hint">（還沒寫這次要談什麼，按「改日」補上洽談內容）</div>';
   const lastHtml = last
     ? `<div class="calc-hint" style="margin-top:3px;" title="${esc(last.Summary)}">上次聯繫 ${esc(String(last.Date).slice(5))}${last.Method ? ' ' + esc(last.Method) : ''}：${esc(String(last.Summary || '').replace(/[\r\n]+/g, ' ').slice(0, 60))}</div>`
