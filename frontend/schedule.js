@@ -76,7 +76,35 @@ async function loadScheduleData() {
 function followCell(c) {
   const f = followUpInfo(c.NextFollowUpDate);
   if (!normalizeDateStr(c.NextFollowUpDate)) return '<span style="color:#999;">未設定</span>';
-  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(c.NextFollowUpNote)}`;
+  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}`;
+}
+
+// 每間客戶最近一筆聯繫紀錄（「上次聯繫」用）
+let schLastLog = {};
+
+async function loadScheduleLogs() {
+  const r = await callApi('getContactLogs', {}, { silent: true });
+  if (!r || !r.success) return;
+  const map = {};
+  (r.logs || []).forEach((l) => {
+    const cur = map[l.CompanyName];
+    if (!cur || String(l.Date) > String(cur.Date) || (String(l.Date) === String(cur.Date) && l.RowIndex > cur.RowIndex)) map[l.CompanyName] = l;
+  });
+  schLastLog = map;
+  renderSchedule();
+}
+
+/** 「本次需要洽談」：上次追蹤時寫的「下次追蹤說明」，今天打電話前先看這格；下面小字是上次聯繫的結果。 */
+function discussCell(c) {
+  const note = String(c.NextFollowUpNote || '').trim();
+  const last = schLastLog[c.CompanyName || c.CustomerName];
+  const main = note
+    ? `<div class="sch-discuss">${esc(note)}</div>`
+    : '<div class="calc-hint">（還沒寫這次要談什麼，按「改日」補上說明）</div>';
+  const lastHtml = last
+    ? `<div class="calc-hint" style="margin-top:3px;" title="${esc(last.Summary)}">上次聯繫 ${esc(String(last.Date).slice(5))}${last.Method ? ' ' + esc(last.Method) : ''}：${esc(String(last.Summary || '').replace(/[\r\n]+/g, ' ').slice(0, 60))}</div>`
+    : '';
+  return main + lastHtml;
 }
 
 function renderSchedule() {
@@ -137,7 +165,8 @@ function renderSchedule() {
   noCase.forEach((c) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CompanyName)}</td><td>${esc(c.Contact)}</td><td>${esc(c.Phone)}</td><td>${followCell(c)}</td>
-      <td class="sch-notes" title="${esc(c.Notes)}">${esc(String(c.Notes || '').slice(0, 80))}</td>
+      <td>${discussCell(c)}</td>
+      <td class="sch-notes" title="${esc(c.Notes)}">${esc(String(c.Notes || '').slice(0, 60))}</td>
       <td>
         <button class="btn-mini" style="background:#27ae60;" onclick="schDone(decodeURIComponent('${argAttr(c.CompanyName)}'), '')">追蹤完畢</button>
         <button class="btn-mini" style="background:#8e44ad;" onclick="location.href='cases.html?newCaseFor=${argAttr(c.CompanyName)}'">建立案件</button>
@@ -153,6 +182,7 @@ function renderSchedule() {
   openCases.forEach((c) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CaseID)}</td><td>${esc(c.CustomerName)}</td><td>${esc(c.Status)}</td><td>${followCell(c)}</td>
+      <td>${discussCell(Object.assign({}, c, { CompanyName: c.CustomerName }))}</td>
       <td>${esc(c.Salesperson)}${c.FAE ? '<br><small class="calc-hint">FAE：' + esc(c.FAE) + '</small>' : ''}</td>
       <td>
         <button class="btn-mini" onclick="location.href='cases.html?caseId=${argAttr(c.CaseID)}'">查看案件</button>
@@ -178,6 +208,7 @@ function schDone(companyName, caseId) {
     caseId: caseId || '',
     onDone: () => {
       loadScheduleData();
+      loadScheduleLogs();
       loadDailyReport();
     },
   });
@@ -288,8 +319,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sch-days').addEventListener('change', loadScheduleEvents);
   loadScheduleEvents();
   loadScheduleData();
+  loadScheduleLogs();
   loadDailyReport();
 });
 
 // 導覽列「↻ 重撈資料」
-window.refreshPageData = () => Promise.all([loadScheduleData(), loadScheduleEvents(), loadDailyReport()]);
+window.refreshPageData = () => Promise.all([loadScheduleData(), loadScheduleEvents(), loadScheduleLogs(), loadDailyReport()]);
