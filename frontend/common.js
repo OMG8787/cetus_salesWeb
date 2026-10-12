@@ -422,6 +422,30 @@ function clearAllCached() {
   return BigCache.clear();
 }
 
+// 預約時間快速分鐘：時間欄位旁加 :00 / :15 / :30 / :45 按鈕（沒選小時時預設 09 點），要精確到幾分就直接點進時間欄位改。
+function enhanceTimeInputs(root) {
+  (root || document).querySelectorAll('input[type="time"]:not([data-quick])').forEach((inp) => {
+    inp.dataset.quick = '1';
+    const box = document.createElement('span');
+    box.className = 'time-quick';
+    ['00', '15', '30', '45'].forEach((mm) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn-mini';
+      b.textContent = ':' + mm;
+      b.onclick = () => {
+        if (inp.disabled) return;
+        const hh = /^\d{2}:/.test(inp.value) ? inp.value.slice(0, 2) : '09';
+        inp.value = hh + ':' + mm;
+      };
+      box.appendChild(b);
+    });
+    const anchor = inp.closest('label') || inp;
+    anchor.after(box);
+  });
+}
+document.addEventListener('DOMContentLoaded', () => enhanceTimeInputs());
+
 // 導覽列右邊的「↻ 重撈資料」：清掉暫存、重新向資料庫要最新資料。
 // 各頁可以定義 window.refreshPageData（只重載該頁的資料，不會清掉你正在填的欄位）；沒定義的頁面就整頁重新載入。
 document.addEventListener('DOMContentLoaded', () => {
@@ -592,6 +616,7 @@ function openFollowUpDialog(opts) {
       <div style="margin-top:12px;"><button type="button" id="fu-save">儲存</button></div>
     </div>`;
   document.body.appendChild(wrap);
+  enhanceTimeInputs(wrap);
   const $ = (id) => document.getElementById(id);
   // 最近幾筆聯繫紀錄（同案件優先），接續上次進度用
   callApi('getContactLogs', { companyName: opts.companyName }, { silent: true }).then((r) => {
