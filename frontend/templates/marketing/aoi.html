@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>機器視覺檢測應用 - 鑫堡股份有限公司</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        /* 基本排版 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+                "Microsoft JhengHei", Arial, sans-serif;
+            font-size: 15px;
+            color: #333333;
+            line-height: 1.5;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 20px;
+        }
+
+        html {
+            -webkit-text-size-adjust: 100%;
+        }
+
+        .wrap {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e1e6ea;
+            box-shadow: 0 2px 6px rgba(10, 20, 30, 0.04);
+            padding: 20px;
+            width: 100%;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .logo {
+            width: 56px;
+            height: 56px;
+            border-radius: 6px;
+            overflow: hidden;
+            display: block;
+            object-fit: cover;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        h1 {
+            font-size: 24px;
+            color: #0b69ff;
+            margin: 0;
+        }
+
+        .lead {
+            margin: 8px 0 14px 0;
+            color: #444;
+        }
+
+        a {
+            color: #0b69ff;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .value {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            margin: 12px 0 18px 0;
+        }
+
+        .value .left {
+            flex: 1;
+        }
+
+        .value .right {
+            min-width: 150px;
+            text-align: right;
+        }
+
+        .big-claim {
+            font-size: 18px;
+            font-weight: 700;
+            color: #073a7a;
+        }
+
+        .sub-claim {
+            color: #555;
+            margin-top: 6px;
+        }
+
+        .cta {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: #0b69ff;
+            color: #fff;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 4px 10px rgba(11, 105, 255, 0.18);
+            margin-top: 8px;
+        }
+
+        .cta-ghost {
+            display: inline-block;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: #fff;
+            color: #0b69ff;
+            border: 1px solid #0b69ff;
+            text-decoration: none;
+            margin-left: 8px;
+            font-weight: 700;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            margin: 16px 0 8px 0;
+            color: #073a7a;
+            font-weight: 700;
+        }
+
+        .benefits {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .benefit {
+            background: #fbfdff;
+            border: 1px solid #e9f2ff;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .benefit strong {
+            color: #0b69ff;
+        }
+
+        ul.features {
+            margin: 8px 0 12px 16px;
+            padding: 0;
+            color: #333;
+        }
+
+        ul.features li {
+            margin: 6px 0;
+        }
+
+        .emphasis {
+            color: #d9534f;
+            font-weight: 700;
+        }
+
+        table.feature-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        table.feature-table th,
+        table.feature-table td {
+            padding: 10px 12px;
+            border: 1px solid #e3e8ec;
+            vertical-align: top;
+        }
+
+        table.feature-table thead th {
+            background: #f1f7ff;
+            color: #073a7a;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        table.feature-table tbody tr:nth-child(even) {
+            background: #fbfdff;
+        }
+
+        .num-badge {
+            display: inline-block;
+            min-width: 28px;
+            height: 28px;
+            line-height: 28px;
+            text-align: center;
+            border-radius: 6px;
+            background: #eef6ff;
+            color: #0b69ff;
+            font-weight: 700;
+        }
+
+        .case {
+            background: #fff7ef;
+            border: 1px solid #ffe6c9;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 8px;
+            color: #6a4b00;
+        }
+
+        .steps {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .step {
+            flex: 1;
+            background: #fbfdff;
+            border: 1px solid #e9f2ff;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .faq dt {
+            font-weight: 700;
+            margin-top: 8px;
+        }
+
+        .faq dd {
+            margin: 4px 0 10px 0;
+            color: #444;
+        }
+
+        .note {
+            color: #666;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+
+        .footer {
+            margin-top: 18px;
+            padding-top: 12px;
+            border-top: 1px solid #eef2f5;
+            color: #444;
+            font-size: 13px;
+        }
+
+        @media (max-width:480px) {
+            .benefits {
+                grid-template-columns: 1fr;
+            }
+
+            .value {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .value .right {
+                text-align: left;
+            }
+
+            .compare {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+
+            .compare th,
+            .compare td {
+                border: 1px solid #ddd;
+                padding: 10px;
+                text-align: center;
+            }
+
+            .compare th {
+                background: #eef6ff;
+            }
+        }
+
+        /* 平板 */
+        @media screen and (max-width:768px) {
+
+            body {
+                font-size: 14px;
+            }
+
+            h1 {
+                font-size: 22px;
+            }
+
+            .big-claim {
+                font-size: 16px;
+            }
+
+        }
+
+        /* 手機 */
+        @media screen and (max-width:600px) {
+
+            body {
+                font-size: 13px;
+            }
+
+            h1 {
+                font-size: 20px;
+            }
+
+            h2 {
+                font-size: 16px;
+            }
+
+            .big-claim {
+                font-size: 15px;
+            }
+
+            table.feature-table {
+                font-size: 12px;
+            }
+
+            .wrap {
+                padding: 16px;
+            }
+
+        }
+
+        /* 小手機 */
+        @media screen and (max-width:480px) {
+
+            body {
+                font-size: 12px;
+            }
+
+            h1 {
+                font-size: 18px;
+            }
+
+            h2 {
+                font-size: 15px;
+            }
+
+            .big-claim {
+                font-size: 14px;
+            }
+
+            table.feature-table {
+                font-size: 11px;
+            }
+
+            .cta {
+                padding: 7px 10px;
+                font-size: 12px;
+            }
+
+        }
+
+
+        /* 圖片區 */
+        .image-row {
+            display: flex;
+            gap: 12px;
+            margin: 18px 0;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .image-row img {
+            width: 32%;
+            border-radius: 8px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+            object-fit: cover;
+        }
+
+        /* 手機 */
+        @media (max-width:600px) {
+            .image-row img {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <header>
+            <img src="https://img.cloudimg.in/uploads/shops/55830/theme/eb/eb33e5dddd69bc708c1aac5ab153f95b.png?v=202603041044"
+                alt="鑫堡 Logo" />
+
+        </header>
+        <div style="margin-top:14px">
+            <a class="cta-ghost" href="https://shop.cetus.tw/" target="_blank">🛒 鑫堡購物網站</a>
+            <a class="cta-ghost" href="mailto:austin.tung@cetus.tw?subject=預約%20免費樣品測試">📩 預約免費樣品測試（限時）</a>
+            <div style="margin-top:8px; color:#666; font-size:13px;">※ 本月預約可享 <strong>免費初步評估</strong>（公司內部名額有限）。</div>
+        </div>
+        <div>
+            <h1>未來趨勢 自動化視覺AOI整合方案 <strong class="emphasis">(免費諮詢+檢測)</strong></h1>
+            <div class="big-claim">讓設備更完整｜讓產線更高效 (歡迎了解)</div>
+            <div class="lead">您好,我是 <strong>機器視覺檢測廠商-鑫堡股份有限公司 業務
+                    (Austin)</strong>,因應市場大缺工,我們推出視覺AOI方案,以下可清楚了解AOI並預約樣品測試。
+            </div>
+        </div>
+
+        <div class="value">
+            <div class="left">
+                <div class="big-claim">提升良率、減少人力、縮短導入週期 — 立即看到成效</div>
+                <div class="sub-claim">我們提供完整 <strong class="emphasis">一站式視覺套裝
+                        +整合解決方案</strong>,從相機、鏡頭、光源到軟體與設備串接,協助設備商與工廠導入自動化視覺檢測系統,一次交付,快速驗證。</div>
+            </div>
+        </div>
+
+        <!-- Features Table -->
+        <div class="section-title">📊 視覺檢測套裝系統（核心應用功能）</div>
+        <div class="image-row">
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/bc/bc7171f2a46a95f4707f38c1c59473dd.png">
+
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/df/df3a36d3454b34320700aff1f9c0c642.png">
+
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/13/136feaa71425cac67d90598d832e00d2.png">
+
+        </div>
+        <table class="feature-table" cellspacing="0" cellpadding="0" role="presentation"
+            style="width:100%;border-collapse:collapse;font-family:Arial;">
+            <thead>
+                <tr style="background:#f3f3f3;">
+                    <th style="width:90px;padding:12px;border:1px solid #ddd;">功能項目</th>
+                    <th style="padding:12px;border:1px solid #ddd;">系統說明</th>
+                    <th style="width:150px;padding:12px;border:1px solid #ddd;">自動化成功案例</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <tr>
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        <strong>🎯 定位 (Positioning)</strong>
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        機器人的眼睛,高精度定位演算法,輸出座標,控制機械手臂<strong>取放、定位、校正、貼標與加工前定位</strong>有效降低人工校正與定位誤差。<br>
+
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        🔹 <strong>雷雕加工產線</strong><br>
+                        🔹 <strong>機械手臂取放</strong><br>
+                        🔹 <strong>飛拍定位</strong>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        <strong>🔎 檢測 (Inspection)</strong>
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        高解析影像與視覺工具,高速自動檢測產品狀態。辨識<strong>有無檢測、表面瑕疵、刮傷、污損、破損、異物、輪廓偏差</strong>等問題,取代人工長時間目檢。
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        🔹 <strong>被動元件來料檢查</strong><br>
+                        🔹 <strong>電子零件外觀檢測</strong><br>
+                        🔹 <strong>晶圓表面汙損檢測</strong>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        <strong>📏 量測 (Measurement)</strong>
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        高精度尺寸量測,可進行<strong>寬度、長度、間距、角度、位置</strong>等幾何尺寸分析。適用於高精密零件品質管控,避免人工卡尺測量誤差。
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        🔹 <strong>晶圓尺寸量測</strong><br>
+                        🔹 <strong>電子按鈕尺寸檢測</strong><br>
+                        🔹 <strong>精密零件量測</strong>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        <strong>🔢 OCR & Barcode</strong>
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        <strong>深度學習OCR文字辨識、Barcode / QR Code</strong>等多種條碼格式。可建立字庫針對特殊字型訓練模型,確保在複雜背景下仍維持高辨識率。
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        🔹 <strong>條碼自動讀取</strong><br>
+                        🔹 <strong>包裝生產追溯</strong><br>
+                        🔹 <strong>停車場車牌讀取</strong>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        <strong>🔢 自動計數</strong>
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        高精度物件數量統計,可在短時間內完成大量物件計數。不再依賴<strong>傳統秤重估算</strong>或人工點數,避免數量大量誤差。
+                    </td>
+
+                    <td style="padding:12px;border:1px solid #ddd;">
+                        🔹 <strong>農產品、藥品計數</strong><br>
+                        🔹 <strong>電子端子、螺絲計數</strong><br>
+                        🔹 <strong>PIN針進出貨統計</strong>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="big-claim">
+            我們不是只賣產品,而是您設備背後的視覺技術團隊
+        </div>
+        <p>透過工業相機與視覺演算法,
+            將原本依賴人工的檢測工作轉換為自動化流程。</p>
+
+        <h2>⚠️ 常見痛點</h2>
+        <table class=" class=" feature-table" cellspacing="0" cellpadding="0" role="presentation"
+            style="width:100%;border-collapse:collapse;font-family:Arial;">
+            <thead>
+                <tr style="background:#f3f3f3;">
+                    <th style="padding:12px;border:1px solid #ddd;">工廠</th>
+                    <th style="padding:12px;border:1px solid #ddd;">設備商</th>
+                </tr>
+            </thead>
+
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">大量人力檢測產品瑕疵</td>
+                <td style="padding:12px;border:1px solid #ddd;">設備案子卡在視覺驗證階段</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">不同人員判斷標準不同</td>
+                <td style="padding:12px;border:1px solid #ddd;">客戶要求 AOI 檢測功能</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">人工檢測速度跟不上產線</td>
+                <td style="padding:12px;border:1px solid #ddd;">缺乏視覺整合技術</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">機械手臂抓取需要定位</td>
+                <td style="padding:12px;border:1px solid #ddd;">專案驗證時間過長</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">產品尺寸需要人工量測</td>
+                <td style="padding:12px;border:1px solid #ddd;">競品提供完整整合方案</td>
+            </tr>
+        </table>
+
+        ---
+
+        <h2>⚖️ 人工 vs 機器視覺</h2>
+
+        <table class=" class=" feature-table" cellspacing="0" cellpadding="0" role="presentation"
+            style="width:100%;border-collapse:collapse;font-family:Arial;">
+            <thead>
+                <tr style="background:#f3f3f3;">
+                    <th style="width:90px;padding:12px;border:1px solid #ddd;">比較項目</th>
+                    <th style="padding:12px;border:1px solid #ddd;">人工檢測</th>
+                    <th style="padding:12px;border:1px solid #ddd;">機器視覺</th>
+                </tr>
+            </thead>
+
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">速度</td>
+                <td style="padding:12px;border:1px solid #ddd;">慢</td>
+                <td style="padding:12px;border:1px solid #ddd;">高速</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">準確度</td>
+                <td style="padding:12px;border:1px solid #ddd;">依人員判斷,有誤差</td>
+                <td style="padding:12px;border:1px solid #ddd;">系統化判斷,提高效率與穩定一致性無主觀誤差,品質可被量化。</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">成本</td>
+                <td style="padding:12px;border:1px solid #ddd;">長期人力成本高</td>
+                <td style="padding:12px;border:1px solid #ddd;">長期成本低且不用休息,自動化檢測替代繁瑣人工。</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">產線整合</td>
+                <td style="padding:12px;border:1px solid #ddd;">需一直訓練</td>
+                <td style="padding:12px;border:1px solid #ddd;">可自動化整合,串接機械手臂 / PLC 等,未來擴充零痛點。</td>
+            </tr>
+        </table>
+
+        ---
+
+        <h2>⚖️ 競品 vs 鑫堡</h2>
+        <table class=" class=" feature-table" cellspacing="0" cellpadding="0" role="presentation"
+            style="width:100%;border-collapse:collapse;font-family:Arial;">
+            <thead>
+                <tr style="background:#f3f3f3;">
+                    <th style="width:90px;padding:12px;border:1px solid #ddd;"></th>
+                    <th style="padding:12px;border:1px solid #ddd;">一般視覺廠商</th>
+                    <th style="padding:12px;border:1px solid #ddd;">鑫堡方案</th>
+                </tr>
+            </thead>
+
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">軟硬體</td>
+                <td style="padding:12px;border:1px solid #ddd;">只賣軟體、無法客製化</td>
+                <td style="padding:12px;border:1px solid #ddd;">整合軟硬體廠商、支援各種客製化</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">整合</td>
+                <td style="padding:12px;border:1px solid #ddd;">客戶自行整合</td>
+                <td style="padding:12px;border:1px solid #ddd;">提供完整整合、其他附加服務(現場及遠端))</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">測試</td>
+                <td style="padding:12px;border:1px solid #ddd;">需付費、需要量</td>
+                <td style="padding:12px;border:1px solid #ddd;">完全免費樣品測試,提供客戶檢測報告</td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #ddd;">導入速度</td>
+                <td style="padding:12px;border:1px solid #ddd;">專案類型較慢</td>
+                <td style="padding:12px;border:1px solid #ddd;">快速導入,套裝化的軟硬體組合,標準流程導入,減少客製化等待時間。</td>
+            </tr>
+        </table>
+
+        <div class="section-title">🚀 三步驟快速導入(測試完全免費)</div>
+        <div class="steps" aria-hidden="true">
+            <div class="step"><strong>📞 1. 聯繫我們</strong>
+                <div style="margin-top:6px">說明檢測需求或上傳樣品圖片。</div>
+            </div>
+            <div class="step"><strong>🧪 2. 樣品測試</strong>
+                <div style="margin-top:6px">我們提供免費樣品測試與報告（現場或遠端）。</div>
+            </div>
+            <div class="step"><strong>⚙️ 3. 試產導入</strong>
+                <div style="margin-top:6px">套件化部署,快速上線並驗證效益。</div>
+            </div>
+        </div>
+
+
+
+        <!-- Offer -->
+
+
+        <div class="section-title">❓ 常見問題</div>
+        <dl class="faq">
+            <dt>Q1：導入需要多長時間？</dt>
+            <dd>A：視應用複雜度,樣品測試約 1–5 個工作天。</dd>
+
+            <dt>Q2：我沒有工程團隊可以配合,是否可導入？</dt>
+            <dd>A：可以。我們提供安裝與教學協助整合服務。</dd>
+
+            <dt>Q3：價格如何？</dt>
+            <dd>A：依方案與硬體組合報價<strong>(最低3萬元即可)</strong>；我們提供樣品測試,讓您先看實測效果。</dd>
+        </dl>
+
+        <div class="footer">
+            <strong>鑫堡股份有限公司</strong> ｜ <a href="https://www.cetus.tw/" target="_blank">鑫堡官網</a>｜ <a
+                href="https://shop.cetus.tw/" target="_blank">鑫堡商店</a><br>
+            📍 樣品寄件 / 公司位置：新北市新莊區五權一路13號703室 (新北產業園區)<br>
+            <strong>業務：</strong> Austin<br>
+            📞 電話：0972-259-172 (歡迎來電)<br>
+            📧 電子信箱： <a href="mailto:austin.tung@cetus.tw">austin.tung@cetus.tw</a>　｜　💬 LINE ID： <strong
+                class="emphasis">0972259172</strong>
+        </div>
+    </div>
+</body>
+
+</html>

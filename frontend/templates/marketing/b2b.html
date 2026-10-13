@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>機器視覺檢測應用 - 鑫堡股份有限公司</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        /* 基本排版 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+                "Microsoft JhengHei", Arial, sans-serif;
+            font-size: 15px;
+            color: #333333;
+            line-height: 1.5;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 20px;
+        }
+
+        html {
+            -webkit-text-size-adjust: 100%;
+        }
+
+        .wrap {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e1e6ea;
+            box-shadow: 0 2px 6px rgba(10, 20, 30, 0.04);
+            padding: 20px;
+            width: 100%;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .logo {
+            width: 56px;
+            height: 56px;
+            border-radius: 6px;
+            overflow: hidden;
+            display: block;
+            object-fit: cover;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        h1 {
+            font-size: 24px;
+            color: #0b69ff;
+            margin: 0;
+        }
+
+        .lead {
+            margin: 8px 0 14px 0;
+            color: #444;
+        }
+
+        a {
+            color: #0b69ff;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .value {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            margin: 12px 0 18px 0;
+        }
+
+        .value .left {
+            flex: 1;
+        }
+
+        .value .right {
+            min-width: 150px;
+            text-align: right;
+        }
+
+        .big-claim {
+            font-size: 18px;
+            font-weight: 700;
+            color: #073a7a;
+        }
+
+        .sub-claim {
+            color: #555;
+            margin-top: 6px;
+        }
+
+        .cta {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: #0b69ff;
+            color: #fff;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 4px 10px rgba(11, 105, 255, 0.18);
+            margin-top: 8px;
+        }
+
+        .cta-ghost {
+            display: inline-block;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: #fff;
+            color: #0b69ff;
+            border: 1px solid #0b69ff;
+            text-decoration: none;
+            margin-left: 8px;
+            font-weight: 700;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            margin: 16px 0 8px 0;
+            color: #073a7a;
+            font-weight: 700;
+        }
+
+        .benefits {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .benefit {
+            background: #fbfdff;
+            border: 1px solid #e9f2ff;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .benefit strong {
+            color: #0b69ff;
+        }
+
+        ul.features {
+            margin: 8px 0 12px 16px;
+            padding: 0;
+            color: #333;
+        }
+
+        ul.features li {
+            margin: 6px 0;
+        }
+
+        .emphasis {
+            color: #d9534f;
+            font-weight: 700;
+        }
+
+        table.feature-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        table.feature-table th,
+        table.feature-table td {
+            padding: 10px 12px;
+            border: 1px solid #e3e8ec;
+            vertical-align: top;
+        }
+
+        table.feature-table thead th {
+            background: #f1f7ff;
+            color: #073a7a;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        table.feature-table tbody tr:nth-child(even) {
+            background: #fbfdff;
+        }
+
+        .num-badge {
+            display: inline-block;
+            min-width: 28px;
+            height: 28px;
+            line-height: 28px;
+            text-align: center;
+            border-radius: 6px;
+            background: #eef6ff;
+            color: #0b69ff;
+            font-weight: 700;
+        }
+
+        .case {
+            background: #fff7ef;
+            border: 1px solid #ffe6c9;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 8px;
+            color: #6a4b00;
+        }
+
+        .steps {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .step {
+            flex: 1;
+            background: #fbfdff;
+            border: 1px solid #e9f2ff;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .faq dt {
+            font-weight: 700;
+            margin-top: 8px;
+        }
+
+        .faq dd {
+            margin: 4px 0 10px 0;
+            color: #444;
+        }
+
+        .note {
+            color: #666;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+
+        .footer {
+            margin-top: 18px;
+            padding-top: 12px;
+            border-top: 1px solid #eef2f5;
+            color: #444;
+            font-size: 13px;
+        }
+
+        @media (max-width:480px) {
+            .benefits {
+                grid-template-columns: 1fr;
+            }
+
+            .value {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .value .right {
+                text-align: left;
+            }
+
+            .compare {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+
+            .compare th,
+            .compare td {
+                border: 1px solid #ddd;
+                padding: 10px;
+                text-align: center;
+            }
+
+            .compare th {
+                background: #eef6ff;
+            }
+        }
+
+        /* 平板 */
+        @media screen and (max-width:768px) {
+
+            body {
+                font-size: 14px;
+            }
+
+            h1 {
+                font-size: 22px;
+            }
+
+            .big-claim {
+                font-size: 16px;
+            }
+
+        }
+
+        /* 手機 */
+        @media screen and (max-width:600px) {
+
+            body {
+                font-size: 13px;
+            }
+
+            h1 {
+                font-size: 20px;
+            }
+
+            h2 {
+                font-size: 16px;
+            }
+
+            .big-claim {
+                font-size: 15px;
+            }
+
+            table.feature-table {
+                font-size: 12px;
+            }
+
+            .wrap {
+                padding: 16px;
+            }
+
+        }
+
+        /* 小手機 */
+        @media screen and (max-width:480px) {
+
+            body {
+                font-size: 12px;
+            }
+
+            h1 {
+                font-size: 18px;
+            }
+
+            h2 {
+                font-size: 15px;
+            }
+
+            .big-claim {
+                font-size: 14px;
+            }
+
+            table.feature-table {
+                font-size: 11px;
+            }
+
+            .cta {
+                padding: 7px 10px;
+                font-size: 12px;
+            }
+        }
+
+
+        /* 圖片區 */
+        .image-row {
+            display: flex;
+            gap: 12px;
+            margin: 18px 0;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .image-row img {
+            width: 32%;
+            border-radius: 8px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+            object-fit: cover;
+        }
+
+        /* 手機 */
+        @media (max-width:600px) {
+            .image-row img {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+
+        <header>
+            <img src="https://img.cloudimg.in/uploads/shops/55830/theme/eb/eb33e5dddd69bc708c1aac5ab153f95b.png"
+                alt="鑫堡股份有限公司 Logo" />
+        </header>
+
+        <div style="margin-top:14px">
+            <a class="cta-ghost" href="https://shop.cetus.tw/" target="_blank">
+                🛒 鑫堡購物網站
+            </a>
+
+            <a class="cta-ghost" href="mailto:austin.tung@cetus.tw?subject=GIVI%20光學尺%20詢價">
+                📩 免費詢價 / 型號選型
+            </a>
+
+            <div style="margin-top:8px;color:#666;font-size:13px;">
+                ※ 大量採購、設備商合作、OEM / ODM 專案皆享專屬優惠。
+            </div>
+        </div>
+        <div class="section-title">
+            您是否也遇過這些位置量測問題？
+        </div>
+
+        <div class="benefits">
+
+            <div class="benefit">
+                <strong>📏 量測精度不足</strong><br>
+                定位誤差過大，導致產品尺寸不一致，影響良率與加工品質。
+            </div>
+
+            <div class="benefit">
+                <strong>💰 原廠價格過高</strong><br>
+                更換成本高，採購預算難以控制，影響設備投資效益。
+            </div>
+
+            <div class="benefit">
+                <strong>🚚 交期過長</strong><br>
+                零件等待時間久，設備停機，造成生產延誤與損失。
+            </div>
+
+            <div class="benefit">
+                <strong>🔧 缺乏技術支援</strong><br>
+                不知道如何選型、安裝或設定，只能自行摸索。
+            </div>
+
+            <div class="benefit">
+                <strong>⚠ 品質不穩定</strong><br>
+                訊號異常、壽命短，影響設備長時間穩定運作。
+            </div>
+
+            <div class="benefit">
+                <strong>👷 仍依賴人工量測</strong><br>
+                人工量測速度慢、誤差大，無法滿足自動化生產需求。
+            </div>
+
+        </div>
+        <hr>
+        <div>
+
+            <h1>
+                GIVI 光學尺・磁力尺
+                <span class="emphasis">台灣代理商</span>
+            </h1>
+
+            <div class="big-claim">
+                高精度位置量測｜多種通訊介面｜大量採購優惠
+            </div>
+
+            <div class="lead">
+
+                您好，我是 <strong>鑫堡股份有限公司 Austin</strong>。
+
+                鑫堡為 <strong>GIVI Misure 台灣代理商</strong>，
+                提供完整的<strong>光學尺、磁力尺、Encoder、數位顯示器(DRO)</strong>
+                與位置回授解決方案。
+
+                我們協助設備商、自動化產線及工具機產業快速完成選型，
+                提供技術支援、通訊整合及售後服務，
+                無論是單支採購或大量專案皆歡迎詢價。
+
+            </div>
+
+        </div>
+
+        <div class="value">
+
+            <div class="left">
+
+                <div class="big-claim">
+
+                    不只是販售產品，更提供完整位置量測整合方案
+
+                </div>
+
+                <div class="sub-claim">
+
+                    從光學尺、磁力尺、Encoder、
+                    Digital Readout、訊號轉換、
+                    PLC 串接到設備整合，
+                    鑫堡皆可提供完整技術支援，
+                    讓設備快速完成位置回授與控制整合。
+
+                </div>
+
+            </div>
+
+        </div>
+        <div class="section-title">
+            ⭐ 鑫堡提供完整位置量測產品
+        </div>
+
+        <div class="benefits">
+
+            <div class="benefit">
+                <strong>📏 光學尺</strong><br>
+                高精度線性位置量測，適用 CNC、加工中心、精密設備。
+            </div>
+
+            <div class="benefit">
+                <strong>🧲 磁力尺</strong><br>
+                抗油污、抗粉塵，適合長行程及惡劣環境。
+            </div>
+
+            <div class="benefit">
+                <strong>⚙ Encoder</strong><br>
+                Incremental、Absolute Encoder 多種規格。
+            </div>
+
+            <div class="benefit">
+                <strong>🖥 Digital Readout</strong><br>
+                提供多款顯示器及控制器，可搭配各式設備使用。
+            </div>
+
+        </div>
+        <div class="section-title">
+            📦 GIVI Misure 產品系列
+        </div>
+
+        <div class="image-row">
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/71/71d846a868a9bacb1001d6efbb82afe7.png">
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/81/81d67963003eb12af8c6f36c42406fcb.jpg">
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/8b/8bb93548c61a7284628d22ee3fdaf291.png">
+        </div>
+
+        <div class="section-title">
+            📏 GIVI 光學尺與磁力尺解決方案
+        </div>
+
+        <table class="feature-table" cellspacing="0" cellpadding="0">
+
+            <thead>
+                <tr>
+                    <th style="width:150px;">產品</th>
+                    <th>產品特色</th>
+                    <th style="width:180px;">適用設備</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr>
+                    <td>
+                        <strong>📏 光學尺</strong>
+                    </td>
+                    <td>
+                        採用高精度光學量測技術，
+                        提供高解析度位置回授，
+                        適合需要高速、高精度定位的設備。
+                        <br><br>
+                        ✔ 微米級定位精度<br>
+                        ✔ 高重複精度<br>
+                        ✔ 高速回授<br>
+                        ✔ 長時間穩定使用
+                    </td>
+                    <td>
+                        CNC工具機<br>
+                        加工中心<br>
+                        放電加工機<br>
+                        精密量測設備
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <strong>🧲 磁力尺</strong>
+                    </td>
+                    <td>
+                        採用磁性感測原理，
+                        不易受灰塵、油污、水氣影響，
+                        適合長行程與惡劣環境。
+                        <br><br>
+                        ✔ 安裝容易<br>
+                        ✔ 長距離量測<br>
+                        ✔ 抗油污<br>
+                        ✔ 抗粉塵<br>
+                        ✔ 維護成本低
+                    </td>
+                    <td>
+                        自動化設備<br>
+                        木工機械<br>
+                        石材加工機<br>
+                        包裝設備<br>
+                        AOI設備<br>
+                        搬運設備
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="section-title">
+            ⚖️ 光學尺 VS 磁力尺
+        </div>
+        <table class="feature-table">
+            <thead>
+                <tr>
+                    <th>比較項目</th>
+                    <th>光學尺</th>
+                    <th>磁力尺</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>量測原理</td>
+                    <td>光學編碼</td>
+                    <td>磁性感測</td>
+                </tr>
+                <tr>
+                    <td>量測精度</td>
+                    <td>★★★★★</td>
+                    <td>★★★★☆</td>
+                </tr>
+                <tr>
+                    <td>抗油污能力</td>
+                    <td>★★★☆☆</td>
+                    <td>★★★★★</td>
+                </tr>
+                <tr>
+                    <td>抗粉塵能力</td>
+                    <td>★★★☆☆</td>
+                    <td>★★★★★</td>
+                </tr>
+                <tr>
+                    <td>最大量測距離</td>
+                    <td>中短行程</td>
+                    <td>可達數十公尺</td>
+                </tr>
+                <tr>
+                    <td>安裝便利性</td>
+                    <td>★★★★☆</td>
+                    <td>★★★★★</td>
+                </tr>
+                <tr>
+                    <td>適用設備</td>
+                    <td>CNC、工具機</td>
+                    <td>自動化設備、木工、石材、包裝</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="section-title">
+            🔌 多種通訊介面｜快速整合各品牌設備
+        </div>
+        <div class="value">
+            <div class="left">
+                <div class="big-claim">
+                    依設備需求提供最適合的通訊方案
+                </div>
+                <div class="sub-claim">
+                    GIVI 提供多種輸出介面，
+                    可依不同 PLC、控制器、伺服系統及自動化設備進行搭配，
+                    降低設備整合難度，提升系統相容性。
+                </div>
+            </div>
+        </div>
+        <div class="benefits">
+            <div class="benefit">
+                <strong>MODBUS RTU</strong><br>
+                工業自動化最常用通訊，
+                適合 PLC、人機介面及控制系統。
+            </div>
+            <div class="benefit">
+                <strong>SSI</strong><br>
+                高速同步序列介面，
+                廣泛應用於伺服與運動控制。
+            </div>
+            <div class="benefit">
+                <strong>BiSS</strong><br>
+                高速、高精度 Absolute Encoder 通訊。
+            </div>
+            <div class="benefit">
+                <strong>TTL / HTL</strong><br>
+                Incremental Encoder 常見輸出方式。
+            </div>
+            <div class="benefit">
+                <strong>SinCos</strong><br>
+                適用高解析伺服控制。
+            </div>
+            <div class="benefit">
+                <strong>Absolute / Incremental</strong><br>
+                提供絕對式與增量式位置回授。
+            </div>
+        </div>
+        <div class="section-title">
+            🤝 為什麼選擇鑫堡股份有限公司？
+        </div>
+        <div class="value">
+            <div class="left">
+                <div class="big-claim">
+                    GIVI 台灣代理商｜提供完整技術支援與設備整合
+                </div>
+
+                <div class="sub-claim">
+                    鑫堡不只是提供光學尺與磁力尺，
+                    更協助客戶完成產品選型、控制器搭配、
+                    通訊整合、設備安裝及售後服務。
+
+                    從單一零件到整套自動化設備，
+                    我們皆能提供完整解決方案，
+                    讓您的設備更快完成導入。
+                </div>
+            </div>
+        </div>
+
+        <div class="benefits">
+            <div class="benefit">
+                <strong>🇮🇹 GIVI 台灣代理商</strong><br>
+                提供原廠產品、技術支援及完整售後服務。
+            </div>
+            <div class="benefit">
+                <strong>📦 多種型號供應</strong><br>
+                光學尺、磁力尺、Encoder、數位顯示器皆可提供。
+            </div>
+            <div class="benefit">
+                <strong>🔧 免費選型建議</strong><br>
+                可依設備行程、精度及安裝方式協助推薦適合產品。
+            </div>
+            <div class="benefit">
+                <strong>⚙ 通訊整合</strong><br>
+                支援 PLC、HMI、Motion Controller、Servo 等設備串接。
+            </div>
+            <div class="benefit">
+                <strong>🚚 快速交貨</strong><br>
+                常用產品提供快速供貨，縮短設備等待時間。
+            </div>
+            <div class="benefit">
+                <strong>🛠 技術支援</strong><br>
+                提供安裝建議、產品設定及售後技術服務。
+            </div>
+        </div>
+        <div class="section-title">
+            💰 大量採購・設備商合作方案
+        </div>
+        <div class="case">
+            <h3 style="margin-top:0;color:#0b69ff;">
+                大量採購享專屬優惠價格
+            </h3>
+            <p>
+                無論您是：
+            </p>
+            <ul>
+                <li>設備製造商（OEM）</li>
+                <li>自動化系統整合商</li>
+                <li>工具機設備商</li>
+                <li>控制系統開發商</li>
+                <li>維修服務商</li>
+                <li>長期採購客戶</li>
+            </ul>
+            <p>
+                鑫堡皆提供專屬報價、批量優惠、
+                長期合作價格及技術支援，
+                歡迎提供型號或需求，由專人協助報價。
+            </p>
+        </div>
+        <div class="section-title">
+            🏭 適用產業
+        </div>
+        <div class="benefits">
+            <div class="benefit">
+                🏗 CNC工具機
+            </div>
+            <div class="benefit">
+                🤖 自動化設備
+            </div>
+            <div class="benefit">
+                🔋 半導體設備
+            </div>
+            <div class="benefit">
+                📦 包裝設備
+            </div>
+            <div class="benefit">
+                🪵 木工設備
+            </div>
+            <div class="benefit">
+                🪨 石材加工
+            </div>
+            <div class="benefit">
+                ⚙ 雷射加工
+            </div>
+            <div class="benefit">
+                🔌 電子製造
+            </div>
+        </div>
+        <div class="section-title">
+            👁 不只是位置量測，更提供 AOI 視覺整合
+        </div>
+        <div class="case">
+            <h3 style="margin-top:0;color:#0b69ff;">
+                打造更完整的智慧自動化設備
+            </h3>
+            <p>
+                除了 GIVI 光學尺與磁力尺之外，
+                鑫堡亦專注於工業機器視覺與 AOI 自動光學檢測系統，
+                可協助設備商整合位置回授與視覺檢測，
+                提供更完整的自動化解決方案。
+            </p>
+            <ul>
+                <li>✔ AOI 外觀檢測</li>
+                <li>✔ 尺寸量測</li>
+                <li>✔ OCR 字元辨識</li>
+                <li>✔ Barcode / QR Code</li>
+                <li>✔ 視覺定位</li>
+                <li>✔ 自動計數</li>
+                <li>✔ 工業相機整合</li>
+            </ul>
+        </div>
+        <div class="section-title">
+            📞 找不到型號？不知道該如何選擇？
+        </div>
+        <div class="value">
+            <div class="left">
+                <div class="big-claim">
+                    免費協助選型，快速找到最適合的產品
+                </div>
+                <div class="sub-claim">
+                    只要提供下列任一資訊，我們即可協助推薦適合型號：
+                    <br><br>
+                    ✔ 目前使用品牌與型號<br>
+                    ✔ 光學尺或磁力尺照片<br>
+                    ✔ 行程尺寸（Length）<br>
+                    ✔ 安裝方式<br>
+                    ✔ 控制器或 PLC 品牌<br>
+                    ✔ 通訊需求（MODBUS、SSI、BiSS、TTL...）
+                    <br><br>
+                    若為新設備開發，
+                    我們也能依照您的需求協助規劃完整的位置量測方案。
+                </div>
+            </div>
+        </div>
+        <div class="section-title">
+            ⭐ 鑫堡能提供的不只是產品
+        </div>
+        <div class="benefits">
+            <div class="benefit">
+                <strong>✔ GIVI 台灣代理商</strong><br>
+                原廠產品供應
+            </div>
+
+            <div class="benefit">
+                <strong>✔ 多種型號</strong><br>
+                光學尺、磁力尺、Encoder、DRO
+            </div>
+
+            <div class="benefit">
+                <strong>✔ 大量採購優惠</strong><br>
+                OEM、設備商皆享專案價格
+            </div>
+
+            <div class="benefit">
+                <strong>✔ 免費選型</strong><br>
+                依設備需求推薦最適合產品
+            </div>
+
+            <div class="benefit">
+                <strong>✔ 技術支援</strong><br>
+                安裝、設定、售後服務
+            </div>
+
+            <div class="benefit">
+                <strong>✔ AOI整合能力</strong><br>
+                視覺定位、量測、檢測整合
+            </div>
+        </div>
+        <div class="section-title">
+            ❓ 常見問題
+        </div>
+        <dl class="faq">
+            <dt>Q1：不知道要選光學尺還是磁力尺？</dt>
+            <dd>
+                A：提供設備照片、行程及使用環境，
+                我們將免費協助您選擇最適合的產品。
+            </dd>
+            <dt>
+                Q2：可以協助替換其他品牌嗎？
+            </dt>
+            <dd>
+                A：可以，提供目前品牌、型號或照片，
+                我們可協助評估替代方案。
+            </dd>
+            <dt>
+                Q3：是否提供大量採購優惠？
+            </dt>
+            <dd>
+                A：提供，設備商、OEM、ODM、
+                長期合作客戶皆享專案價格。
+            </dd>
+            <dt>
+                Q4：是否能協助設備整合？
+            </dt>
+            <dd>
+                A：可以，我們可協助 PLC、
+                控制器、人機介面及 AOI 系統整合。
+            </dd>
+        </dl>
+        <div class="case">
+            <h2 style="margin-top:0;color:#0b69ff;">
+                📩 立即洽詢 GIVI 光學尺、磁力尺
+            </h2>
+            <p>
+                不知道型號沒關係。
+                提供品牌、照片或尺寸即可。
+                我們將由專人協助：
+            </p>
+            <ul>
+                <li>✔ 免費產品選型</li>
+                <li>✔ 通訊規格確認</li>
+                <li>✔ 替代型號建議</li>
+                <li>✔ 大量採購報價</li>
+                <li>✔ 技術支援與售後服務</li>
+            </ul>
+        </div>
+        <div class="footer">
+            <h3 style="margin-bottom:10px;color:#0b69ff;">
+                鑫堡股份有限公司
+            </h3>
+            <p>
+                <strong>GIVI Misure 台灣代理商</strong><br>
+                提供光學尺、磁力尺、Encoder、
+                Digital Readout 與位置量測解決方案，
+                並整合 AOI 機器視覺、自動化控制及設備串接。
+            </p>
+            <hr>
+            📍 新北市新莊區五權一路13號7樓之3（新北產業園區）<br><br>
+            👤 業務：Austin 董先生<br>
+            📞 0972-259-172<br>
+            📧 austin.tung@cetus.tw<br>
+            💬 LINE ID：0972259172<br><br>
+            🌐 官網：https://www.cetus.tw/<br>
+            🛒 購物網站：https://shop.cetus.tw/
+        </div>
+    </div>
+</body>
+
+</html>

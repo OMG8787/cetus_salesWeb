@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>行銷宣傳製作 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css?v=20261013d" />
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
+<link rel="apple-touch-icon" href="img/icon-192.png" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs tabs-grouped">
+  <button class="tab-btn nav-single" onclick="location.href='home.html'">首頁</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
+      <button class="tab-btn" onclick="location.href='schedule.html'">業務行事曆</button>
+    </div>
+  </div>
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='evalreport.html'">檔案製作 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
+      <button class="tab-btn active" onclick="location.href='marketing.html'">行銷宣傳製作</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">登入紀錄</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
+</nav>
+
+<section class="tab-content mk-page">
+  <div class="calc-toolbar">
+    <h2 style="margin:0;">行銷宣傳製作</h2>
+    <span class="calc-hint">選一個範本 → 直接點畫面上的文字修改、點圖片換圖、複製或刪除區塊 → 下載 HTML、複製貼進信件，或列印成 PDF。</span>
+  </div>
+
+  <div class="mk-layout">
+    <aside class="mk-side">
+      <div class="panel">
+        <h3 style="margin-top:0;">範本</h3>
+        <div id="mk-templates"></div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0;">我的草稿</h3>
+        <div class="calc-hint">草稿存在這台電腦的瀏覽器裡（清除瀏覽器資料會不見），要長期留存請下載 HTML。</div>
+        <div id="mk-drafts"></div>
+      </div>
+    </aside>
+
+    <div class="mk-main">
+      <div id="mk-empty" class="panel calc-hint">← 先從左邊選一個範本，或開啟自己的草稿。</div>
+      <div id="mk-editor" style="display:none;">
+        <div class="panel mk-bar">
+          <div class="mk-row">
+            <input id="mk-name" placeholder="檔案名稱" />
+            <input id="mk-title" placeholder="信件主旨 / 頁面標題" title="HTML 的 &lt;title&gt;，寄 EDM 時可當主旨參考" />
+            <button onclick="mkSaveDraft()">💾 儲存草稿</button>
+            <button class="btn-secondary" onclick="mkDownload()">⬇ 下載 HTML</button>
+            <button class="btn-secondary" onclick="mkCopyRich()" title="複製畫面內容，直接貼進 Gmail / Outlook 的信件編輯區">📋 複製內容（貼到信件）</button>
+            <button class="btn-secondary" onclick="mkCopyHtml()" title="複製 HTML 原始碼（給有支援 HTML 貼上的郵件軟體 / 網站後台）">&lt;/&gt; 複製 HTML 碼</button>
+            <button class="btn-secondary" onclick="mkPrint()" title="開啟列印視窗，可選「另存為 PDF」">🖨 列印 / 另存 PDF</button>
+          </div>
+          <div class="mk-row">
+            <button class="btn-mini" onclick="mkCmd('bold')"><b>B</b></button>
+            <button class="btn-mini" onclick="mkCmd('italic')"><i>I</i></button>
+            <button class="btn-mini" onclick="mkCmd('underline')"><u>U</u></button>
+            <select id="mk-size" onchange="mkFontSize(this.value);this.value=''" title="選取文字後設定大小">
+              <option value="">字級</option>
+              <option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>32</option><option>40</option>
+            </select>
+            <label class="mk-color" title="文字顏色">文字色 <input type="color" id="mk-fore" value="#005cb9" onchange="mkCmd('foreColor', this.value)" /></label>
+            <label class="mk-color" title="文字醒目標示">底色 <input type="color" id="mk-back" value="#fff3b0" onchange="mkCmd('hiliteColor', this.value)" /></label>
+            <button class="btn-mini" onclick="mkCmd('justifyLeft')">靠左</button>
+            <button class="btn-mini" onclick="mkCmd('justifyCenter')">置中</button>
+            <button class="btn-mini" onclick="mkCmd('justifyRight')">靠右</button>
+            <button class="btn-mini" onclick="mkCmd('insertUnorderedList')">• 清單</button>
+            <button class="btn-mini" onclick="mkLink()" title="替選取文字加連結；已選到連結 / 按鈕則修改網址">🔗 連結</button>
+            <button class="btn-mini" onclick="mkCmd('removeFormat')">清除格式</button>
+            <button class="btn-mini" onclick="mkReplaceAll()" title="整份文件一次取代文字或網址（例如換聯絡電話、Email）">尋找取代</button>
+          </div>
+          <div class="mk-row mk-blockbar">
+            <span id="mk-sel" class="calc-hint">點一下畫面上的元素可選取（橘色虛線框）。</span>
+            <button class="btn-mini" onclick="mkSelParent()">⬆ 選上一層</button>
+            <button class="btn-mini" onclick="mkImage('url')">🖼 換圖片（網址）</button>
+            <button class="btn-mini" onclick="mkImage('file')">🖼 換圖片（上傳）</button>
+            <button class="btn-mini" onclick="mkDup()">⧉ 複製</button>
+            <button class="btn-mini" onclick="mkMove(-1)">↑ 上移</button>
+            <button class="btn-mini" onclick="mkMove(1)">↓ 下移</button>
+            <button class="btn-mini" onclick="mkDel()">🗑 刪除</button>
+            <button class="btn-mini" onclick="mkUndo()" title="還原上一次複製 / 刪除 / 移動 / 換圖 / 取代">↶ 還原區塊操作</button>
+            <select id="mk-width" onchange="mkSetWidth(this.value)" title="預覽寬度">
+              <option value="100%">電腦</option>
+              <option value="414px">手機</option>
+            </select>
+            <input type="file" id="mk-file" accept="image/*" style="display:none;" />
+          </div>
+        </div>
+        <div class="mk-frame-wrap"><iframe id="mk-frame" title="行銷宣傳預覽"></iframe></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="config.js?v=20261013d"></script>
+<script src="demo.js?v=20261013d"></script>
+<script src="common.js?v=20261013d"></script>
+<script src="marketing.js?v=20261013d"></script>
+</body>
+</html>

@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <title>設備商機器視覺與自動化選配系統｜AOI・Robot Vision・鑫堡股份有限公司</title>
+
+    <meta name="description"
+        content="鑫堡股份有限公司提供設備商機器視覺、AOI、自動化檢測、Robot Vision、OCR、Barcode、視覺量測與PLC設備串接服務。設備商可將視覺系統作為設備選配模組，快速增加產品競爭力。" />
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            -webkit-text-size-adjust: 100%;
+        }
+
+        body {
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                Roboto,
+                "Helvetica Neue",
+                "Microsoft JhengHei",
+                Arial,
+                sans-serif;
+            font-size: 15px;
+            color: #333333;
+            line-height: 1.7;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .wrap {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 10px;
+            border: 1px solid #e1e6ea;
+            box-shadow: 0 2px 10px rgba(10, 20, 30, 0.06);
+            padding: 28px;
+            width: 100%;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #eef2f5;
+        }
+
+        .logo {
+            width: 64px;
+            height: 64px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #073a7a;
+            margin: 0;
+            line-height: 1.4;
+        }
+
+        h2 {
+            color: #073a7a;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            font-size: 21px;
+        }
+
+        h3 {
+            color: #0b69ff;
+            margin-top: 0;
+        }
+
+        p {
+            margin: 8px 0;
+        }
+
+        .lead {
+            margin: 12px 0 18px 0;
+            color: #444;
+            font-size: 16px;
+        }
+
+        .big-claim {
+            font-size: 22px;
+            font-weight: 800;
+            color: #073a7a;
+            line-height: 1.5;
+        }
+
+        .sub-claim {
+            color: #555;
+            margin-top: 8px;
+            font-size: 16px;
+        }
+
+        .emphasis {
+            color: #d9534f;
+            font-weight: 700;
+        }
+
+        .blue {
+            color: #0b69ff;
+            font-weight: 700;
+        }
+
+        .cta-area {
+            margin: 18px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .cta {
+            display: inline-block;
+            padding: 11px 18px;
+            border-radius: 8px;
+            background: #0b69ff;
+            color: #ffffff;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 4px 10px rgba(11, 105, 255, 0.18);
+        }
+
+        .cta:hover {
+            opacity: 0.9;
+        }
+
+        .cta-ghost {
+            display: inline-block;
+            padding: 10px 16px;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #0b69ff;
+            border: 1px solid #0b69ff;
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .hero {
+            background:
+                linear-gradient(135deg, #f4f9ff, #ffffff);
+            border: 1px solid #dbeafe;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .hero-tag {
+            display: inline-block;
+            background: #eef6ff;
+            color: #0b69ff;
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 20px;
+            margin: 32px 0 14px;
+            color: #073a7a;
+            font-weight: 800;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #eef2f5;
+        }
+
+        .image-row {
+            display: flex;
+            gap: 12px;
+            margin: 18px 0;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .image-row img {
+            width: calc(33.333% - 8px);
+            min-width: 200px;
+            border-radius: 8px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+            object-fit: cover;
+        }
+
+        .benefits {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .benefit {
+            background: #fbfdff;
+            border: 1px solid #e9f2ff;
+            padding: 16px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+
+        .benefit strong {
+            display: block;
+            color: #0b69ff;
+            margin-bottom: 6px;
+            font-size: 16px;
+        }
+
+        .partner-box {
+            background: #fff7ef;
+            border: 1px solid #ffe6c9;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 18px 0;
+        }
+
+        .partner-box strong {
+            color: #6a4b00;
+        }
+
+        table.feature-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 14px;
+        }
+
+        table.feature-table th,
+        table.feature-table td {
+            padding: 12px;
+            border: 1px solid #e3e8ec;
+            vertical-align: top;
+        }
+
+        table.feature-table thead th {
+            background: #f1f7ff;
+            color: #073a7a;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        table.feature-table tbody tr:nth-child(even) {
+            background: #fbfdff;
+        }
+
+        .steps {
+            display: flex;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .step {
+            flex: 1;
+            background: #fbfdff;
+            border: 1px solid #e9f2ff;
+            padding: 16px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #eef6ff;
+            color: #0b69ff;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+
+        .highlight-box {
+            background: #073a7a;
+            color: #ffffff;
+            border-radius: 12px;
+            padding: 26px;
+            margin: 28px 0;
+            text-align: center;
+        }
+
+        .highlight-box h2 {
+            color: #ffffff;
+            margin-top: 0;
+        }
+
+        .highlight-box p {
+            color: #dbeafe;
+            font-size: 16px;
+        }
+
+        ul.features {
+            margin: 8px 0 12px 20px;
+            padding: 0;
+        }
+
+        ul.features li {
+            margin: 7px 0;
+        }
+
+        .footer {
+            margin-top: 32px;
+            padding-top: 20px;
+            border-top: 1px solid #eef2f5;
+            color: #444;
+            font-size: 14px;
+        }
+
+        .footer a {
+            color: #0b69ff;
+            text-decoration: none;
+        }
+
+        @media screen and (max-width: 768px) {
+
+            body {
+                padding: 10px;
+                font-size: 14px;
+            }
+
+            .wrap {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .big-claim {
+                font-size: 19px;
+            }
+
+            .benefits {
+                grid-template-columns: 1fr;
+            }
+
+            .steps {
+                flex-direction: column;
+            }
+        }
+
+        @media screen and (max-width: 600px) {
+
+            body {
+                font-size: 13px;
+                padding: 6px;
+            }
+
+            .wrap {
+                padding: 16px;
+                border-radius: 6px;
+            }
+
+            header {
+                align-items: flex-start;
+            }
+
+            .logo {
+                width: 50px;
+                height: 50px;
+            }
+
+            h1 {
+                font-size: 21px;
+            }
+
+            h2 {
+                font-size: 18px;
+            }
+
+            .big-claim {
+                font-size: 17px;
+            }
+
+            .lead,
+            .sub-claim {
+                font-size: 14px;
+            }
+
+            .image-row img {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .cta-area {
+                flex-direction: column;
+            }
+
+            .cta,
+            .cta-ghost {
+                text-align: center;
+                width: 100%;
+            }
+
+            table.feature-table {
+                font-size: 12px;
+            }
+
+            table.feature-table th,
+            table.feature-table td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="wrap">
+
+        <!-- Header -->
+        <header>
+            <img src="https://img.cloudimg.in/uploads/shops/55830/theme/eb/eb33e5dddd69bc708c1aac5ab153f95b.png?v=202603041044"
+                alt="鑫堡股份有限公司 Logo">
+        </header>
+
+
+        <!-- Hero -->
+        <div class="hero">
+
+            <div class="hero-tag">
+                EQUIPMENT MAKER PARTNERSHIP
+            </div>
+
+            <h1>
+                您做設備，我們提供視覺與自動化
+            </h1>
+
+            <div class="big-claim">
+                AOI 視覺檢測｜Vision Guided Robot｜視覺定位｜量測｜OCR｜設備選配模組
+            </div>
+
+            <div class="lead">
+                鑫堡股份有限公司專注於工業機器視覺、AOI 光學檢測與自動化系統整合，
+                希望成為<strong class="emphasis">自動化設備商、機械設備製造商與系統整合商的技術合作夥伴</strong>。
+            </div>
+
+            <div class="sub-claim">
+                當您的客戶需要 AOI、視覺定位、尺寸量測、OCR、Barcode，
+                或需要結合<strong>機械手臂自動抓取、上下料與智慧製造</strong>時，
+                您不需要自行成立完整的視覺團隊。
+            </div>
+
+            <div class="cta-area">
+                <a class="cta" href="mailto:austin.tung@cetus.tw?subject=設備商視覺自動化合作洽談">
+                    🤝 設備商合作洽談
+                </a>
+
+                <a class="cta-ghost" href="https://shop.cetus.tw/" target="_blank">
+                    🛒 查看鑫堡產品與方案
+                </a>
+            </div>
+
+        </div>
+
+
+        <!-- 核心定位 -->
+        <div class="highlight-box">
+
+            <h2>設備由您製造，視覺與自動化由我們支援</h2>
+
+            <p>
+                您負責機構、設備與產線，我們負責機器視覺、AOI、Robot Vision 與系統整合。
+            </p>
+
+            <p>
+                <strong>您的設備 + 鑫堡視覺系統 = 更完整、更具競爭力的自動化方案</strong>
+            </p>
+
+        </div>
+
+
+        <!-- 為設備增加選配功能 -->
+        <div class="section-title">
+            ⚙️ 讓機器視覺成為您設備的選配系統
+        </div>
+
+        <p>
+            設備商可以依照終端客戶需求，將視覺系統設計為：
+        </p>
+
+        <div class="benefits">
+
+            <div class="benefit">
+                <strong>OPTION</strong>
+                AOI、定位、量測、OCR 等功能作為設備選配模組。
+            </div>
+
+            <div class="benefit">
+                <strong>UPGRADE</strong>
+                將既有設備升級為具備智慧辨識與自動判斷能力的設備。
+            </div>
+
+            <div class="benefit">
+                <strong>CUSTOM</strong>
+                依照設備與產品需求，共同開發客製化自動化系統。
+            </div>
+
+        </div>
+
+
+        <!-- 視覺模組 -->
+        <div class="section-title">
+            📊 可整合至設備的智慧視覺模組
+        </div>
+
+        <div class="image-row">
+
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/bc/bc7171f2a46a95f4707f38c1c59473dd.png"
+                alt="機器視覺系統">
+
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/df/df3a36d3454b34320700aff1f9c0c642.png"
+                alt="AOI自動檢測">
+
+            <img src="https://img.cloudimg.in/uploads/shops/55830/products/13/136feaa71425cac67d90598d832e00d2.png"
+                alt="自動化視覺整合">
+
+        </div>
+
+
+        <table class="feature-table">
+
+            <thead>
+                <tr>
+                    <th style="width:180px;">選配模組</th>
+                    <th>系統功能</th>
+                    <th style="width:220px;">適用設備應用</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <tr>
+                    <td>
+                        <strong>🎯 視覺定位</strong>
+                    </td>
+
+                    <td>
+                        透過工業相機辨識產品位置、角度與座標，
+                        可將視覺運算結果提供給 PLC、機械手臂或自動化設備。
+                    </td>
+
+                    <td>
+                        雷射加工、貼標設備、組裝設備、上下料、飛拍定位
+                    </td>
+                </tr>
+
+
+                <tr>
+                    <td>
+                        <strong>🔎 AOI 視覺檢測</strong>
+                    </td>
+
+                    <td>
+                        自動檢查產品是否存在瑕疵、缺件、異物、刮傷、污損、
+                        破損、組裝錯誤或輪廓偏差。
+                    </td>
+
+                    <td>
+                        電子設備、包裝設備、組裝設備、來料檢測、產線自動檢測
+                    </td>
+                </tr>
+
+
+                <tr>
+                    <td>
+                        <strong>📏 視覺量測</strong>
+                    </td>
+
+                    <td>
+                        自動量測產品的長度、寬度、間距、角度、
+                        位置與幾何尺寸。
+                    </td>
+
+                    <td>
+                        精密零件、金屬加工、電子零件、沖壓、組裝設備
+                    </td>
+                </tr>
+
+
+                <tr>
+                    <td>
+                        <strong>🔤 OCR / Barcode</strong>
+                    </td>
+
+                    <td>
+                        自動辨識產品上的文字、流水號、
+                        Barcode、QR Code 與生產資訊。
+                    </td>
+
+                    <td>
+                        包裝設備、印刷設備、產品追溯、生產履歷
+                    </td>
+                </tr>
+
+
+                <tr>
+                    <td>
+                        <strong>🔢 Vision Counting</strong>
+                    </td>
+
+                    <td>
+                        透過影像進行產品、零件與物料數量統計，
+                        減少人工點數與秤重估算造成的誤差。
+                    </td>
+
+                    <td>
+                        包裝、出貨、電子零件、螺絲、端子與物料管理
+                    </td>
+                </tr>
+
+
+                <tr>
+                    <td>
+                        <strong>🧠 AI Vision</strong>
+                    </td>
+
+                    <td>
+                        適用於規則難以完全定義的複雜瑕疵，
+                        可依實際產品影像建立 AI 視覺辨識模型。
+                    </td>
+
+                    <td>
+                        複雜外觀檢測、異物辨識、不規則瑕疵
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+
+        <!-- Robot Vision -->
+        <div class="section-title">
+            🤖 機械手臂視覺整合｜Vision Guided Robot
+        </div>
+
+        <p>
+            傳統機械手臂通常需要固定治具、固定位置與固定方向。
+        </p>
+
+        <p class="big-claim">
+            加入機器視覺後，讓機械手臂可以「看見產品位置」再進行動作。
+        </p>
+
+
+        <div class="partner-box">
+
+            <strong>完整流程：</strong>
+
+            <br><br>
+
+            📷 相機取得影像
+
+            ↓
+
+            🧠 視覺系統辨識產品
+
+            ↓
+
+            📍 計算 X / Y / Angle 座標
+
+            ↓
+
+            ⚙️ 將座標傳送至 PLC / Robot
+
+            ↓
+
+            🤖 機械手臂自動抓取、放置、分類或加工
+
+        </div>
+
+
+        <table class="feature-table">
+
+            <thead>
+                <tr>
+                    <th>機械手臂應用</th>
+                    <th>視覺系統功能</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <tr>
+                    <td>散料抓取</td>
+                    <td>辨識物件位置與角度，提供 Robot 抓取座標。</td>
+                </tr>
+
+                <tr>
+                    <td>料盤取放</td>
+                    <td>判斷產品與料盤位置，自動完成精準取放。</td>
+                </tr>
+
+                <tr>
+                    <td>不規則排列</td>
+                    <td>產品不需要固定治具，可由視覺系統判斷位置。</td>
+                </tr>
+
+                <tr>
+                    <td>上下料</td>
+                    <td>搭配 CNC、加工設備或自動化產線進行上下料。</td>
+                </tr>
+
+                <tr>
+                    <td>自動分類</td>
+                    <td>辨識不同產品、方向或瑕疵後，自動進行分類。</td>
+                </tr>
+
+                <tr>
+                    <td>加工前定位</td>
+                    <td>提供產品實際位置，協助雷雕、加工或組裝定位。</td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+
+        <!-- 分工 -->
+        <div class="section-title">
+            🤝 設備商 × 鑫堡｜技術分工合作
+        </div>
+
+        <table class="feature-table">
+
+            <thead>
+                <tr>
+                    <th>設備商專業</th>
+                    <th>鑫堡專業</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <tr>
+                    <td>
+                        機械結構設計<br>
+                        自動化設備製造<br>
+                        治具與機構設計<br>
+                        PLC 控制<br>
+                        產線規劃
+                    </td>
+
+                    <td>
+                        工業相機選型<br>
+                        鏡頭與光源配置<br>
+                        視覺演算法<br>
+                        AOI 檢測<br>
+                        OCR / Barcode<br>
+                        Vision Guided Robot<br>
+                        PLC / Robot 通訊整合
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+
+        <!-- 合作模式 -->
+        <div class="section-title">
+            🚀 三種設備商合作模式
+        </div>
+
+
+        <div class="benefits">
+
+            <div class="benefit">
+
+                <strong>① 設備選配</strong>
+
+                您的設備原本沒有視覺功能。
+
+                客戶有需求時，可以選配：
+
+                <ul class="features">
+                    <li>AOI 檢測</li>
+                    <li>視覺定位</li>
+                    <li>OCR / Barcode</li>
+                    <li>視覺量測</li>
+                </ul>
+
+            </div>
+
+
+            <div class="benefit">
+
+                <strong>② 共同開發</strong>
+
+                設備商負責：
+
+                <ul class="features">
+                    <li>機構</li>
+                    <li>設備</li>
+                    <li>PLC</li>
+                </ul>
+
+                鑫堡負責：
+
+                <ul class="features">
+                    <li>Vision</li>
+                    <li>AOI</li>
+                    <li>Robot Vision</li>
+                </ul>
+
+            </div>
+
+
+            <div class="benefit">
+
+                <strong>③ 設備升級</strong>
+
+                協助既有設備增加：
+
+                <ul class="features">
+                    <li>自動判斷</li>
+                    <li>智慧定位</li>
+                    <li>品質檢測</li>
+                    <li>產品追溯</li>
+                    <li>自動分類</li>
+                </ul>
+
+            </div>
+
+        </div>
+
+
+        <!-- 痛點 -->
+        <div class="section-title">
+            ⚠️ 設備商常遇到的技術問題
+        </div>
+
+        <table class="feature-table">
+
+            <thead>
+                <tr>
+                    <th>設備商遇到的問題</th>
+                    <th>鑫堡可協助的方向</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <tr>
+                    <td>客戶要求設備增加 AOI 功能</td>
+                    <td>提供 AOI 視覺模組與檢測整合。</td>
+                </tr>
+
+                <tr>
+                    <td>設備需要搭配機械手臂抓取產品</td>
+                    <td>提供 Vision Guided Robot 視覺定位與座標輸出。</td>
+                </tr>
+
+                <tr>
+                    <td>公司沒有專業視覺工程師</td>
+                    <td>由鑫堡提供視覺選型、開發與整合支援。</td>
+                </tr>
+
+                <tr>
+                    <td>案子卡在視覺驗證階段</td>
+                    <td>協助進行產品影像測試與可行性評估。</td>
+                </tr>
+
+                <tr>
+                    <td>需要串接 PLC 或自動化設備</td>
+                    <td>協助規劃視覺系統與設備之間的訊號與通訊流程。</td>
+                </tr>
+
+                <tr>
+                    <td>客戶要求 AI 瑕疵辨識</td>
+                    <td>依實際產品與檢測需求評估 AI 視覺方案。</td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+
+        <!-- 導入流程 -->
+        <div class="section-title">
+            🔧 設備商合作流程
+        </div>
+
+        <div class="steps">
+
+            <div class="step">
+
+                <div class="step-number">1</div>
+
+                <strong>提出需求</strong>
+
+                <div>
+                    提供設備資訊、產品圖片、
+                    檢測需求、節拍與精度需求。
+                </div>
+
+            </div>
+
+
+            <div class="step">
+
+                <div class="step-number">2</div>
+
+                <strong>可行性評估</strong>
+
+                <div>
+                    評估相機、鏡頭、光源、
+                    視覺方法與系統架構。
+                </div>
+
+            </div>
+
+
+            <div class="step">
+
+                <div class="step-number">3</div>
+
+                <strong>樣品測試</strong>
+
+                <div>
+                    進行實際產品影像測試，
+                    確認檢測與定位效果。
+                </div>
+
+            </div>
+
+
+            <div class="step">
+
+                <div class="step-number">4</div>
+
+                <strong>設備整合</strong>
+
+                <div>
+                    完成 Vision、PLC、
+                    Robot 與設備系統串接。
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- 為什麼合作 -->
+        <div class="section-title">
+            💡 為什麼設備商選擇與視覺整合商合作？
+        </div>
+
+        <div class="benefits">
+
+            <div class="benefit">
+
+                <strong>快速增加設備功能</strong>
+
+                不需要從零開始建立機器視覺技術。
+
+            </div>
+
+            <div class="benefit">
+
+                <strong>降低研發風險</strong>
+
+                透過前期視覺測試，確認實際產品是否適合導入。
+
+            </div>
+
+            <div class="benefit">
+
+                <strong>增加設備競爭力</strong>
+
+                將 AOI、Robot Vision 等功能變成設備的附加價值。
+
+            </div>
+
+            <div class="benefit">
+
+                <strong>縮短開發時間</strong>
+
+                視覺與設備同步規劃，降低後期修改與重工。
+
+            </div>
+
+            <div class="benefit">
+
+                <strong>彈性硬體選型</strong>
+
+                依照精度、速度、預算與設備環境選擇適合的視覺硬體。
+
+            </div>
+
+            <div class="benefit">
+
+                <strong>技術合作支援</strong>
+
+                從前期評估、樣品測試到設備整合皆可討論合作。
+
+            </div>
+
+        </div>
+
+
+        <!-- 最終定位 -->
+        <div class="highlight-box">
+
+            <h2>我們不是要取代設備商</h2>
+
+            <p>
+                我們希望成為設備商背後的
+            </p>
+
+            <div style="font-size:26px;font-weight:800;margin:15px 0;">
+                機器視覺 × AOI × 自動化技術團隊
+            </div>
+
+            <p>
+                讓您的設備增加智慧定位、AOI 檢測、Robot Vision 與自動化能力。
+            </p>
+
+            <p>
+                <strong>
+                    您專注做好設備，我們協助完成視覺與自動化。
+                </strong>
+            </p>
+
+        </div>
+
+
+        <!-- Contact -->
+        <div class="section-title">
+            📞 歡迎設備商、機械設備製造商與系統整合商洽談
+        </div>
+
+        <p>
+            如果您目前有設備案件需要增加：
+        </p>
+
+        <ul class="features">
+
+            <li>AOI 自動檢測</li>
+
+            <li>機械手臂視覺定位</li>
+
+            <li>自動取放與上下料</li>
+
+            <li>視覺量測</li>
+
+            <li>OCR / Barcode</li>
+
+            <li>AI 瑕疵辨識</li>
+
+            <li>工業相機、鏡頭與光源整合</li>
+
+        </ul>
+
+        <p>
+            歡迎提供<strong class="blue">設備資訊、產品圖片或樣品</strong>，
+            我們可先協助進行初步視覺應用評估。
+        </p>
+
+
+        <div class="cta-area">
+
+            <a class="cta" href="mailto:austin.tung@cetus.tw?subject=設備商合作需求評估">
+                📩 洽談設備商合作
+            </a>
+
+            <a class="cta-ghost" href="https://www.cetus.tw/" target="_blank">
+                🌐 鑫堡官方網站
+            </a>
+
+        </div>
+
+
+        <!-- Footer -->
+        <div class="footer">
+
+            <strong style="font-size:16px;">
+                鑫堡股份有限公司 CETUS
+            </strong>
+
+            <br>
+
+            Machine Vision × AOI × Automation Integration
+
+            <br><br>
+
+            <a href="https://www.cetus.tw/" target="_blank">
+                鑫堡官網
+            </a>
+
+            ｜
+
+            <a href="https://shop.cetus.tw/" target="_blank">
+                鑫堡商店
+            </a>
+
+            <br><br>
+
+            📍 公司位置：新北市新莊區五權一路13號703室
+
+            <br>
+
+            <strong>業務：</strong> Austin
+
+            <br>
+
+            📞 電話：
+            <a href="tel:0972259172">
+                0972-259-172
+            </a>
+
+            <br>
+
+            📧 電子信箱：
+            <a href="mailto:austin.tung@cetus.tw">
+                austin.tung@cetus.tw
+            </a>
+
+            <br>
+
+            💬 LINE ID：
+            <strong class="emphasis">
+                0972259172
+            </strong>
+
+        </div>
+
+    </div>
+
+</body>
+
+</html>

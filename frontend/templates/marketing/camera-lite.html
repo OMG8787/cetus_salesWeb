@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鑫堡全功能智慧型相機 - 智動化視覺高性價比首選</title>
+    <style>
+        /* 全域樣式設定 */
+        :root {
+            --primary-color: #E67E22;
+            /* 橘金色 (機身背面散熱片色) */
+            --dark-color: #2C3E50;
+            /* 工業深灰藍 */
+            --black-color: #1A1A1A;
+            /* 碳黑色 */
+            --bg-light: #F8F9FA;
+            /* 淺灰背景 */
+            --white: #FFFFFF;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-light);
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header 頁首樣式 */
+        header {
+            background-color: var(--black-color);
+            color: var(--white);
+            text-align: center;
+            padding: 40px 20px;
+            border-bottom: 5px solid var(--primary-color);
+            border-radius: 8px 8px 0 0;
+        }
+
+        .company-name {
+            font-size: 1.1rem;
+            color: var(--primary-color);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: #ccc;
+            background: rgba(255, 255, 255, 0.1);
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+        }
+
+        /* 區塊通用樣式 */
+        section {
+            background-color: var(--white);
+            padding: 35px 30px;
+            margin-top: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        h2 {
+            color: var(--black-color);
+            font-size: 1.6rem;
+            margin-bottom: 20px;
+            border-left: 5px solid var(--primary-color);
+            padding-left: 12px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* 應用場景樣式 */
+        .app-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .app-card {
+            background-color: var(--bg-light);
+            padding: 20px;
+            border-radius: 6px;
+            border-top: 3px solid var(--dark-color);
+            transition: transform 0.2s;
+        }
+
+        .app-card:hover {
+            transform: translateY(-5px);
+            border-top-color: var(--primary-color);
+        }
+
+        .app-card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+            color: var(--dark-color);
+        }
+
+        /* 產品特色樣式 */
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-item {
+            padding: 15px;
+            border-left: 3px solid #eee;
+        }
+
+        .feature-item h3 {
+            color: var(--primary-color);
+            font-size: 1.15rem;
+            margin-bottom: 5px;
+        }
+
+        /* 表格樣式 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th,
+        td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: var(--dark-color);
+            color: var(--white);
+            font-weight: 600;
+            width: 35%;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        /* 表單樣式 */
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+
+        input[type="text"],
+        input[type="tel"],
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        input:focus,
+        textarea:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 5px rgba(230, 126, 34, 0.3);
+        }
+
+        .btn-submit {
+            background-color: var(--primary-color);
+            color: var(--white);
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s;
+        }
+
+        .btn-submit:hover {
+            background-color: #d35400;
+        }
+
+        /* 頁尾樣式 */
+        footer {
+            background-color: var(--black-color);
+            color: var(--white);
+            text-align: center;
+            padding: 30px 20px;
+            margin-top: 25px;
+            border-radius: 0 0 8px 8px;
+            font-size: 0.95rem;
+        }
+
+        footer p {
+            margin-bottom: 8px;
+        }
+
+        .footer-highlight {
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        /* 手機版優化 RWD */
+        @media (max-width: 600px) {
+            header h1 {
+                font-size: 1.7rem;
+            }
+
+            section {
+                padding: 20px 15px;
+            }
+
+            th,
+            td {
+                padding: 10px;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <!-- 頁首區塊 -->
+        <header>
+            <div class="company-name">鑫堡股份有限公司 | 工業視覺專家</div>
+            <h1>鑫堡全功能智慧型相機</h1>
+            <div class="subtitle">標配線材 ｜ 內建高級演算法 ｜ 支援字串條碼輸出</div>
+        </header>
+
+        <!-- 應用場景 -->
+        <section>
+            <h2>🎯 4 大生產追溯應用，完美串接生產履歷</h2>
+            <div class="app-grid">
+                <div class="app-card">
+                    <h3>一維/二維碼讀取</h3>
+                    <p>穩定辨識 QR Code、DataMatrix、Code 128 等各類工業條碼。</p>
+                </div>
+                <div class="app-card">
+                    <h3>字串即時輸出</h3>
+                    <p>解碼後直接將字串透過通訊協定即時傳輸至 PLC、中控 PC 或 MES。</p>
+                </div>
+                <div class="app-card">
+                    <h3>OCR 字元檢查</h3>
+                    <p>針對產品批號、有效日期、噴碼字元進行有無判定與防錯對比。</p>
+                </div>
+                <div class="app-card">
+                    <h3>防錯與重碼過濾</h3>
+                    <p>自動防止標籤漏貼、誤貼或重複列印，大幅降低出貨客訴率。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 產品特色 -->
+        <section>
+            <h2>💎 選擇鑫堡智慧相機的 6 大理由</h2>
+            <div class="feature-list">
+                <div class="feature-item">
+                    <h3>📦 線材全包含，零隱藏成本</h3>
+                    <p>出廠即標配工業級通訊與電源專用線材，免去額外選型煩惱，開箱即用！</p>
+                </div>
+                <div class="feature-item">
+                    <h3>🧠 免寫代碼！內建高級演算法</h3>
+                    <p>內建邊緣檢測、斑點分析(Blob)、精密計數與尺寸量測，縮短專案時程。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>💡 一體化智慧光源配置</h3>
+                    <p>機身前端整合高效率 LED 光源，無需額外購置外部補光設備，光照均勻。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>⚡ 全域快門 (Global Shutter)</h3>
+                    <p>徹底杜絕高速產線常見的「果凍效應」與拖影，精準捕捉每個動態瞬間。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>🔌 工業級多元通訊協議</h3>
+                    <p>支援 RS-232、TCP/IP、Modbus、PROFINET 等主流工業協議，無縫對接。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>⚖️ 預算與效能的完美平衡</h3>
+                    <p>精選 160 萬畫素高感度感測器，專注最具效益的特徵分析，剔除冗餘成本。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 技術規格 -->
+        <section>
+            <h2>📊 專業技術規格參數</h2>
+            <table>
+                <tr>
+                    <th>解析度表現</th>
+                    <td>1408 × 1024 畫素 (精準 1.6 MP)</td>
+                </tr>
+                <tr>
+                    <th>核心感測器</th>
+                    <td>1/2.9" 高感度 CMOS</td>
+                </tr>
+                <tr>
+                    <th>快門模式</th>
+                    <td>全域快門 (Global Shutter)</td>
+                </tr>
+                <tr>
+                    <th>高速傳輸</th>
+                    <td>最大幀率高達 60 fps</td>
+                </tr>
+                <tr>
+                    <th>色彩模式</th>
+                    <td>Mono（高對比黑白，條碼與 OCR 辨識最穩定）</td>
+                </tr>
+                <tr>
+                    <th>標準配置</th>
+                    <td>6 mm 工業級低畸變焦距鏡頭</td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- 預約表單 -->
+        <section>
+            <h2>🎁 鑫堡專屬：免費「樣品測試與光學評估」服務</h2>
+            <p style="margin-bottom: 20px; color: #666;">
+                視覺成功在於細節！我們提供完全免費的樣品測試與專家級光學選型服務，確保在您的實際應用環境中達到最佳的檢測效果。請填寫下方表單，我們將指派視覺應用工程師主動與您聯繫。</p>
+
+            <form action="#" method="POST">
+                <div class="form-group">
+                    <label for="company">公司名稱 *</label>
+                    <input type="text" id="company" name="company" placeholder="請輸入您的公司完整名稱" required>
+                </div>
+                <div class="form-group">
+                    <label for="phone">連絡電話 *</label>
+                    <input type="tel" id="phone" name="phone" placeholder="請輸入聯絡電話或手機" required>
+                </div>
+                <div class="form-group">
+                    <label for="contact">聯絡人 *</label>
+                    <input type="text" id="contact" name="contact" placeholder="請輸入您的姓名與稱謂" required>
+                </div>
+                <div class="form-group">
+                    <label for="product">預計檢測物件 / 條碼類型</label>
+                    <input type="text" id="product" name="product" placeholder="例如：PCB板 QR碼、外包裝有效日期">
+                </div>
+                <div class="form-group">
+                    <label for="desc">檢測挑戰 / 需求說明</label>
+                    <textarea id="desc" name="desc" rows="4"
+                        placeholder="請簡述您的檢測目標或目前遇到的技術挑戰（如：高速字串輸出、漏件防錯、微小瑕疵等）"></textarea>
+                </div>
+                <button type="submit" class="btn-submit">立即送出預約評估</button>
+            </form>
+        </section>
+
+        <!-- 頁尾與聯絡資訊 -->
+        <footer>

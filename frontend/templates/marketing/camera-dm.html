@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="description" content="鑫堡智慧型相機，整合自帶光源、視覺量測、瑕疵檢測、AOI、OCR、一維二維條碼、Blob、邊緣檢測與計數功能，適合工業自動化、設備整合與機器視覺檢測應用。">
+
+    <meta name="keywords"
+        content="智慧相機, 工業相機, 機器視覺, AOI, 瑕疵檢測, 視覺量測, OCR, 條碼檢測, QR Code, DataMatrix, Blob, 邊緣檢測, 自動化檢測, 鑫堡">
+
+    <title>鑫堡智慧型相機｜視覺量測、瑕疵檢測、OCR、條碼與 AOI 整合</title>
+
+    <style>
+        /* ==============================
+           全域樣式
+        ============================== */
+
+        :root {
+            --primary-color: #E67E22;
+            --dark-color: #2C3E50;
+            --black-color: #1A1A1A;
+            --bg-light: #F8F9FA;
+            --white: #FFFFFF;
+            --border-color: #E5E5E5;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-light);
+            color: #333;
+            line-height: 1.7;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+
+        /* ==============================
+           頁首
+        ============================== */
+        header {
+            background-color: var(--black-color);
+            color: var(--white);
+            text-align: center;
+            padding: 25px 20px;
+            border-bottom: 5px solid var(--primary-color);
+            border-radius: 8px 8px 0 0;
+        }
+
+        .company-name {
+            font-size: 1rem;
+            color: var(--primary-color);
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            color: #ddd;
+            background: rgba(255, 255, 255, 0.1);
+            display: inline-block;
+            padding: 6px 18px;
+            border-radius: 20px;
+        }
+
+
+        /* ==============================
+           產品圖片
+        ============================== */
+
+        .product-gallery {
+            background: var(--white);
+            margin-top: 25px;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .product-gallery h2 {
+            color: var(--black-color);
+            font-size: 1.6rem;
+            margin-bottom: 25px;
+            border-left: 5px solid var(--primary-color);
+            padding-left: 12px;
+        }
+
+        .product-images {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+        }
+
+        .product-image-card {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .product-image-card img {
+
+            width: 250px;
+            height: auto;
+            object-fit: contain;
+            display: block;
+            margin: auto;
+            border-radius: 6px;
+        }
+
+        .image-caption {
+            margin-top: 12px;
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+
+
+        /* ==============================
+           區塊通用樣式
+        ============================== */
+
+        section {
+            background-color: var(--white);
+            padding: 35px 30px;
+            margin-top: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        h2 {
+            color: var(--black-color);
+            font-size: 1.6rem;
+            margin-bottom: 20px;
+            border-left: 5px solid var(--primary-color);
+            padding-left: 12px;
+            display: flex;
+            align-items: center;
+        }
+
+
+        /* ==============================
+           應用功能
+        ============================== */
+
+        .app-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .app-card {
+            background-color: var(--bg-light);
+            padding: 22px;
+            border-radius: 6px;
+            border-top: 3px solid var(--dark-color);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .app-card:hover {
+            transform: translateY(-5px);
+            border-top-color: var(--primary-color);
+        }
+
+        .app-card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+            color: var(--dark-color);
+        }
+
+        .app-card p {
+            font-size: 0.95rem;
+        }
+
+
+        /* ==============================
+           產品特色
+        ============================== */
+
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-item {
+            padding: 18px;
+            border-left: 3px solid #eee;
+            transition: border-color 0.2s;
+        }
+
+        .feature-item:hover {
+            border-left-color: var(--primary-color);
+        }
+
+        .feature-item h3 {
+            color: var(--primary-color);
+            font-size: 1.15rem;
+            margin-bottom: 7px;
+        }
+
+
+        /* ==============================
+           量測 / 瑕疵重點區
+        ============================== */
+
+        .inspection-box {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .inspection-item {
+            padding: 25px;
+            border-radius: 8px;
+            background: linear-gradient(135deg,
+                    #f8f9fa 0%,
+                    #ffffff 100%);
+            border: 1px solid var(--border-color);
+        }
+
+        .inspection-item h3 {
+            color: var(--dark-color);
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+
+        .inspection-item strong {
+            color: var(--primary-color);
+        }
+
+
+        /* ==============================
+           技術規格表格
+        ============================== */
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th,
+        td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: var(--dark-color);
+            color: var(--white);
+            font-weight: 600;
+            width: 35%;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+
+        /* ==============================
+           CTA
+        ============================== */
+
+        .cta {
+            background-color: var(--dark-color);
+            color: var(--white);
+            text-align: center;
+            padding: 35px 25px;
+            margin-top: 25px;
+            border-radius: 8px;
+        }
+
+        .cta h2 {
+            color: var(--white);
+            justify-content: center;
+            border-left: none;
+            padding-left: 0;
+            margin-bottom: 10px;
+        }
+
+        .cta p {
+            color: #ddd;
+            margin-bottom: 20px;
+        }
+
+        .btn-product {
+            display: inline-block;
+            background-color: var(--primary-color);
+            color: var(--white);
+            text-decoration: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.2s, transform 0.2s;
+        }
+
+        .btn-product:hover {
+            background-color: #d35400;
+            transform: translateY(-2px);
+        }
+
+
+        /* ==============================
+           頁尾
+        ============================== */
+
+        footer {
+            background-color: var(--black-color);
+            color: var(--white);
+            text-align: center;
+            padding: 30px 20px;
+            margin-top: 25px;
+            border-radius: 0 0 8px 8px;
+            font-size: 0.95rem;
+        }
+
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-highlight {
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+
+        /* ==============================
+           RWD 手機版
+        ============================== */
+
+        @media (max-width: 700px) {
+
+            header h1 {
+                font-size: 1.7rem;
+            }
+
+            .subtitle {
+                font-size: 0.95rem;
+            }
+
+            section {
+                padding: 25px 18px;
+            }
+
+            .product-images {
+                grid-template-columns: 1fr;
+            }
+
+            .inspection-box {
+                grid-template-columns: 1fr;
+            }
+
+            th,
+            td {
+                padding: 10px;
+                font-size: 0.9rem;
+            }
+
+            th {
+                width: 40%;
+            }
+
+        }
+    </style>
+</head>
+
+
+<body>
+
+    <div class="container">
+        <!-- ==============================
+             頁首
+        ============================== -->
+
+
+
+        <!-- ==============================
+             產品圖片
+        ============================== -->
+
+        <div class="product-gallery">
+
+            <h2>
+                📷 鑫堡股份有限公司 ｜ 工業機器視覺與自動化檢測
+            </h2>
+
+            <div class="product-images">
+
+                <div class="product-image-card">
+
+                    <img src="https://img.cloudimg.in/uploads/shops/55830/products/d9/d9966490905e4b164f0e4d4648f00be0.png"
+                        alt="鑫堡智慧型相機正面｜內建光源與工業相機" loading="lazy">
+
+                    <div class="image-caption">
+                        智慧型相機正面｜內建光源
+                    </div>
+
+                </div>
+
+
+                <div class="product-image-card">
+
+                    <img src="https://img.cloudimg.in/uploads/shops/55830/products/f1/f15a81551b76cf2080c03da7d261da8f.png"
+                        alt="鑫堡智慧型相機背面｜工業級散熱結構" loading="lazy">
+
+                    <div class="image-caption">
+                        智慧型相機背面｜工業級結構
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- ==============================
+             技術規格
+        ============================== -->
+
+        <section>
+            <h2>
+                📊 專業技術規格與功能
+            </h2>
+            <table>
+                <tr>
+                    <th>
+                        產品類型
+                    </th>
+                    <td>
+                        智慧型工業相機 / 視覺檢測相機 / 內建光源設計
+                    </td>
+                </tr>
+
+                <tr>
+                    <th>
+                        視覺功能
+                    </th>
+                    <td>
+                        邊緣檢測、Blob 斑點分析、
+                        計數、尺寸量測
+                    </td>
+                </tr>
+                <tr>
+                    <th>
+                        檢測功能
+                    </th>
+                    <td>
+                        外觀檢查、瑕疵辨識、AOI
+                    </td>
+                </tr>
+                <tr>
+                    <th>
+                        辨識功能
+                    </th>
+                    <td>
+                        OCR、一維條碼、二維條碼
+                    </td>
+                </tr>
+                <tr>
+                    <th>
+                        主要應用
+                    </th>
+                    <td>
+                        工業自動化、AOI、
+                        視覺量測、外觀檢查、
+                        生產追溯與設備整合
+                    </td>
+                </tr>
+                <tr>
+                    <th>
+                        適用對象
+                    </th>
+                    <td>
+                        自動化設備商、機械設備商、
+                        製造業、AOI 系統整合商
+                    </td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- ==============================
+             核心應用
+        ============================== -->
+
+        <section>
+
+            <h2>
+                🎯 多元視覺檢測功能
+            </h2>
+
+            <div class="app-grid">
+
+
+                <div class="app-card">
+
+                    <h3>
+                        📏 視覺量測
+                    </h3>
+
+                    <p>
+                        利用影像處理與幾何特徵進行尺寸量測，
+                        可應用於長度、寬度、直徑、間距、
+                        邊緣位置等非接觸式視覺量測。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        🔍 瑕疵檢測 / AOI
+                    </h3>
+
+                    <p>
+                        透過影像分析進行外觀檢查，
+                        可針對刮傷、缺件、髒污、異物、
+                        破損及外觀異常進行檢測。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        🔢 一維 / 二維條碼
+                    </h3>
+
+                    <p>
+                        支援工業條碼讀取應用，
+                        可應用於 QR Code、DataMatrix、
+                        Code 128 等生產追溯需求。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        🔤 OCR 字元辨識
+                    </h3>
+
+                    <p>
+                        可應用於產品序號、批號、
+                        日期、標籤與印刷文字辨識，
+                        協助建立產品追溯與防錯機制。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        ⚫ Blob 斑點分析
+                    </h3>
+
+                    <p>
+                        透過影像中的區域特徵進行物件、
+                        面積、數量及位置分析，
+                        適合零件判定與簡易外觀檢查。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        📐 邊緣與位置檢測
+                    </h3>
+
+                    <p>
+                        擷取產品邊緣與幾何特徵，
+                        可用於定位、尺寸判斷、
+                        對位與自動化設備導引。
+                    </p>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ==============================
+             產品特色
+        ============================== -->
+
+        <section>
+
+            <h2>
+                💎 選擇鑫堡智慧相機的 6 大理由
+            </h2>
+
+            <div class="feature-list">
+
+
+                <div class="feature-item">
+
+                    <h3>
+                        📦 自帶光源
+                    </h3>
+
+                    <p>
+                        相機前端整合光源設計，
+                        減少外部光源設備需求，
+                        有助於維持穩定的拍攝條件。
+                    </p>
+
+                </div>
+
+
+                <div class="feature-item">
+
+                    <h3>
+                        🧠 內建視覺演算法
+                    </h3>
+
+                    <p>
+                        整合邊緣檢測、斑點分析、
+                        計數與尺寸量測等常見影像處理功能，
+                        降低系統整合複雜度。
+                    </p>
+
+                </div>
+
+                <div class="feature-item">
+
+                    <h3>
+                        🔍 支援瑕疵辨識
+                    </h3>
+
+                    <p>
+                        可應用於外觀檢查與 AOI，
+                        協助自動判斷產品是否符合檢測條件。
+                    </p>
+
+                </div>
+
+
+                <div class="feature-item">
+
+                    <h3>
+                        📏 支援視覺量測
+                    </h3>
+
+                    <p>
+                        可利用產品邊緣與幾何特徵進行
+                        非接觸式尺寸量測與位置判定。
+                    </p>
+
+                </div>
+
+
+                <div class="feature-item">
+
+                    <h3>
+                        🔤 OCR / Barcode
+                    </h3>
+
+                    <p>
+                        可應用於文字辨識、條碼讀取、
+                        生產追溯與產品防錯。
+                    </p>
+
+                </div>
+
+
+                <div class="feature-item">
+
+                    <h3>
+                        ⚡ 適合自動化設備整合
+                    </h3>
+
+                    <p>
+                        可導入自動化檢測、產線、
+                        治具與設備整合應用，
+                        適合設備商與製造業導入。
+                    </p>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- ==============================
+             量測與瑕疵
+        ============================== -->
+
+        <section>
+
+            <h2>
+                🔬 視覺量測與瑕疵檢測應用
+            </h2>
+
+            <div class="inspection-box">
+
+
+                <div class="inspection-item">
+
+                    <h3>
+                        📏 視覺尺寸量測
+                    </h3>
+
+                    <p>
+                        適合需要快速、非接觸式尺寸確認的自動化設備。
+                        可利用產品輪廓、邊緣及幾何特徵進行尺寸判定。
+                    </p>
+
+                    <br>
+
+                    <p>
+                        <strong>常見應用：</strong>
+                        長度、寬度、孔徑、間距、位置、
+                        外徑、輪廓與組裝位置。
+                    </p>
+
+                </div>
+
+
+                <div class="inspection-item">
+
+                    <h3>
+                        🔍 外觀瑕疵檢測
+                    </h3>
+
+                    <p>
+                        透過影像分析協助取代部分人工目視檢查，
+                        提升檢測一致性，並可依產品特性進行檢測條件設定。
+                    </p>
+
+                    <br>
+
+                    <p>
+                        <strong>常見應用：</strong>
+                        缺件、異物、刮傷、髒污、
+                        破損、外觀異常與組裝錯誤。
+                    </p>
+
+                </div>
+
+
+                <div class="inspection-item">
+
+                    <h3>
+                        ⚙️ AOI 自動光學檢測
+                    </h3>
+
+                    <p>
+                        可整合至自動化設備與產線，
+                        透過相機、光源及影像演算法完成自動檢測。
+                    </p>
+
+                    <br>
+
+                    <p>
+                        <strong>適合：</strong>
+                        自動化機台、流水線、治具檢測、
+                        零件檢測與生產線防錯。
+                    </p>
+
+                </div>
+
+
+                <div class="inspection-item">
+
+                    <h3>
+                        🤖 機器視覺整合
+                    </h3>
+
+                    <p>
+                        不只是單純影像擷取，
+                        可搭配設備控制、PLC、機械手臂及其他自動化設備，
+                        建立完整視覺檢測流程。
+                    </p>
+
+                    <br>
+
+                    <p>
+                        <strong>應用：</strong>
+                        定位、量測、判定、辨識、分揀與生產追溯。
+                    </p>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+
+
+        <!-- ==============================
+             適用產業
+        ============================== -->
+
+        <section>
+
+            <h2>
+                🏭 適合哪些產線與設備？
+            </h2>
+
+            <div class="app-grid">
+
+
+                <div class="app-card">
+
+                    <h3>
+                        自動化設備
+                    </h3>
+
+                    <p>
+                        可作為設備中的視覺檢測模組，
+                        協助完成定位、辨識、量測與判定。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        AOI 檢測
+                    </h3>
+
+                    <p>
+                        適用於產品外觀、零件、
+                        組裝與生產流程中的自動光學檢測。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        生產追溯
+                    </h3>
+
+                    <p>
+                        搭配 OCR、Barcode 與 QR Code，
+                        建立產品序號與生產履歷。
+                    </p>
+
+                </div>
+
+
+                <div class="app-card">
+
+                    <h3>
+                        機器視覺量測
+                    </h3>
+
+                    <p>
+                        適合需要非接觸式尺寸確認、
+                        位置確認與幾何特徵分析的應用。
+                    </p>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- ==============================
+             頁尾聯絡資訊
+        ============================== -->
+
+        <footer>
+
+
+            📍 樣品寄件 / 公司位置：
+            新北市新莊區五權一路13號703室（新北產業園區）
+
+            <br>
+
+
+            <strong>
+                業務：
+            </strong>
+
+            Austin
+
+            <br>
+
+
+            📞 電話：
+
+            <a href="tel:0972259172">
+
+                0972-259-172
+
+            </a>
+
+            （歡迎來電）
+
+            <br>
+
+
+            📧 電子信箱：
+
+            <a href="mailto:austin.tung@cetus.tw">
+
+                austin.tung@cetus.tw
+
+            </a>
+
+            ｜ 💬 LINE ID：
+
+            <strong class="footer-highlight">
+
+                0972259172
+
+            </strong>
+
+        </footer>
+
+
+    </div>
+
+</body>
+
+</html>
