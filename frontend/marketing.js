@@ -117,8 +117,8 @@ function mkOpenDraft(id) {
 function mkOpenEditor(html) {
   document.getElementById('mk-empty').style.display = 'none';
   document.getElementById('mk-editor').style.display = '';
-  document.getElementById('mk-width').value = '100%';
-  mkSetWidth('100%');
+  document.getElementById('mk-width').value = '190mm';
+  mkSetWidth('190mm');
   const f = mkFrame();
   const doc = f.contentDocument;
   doc.open();
@@ -146,7 +146,7 @@ function mkPrepareDoc() {
   if (!doc || !doc.body || doc.getElementById('mk-edit-style')) return;
   const st = doc.createElement('style');
   st.id = 'mk-edit-style';
-  st.textContent = '[data-mk-sel]{outline:2px dashed #e67e22 !important;outline-offset:2px;}img{cursor:pointer;}a{cursor:text;}body{caret-color:#e67e22;}';
+  st.textContent = '[data-mk-sel]{outline:2px dashed #e67e22 !important;outline-offset:2px;}img{cursor:pointer;}a{cursor:text;}body{caret-color:#e67e22;}[data-mk-pb]{border-top:2px dotted #c0392b;position:relative;}[data-mk-pb]::after{content:"— 從這裡換頁 —";position:absolute;right:0;top:2px;font:12px sans-serif;color:#c0392b;}';
   doc.head.appendChild(st);
   doc.body.contentEditable = 'true';
   doc.body.spellcheck = false;
@@ -172,7 +172,77 @@ function mkFit() {
   const f = mkFrame();
   const d = f.contentDocument;
   if (!d || !d.documentElement) return;
+  mkDrawGuides();
   f.style.height = Math.max(600, d.documentElement.scrollHeight + 20) + 'px';
+}
+
+// ---------------- PDF 分頁線 ----------------
+// 列印時固定 A4、上下左右各留 10mm（mkPrint 會寫進 @page），所以每頁可用高度 277mm、寬度 190mm。
+// 預覽寬度選「PDF（A4 寬）」時，在每 277mm 的位置畫紅色虛線 = 該頁結尾；手動「此處換頁」會推到下一頁開頭。
+const MK_PAGE_MM = 277;
+
+function mkMmToPx(mm) {
+  return (mm * 96) / 25.4;
+}
+
+function mkDrawGuides() {
+  const doc = mkDoc();
+  if (!doc || !doc.body) return;
+  const old = doc.getElementById('mk-guides');
+  if (old) old.remove();
+  const pageH = mkMmToPx(MK_PAGE_MM);
+  const pbs = Array.from(doc.querySelectorAll('[data-mk-pb]'));
+  const pdfMode = document.getElementById('mk-width').value === '190mm';
+  // 手動換頁：用空白墊高模擬「下一頁才開始」（輸出時會移除墊高，改由瀏覽器真正換頁）
+  pbs.forEach((e) => (e.style.height = '0px'));
+  if (pdfMode) {
+    pbs.forEach((e) => {
+      const top = e.getBoundingClientRect().top + doc.defaultView.scrollY;
+      const into = top % pageH;
+      e.style.height = into > 1 ? pageH - into + 'px' : '0px';
+    });
+  }
+  const label = document.getElementById('mk-pages');
+  if (!pdfMode) {
+    if (label) label.textContent = '';
+    return;
+  }
+  const total = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+  const pages = Math.max(1, Math.ceil((total - 2) / pageH));
+  if (label) label.textContent = `約 ${pages} 頁`;
+  if (!document.getElementById('mk-guide').checked) return;
+  const box = doc.createElement('div');
+  box.id = 'mk-guides';
+  box.contentEditable = 'false';
+  box.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:0;pointer-events:none;z-index:99999;';
+  for (let i = 1; i < pages; i++) {
+    const line = doc.createElement('div');
+    line.style.cssText = `position:absolute;left:0;right:0;top:${Math.round(pageH * i)}px;border-top:2px dashed #e74c3c;`;
+    const tag = doc.createElement('span');
+    tag.textContent = `↑ 第 ${i} 頁結束　第 ${i + 1} 頁開始 ↓`;
+    tag.style.cssText = 'position:absolute;right:0;top:0;background:#e74c3c;color:#fff;font:11px sans-serif;padding:1px 6px;';
+    line.appendChild(tag);
+    box.appendChild(line);
+  }
+  doc.body.appendChild(box);
+}
+
+function mkPageBreak() {
+  if (!mkNeedSel()) return;
+  const prev = mkSel.previousElementSibling;
+  if (prev && prev.hasAttribute('data-mk-pb')) {
+    mkPushUndo();
+    prev.remove(); // 再按一次 = 取消換頁
+    mkDirty = true;
+    return mkFit();
+  }
+  mkPushUndo();
+  const b = mkDoc().createElement('div');
+  b.setAttribute('data-mk-pb', '1');
+  b.setAttribute('style', 'break-before:page;page-break-before:always;height:0px;');
+  mkSel.before(b);
+  mkDirty = true;
+  mkFit();
 }
 
 function mkSetWidth(w) {
@@ -210,7 +280,10 @@ function mkSelParent() {
 
 // ---------------- 還原（區塊 / 取代 / 換圖用） ----------------
 function mkPushUndo() {
-  const body = mkDoc().body;
+  const doc0 = mkDoc();
+  const g = doc0.getElementById('mk-guides');
+  if (g) g.remove();
+  const body = doc0.body;
   const had = mkSel;
   if (had) had.removeAttribute('data-mk-sel');
   mkUndoStack.push(body.innerHTML);
@@ -418,6 +491,12 @@ function mkFinalHtml() {
   const clone = doc.documentElement.cloneNode(true);
   const st = clone.querySelector('#mk-edit-style');
   if (st) st.remove();
+  const gd = clone.querySelector('#mk-guides');
+  if (gd) gd.remove();
+  clone.querySelectorAll('[data-mk-pb]').forEach((e) => {
+    e.style.height = '0px';
+    e.removeAttribute('data-mk-pb');
+  });
   clone.querySelectorAll('[data-mk-sel]').forEach((e) => e.removeAttribute('data-mk-sel'));
   clone.querySelectorAll('[contenteditable]').forEach((e) => e.removeAttribute('contenteditable'));
   clone.querySelectorAll('[spellcheck]').forEach((e) => e.removeAttribute('spellcheck'));
@@ -496,7 +575,8 @@ function mkPrint() {
   document.body.appendChild(f);
   const d = f.contentDocument;
   d.open();
-  d.write(mkFinalHtml());
+  // 固定 A4 + 10mm 邊界，分頁位置才會跟預覽的紅色分頁線一致
+  d.write(mkFinalHtml().replace('</head>', '<style>@page{size:A4;margin:10mm;}body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style></head>'));
   d.close();
   const go = () => {
     f.contentWindow.focus();

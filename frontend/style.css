@@ -413,6 +413,6 @@ header, .tabs { position: relative; z-index: 300; }
 .mk-row input[type="text"], .mk-row input:not([type]) { width: auto; flex: 1 1 180px; margin: 0; }
 .mk-color input { width: 34px; height: 24px; padding: 0; margin: 0 0 0 2px; vertical-align: middle; }
 .mk-blockbar { border-top: 1px dashed #ccd; padding-top: 6px; margin-bottom: 0; }
-.mk-frame-wrap { background: #dfe4ea; padding: 10px; border-radius: 6px; text-align: center; }
+.mk-frame-wrap { overflow-x: auto; background: #dfe4ea; padding: 10px; border-radius: 6px; text-align: center; }
 #mk-frame { width: 100%; min-height: 600px; border: 0; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.2); }
 @media (max-width: 900px) { .mk-layout { flex-direction: column; } .mk-side { width: 100%; } }

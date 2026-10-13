@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>行銷宣傳製作 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261013d" />
+<link rel="stylesheet" href="style.css?v=20261013e" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -114,10 +114,14 @@
             <button class="btn-mini" onclick="mkMove(1)">↓ 下移</button>
             <button class="btn-mini" onclick="mkDel()">🗑 刪除</button>
             <button class="btn-mini" onclick="mkUndo()" title="還原上一次複製 / 刪除 / 移動 / 換圖 / 取代">↶ 還原區塊操作</button>
-            <select id="mk-width" onchange="mkSetWidth(this.value)" title="預覽寬度">
+            <button class="btn-mini" onclick="mkPageBreak()" title="在選取的區塊前面強制換頁（印成 PDF 時這裡會從新的一頁開始）">⤓ 此處換頁</button>
+            <select id="mk-width" onchange="mkSetWidth(this.value)" title="預覽寬度；選「PDF（A4）」才會顯示分頁線">
+              <option value="190mm">PDF（A4 寬）</option>
               <option value="100%">電腦</option>
               <option value="414px">手機</option>
             </select>
+            <label style="font-weight:normal;font-size:13px;"><input type="checkbox" id="mk-guide" checked onchange="mkDrawGuides()" /> 顯示分頁線</label>
+            <span id="mk-pages" class="calc-hint"></span>
             <input type="file" id="mk-file" accept="image/*" style="display:none;" />
           </div>
         </div>
@@ -127,9 +131,9 @@
   </div>
 </section>
 
-<script src="config.js?v=20261013d"></script>
-<script src="demo.js?v=20261013d"></script>
-<script src="common.js?v=20261013d"></script>
-<script src="marketing.js?v=20261013d"></script>
+<script src="config.js?v=20261013e"></script>
+<script src="demo.js?v=20261013e"></script>
+<script src="common.js?v=20261013e"></script>
+<script src="marketing.js?v=20261013e"></script>
 </body>
 </html>
