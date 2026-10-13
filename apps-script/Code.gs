@@ -39,7 +39,7 @@
  *   Staff         - Name, Role（業務/FAE 自動完成 + 快速新增用）
  *   Customers     - CompanyName, Contact, Phone, Email, NextFollowUpDate, Category,
  *                    Urgency, Notes, CalendarEventId, HasTransacted, LastTransactionDate,
- *                    NextFollowUpNote（下次追蹤說明：這次進度到哪、下次要做什麼）, NextFollowUpTime（預約時間 HH:mm，沒有就是整天）
+ *                    NextFollowUpNote（下次追蹤說明：這次進度到哪、下次要做什麼）, NextFollowUpTime（預約時間 HH:mm，沒有就是整天）, CompanyPhone（公司電話；Phone 是聯繫人電話）, TaxId（統一編號）, Address（公司地址）
  *                    （Contact/Phone/Email 是主要聯絡人，多個聯絡窗口/電話/信箱存在 CustomerContacts；
  *                    Category 固定四選一：AOI同業資料／器材原廠／機構合作設備商／一般客戶）
  *   CustomerContacts - CompanyName, ContactName, Phone, Email, Title, Notes
@@ -239,7 +239,7 @@ SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Pric
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
 SCHEMA[SHEET_STAFF] = ['Name', 'Role'];
-SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime'];
+SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime', 'CompanyPhone', 'TaxId', 'Address'];
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
@@ -265,7 +265,7 @@ TEXT_COLUMNS[SHEET_CASES] = ['ContactPhone', 'CaseID'];
 TEXT_COLUMNS[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'AccuracyUm'];
 TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
-TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
+TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime', 'CompanyPhone', 'TaxId']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
 TEXT_COLUMNS[SHEET_CUSTOMER_CONTACTS] = ['Phone'];
 TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday'];
 TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
@@ -415,7 +415,7 @@ function importLegacyCustomers_(log) {
  *  其他（已經有 0、括號、加號、分機等）不動。
  */
 function repairPhoneColumns_(log) {
-  var targets = [[SHEET_CUSTOMERS, 'Phone'], [SHEET_CUSTOMER_CONTACTS, 'Phone'], [SHEET_CASES, 'ContactPhone'], [SHEET_USERS, 'Phone']];
+  var targets = [[SHEET_CUSTOMERS, 'Phone'], [SHEET_CUSTOMERS, 'CompanyPhone'], [SHEET_CUSTOMER_CONTACTS, 'Phone'], [SHEET_CASES, 'ContactPhone'], [SHEET_USERS, 'Phone']];
   var fixed = 0;
   targets.forEach(function (t) {
     var sheet = getDb_(false).getSheetByName(t[0]);
@@ -4896,6 +4896,9 @@ function handleAddCustomer(body) {
     LastTransactionDate: body.lastTransactionDate || '',
     NextFollowUpNote: body.nextFollowUpNote || '',
     NextFollowUpTime: normTimeStr_(body.nextFollowUpTime),
+    CompanyPhone: body.companyPhone || '',
+    TaxId: body.taxId || '',
+    Address: body.address || '',
   };
 
   appendObjectRow(SHEET_CUSTOMERS, customer);

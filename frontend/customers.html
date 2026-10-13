@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>客戶管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261013b" />
+<link rel="stylesheet" href="style.css?v=20261013c" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -53,7 +53,10 @@
   <div id="customer-add-panel">
     <input id="cust-company" placeholder="公司名稱" />
     <input id="cust-contact" placeholder="聯絡人" />
-    <input id="cust-phone" placeholder="電話" />
+    <input id="cust-phone" placeholder="聯繫人電話" />
+    <input id="cust-company-phone" placeholder="公司電話" />
+    <input id="cust-taxid" placeholder="統一編號" maxlength="8" />
+    <input id="cust-address" placeholder="公司地址" />
     <input id="cust-email" placeholder="Email" />
     <label>客戶分類：</label>
     <select id="cust-category">
@@ -98,7 +101,7 @@
     <button onclick="loadCustomers()">重新整理</button>
   </div>
   <table id="customer-table">
-    <thead><tr><th>公司</th><th>聯絡人</th><th>電話</th><th>分類</th><th>急迫性</th><th>下次追蹤日</th><th>交易狀態</th><th>操作</th></tr></thead>
+    <thead><tr><th>公司</th><th>聯絡人</th><th>聯繫人電話</th><th>分類</th><th>急迫性</th><th>下次追蹤日</th><th>交易狀態</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 
@@ -138,7 +141,10 @@
     <div class="modal-header"><h3>編輯客戶資料</h3><button onclick="closeCustomerEditModal()">關閉</button></div>
     <input id="ce-company" placeholder="公司名稱" />
     <input id="ce-contact" placeholder="聯絡人" />
-    <input id="ce-phone" placeholder="電話" />
+    <input id="ce-phone" placeholder="聯繫人電話" />
+    <input id="ce-company-phone" placeholder="公司電話" />
+    <input id="ce-taxid" placeholder="統一編號" maxlength="8" />
+    <input id="ce-address" placeholder="公司地址" />
     <input id="ce-email" placeholder="Email" />
     <label>客戶分類：</label>
     <select id="ce-category">
@@ -220,9 +226,9 @@
   </div>
 </div>
 
-<script src="config.js?v=20261013b"></script>
-<script src="demo.js?v=20261013b"></script>
-<script src="common.js?v=20261013b"></script>
-<script src="customers.js?v=20261013b"></script>
+<script src="config.js?v=20261013c"></script>
+<script src="demo.js?v=20261013c"></script>
+<script src="common.js?v=20261013c"></script>
+<script src="customers.js?v=20261013c"></script>
 </body>
 </html>
