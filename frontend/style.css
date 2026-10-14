@@ -416,3 +416,7 @@ header, .tabs { position: relative; z-index: 300; }
 .mk-frame-wrap { overflow-x: auto; background: #dfe4ea; padding: 10px; border-radius: 6px; text-align: center; }
 #mk-frame { width: 100%; min-height: 600px; border: 0; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.2); }
 @media (max-width: 900px) { .mk-layout { flex-direction: column; } .mk-side { width: 100%; } }
+
+/* ---- 資料庫管理 ---- */
+.db-bar { height: 18px; background: #e3e8ee; border-radius: 9px; overflow: hidden; }
+.db-bar-fill { height: 100%; width: 0; background: #2ecc71; transition: width .3s; }

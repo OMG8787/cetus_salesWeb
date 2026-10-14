@@ -99,6 +99,13 @@ function handleDemoApi(action, params) {
         logCount: 0,
       };
 
+    case 'dbStatus':
+    case 'dbTrim': {
+      const sheets = [['Products', 1800, 25, 1990], ['Customers', 120, 16, 1000], ['ContactLogs', 400, 7, 1000], ['Cases', 40, 20, 1000], ['Users', 3, 7, 1000]].map(([name, d, cols, maxRows]) => ({ name, dataRows: d, maxRows, maxCols: cols, cells: maxRows * cols, releasable: Math.max(0, maxRows - (d + 21)) * cols }));
+      const total = sheets.reduce((a, s) => a + s.cells, 0);
+      return { success: true, sheets, totalCells: total, limit: 10000000, percent: Math.round(total / 100) / 100, releasable: sheets.reduce((a, s) => a + s.releasable, 0), released: 0, trimmedSheets: 0 };
+    }
+
     case 'getLoginLogs':
       return { success: true, logs: [], summary: [] };
 

@@ -114,6 +114,8 @@ var ROUTES = {
   importBaslerProducts:    { auth: true, fn: handleImportBaslerProducts },
   importMindvisionProducts: { auth: true, fn: handleImportMindvisionProducts },
   importMyutronProducts:   { auth: true, fn: handleImportMyutronProducts },
+  dbStatus:                { auth: true,  fn: handleDbStatus },
+  dbTrim:                  { auth: true,  fn: handleDbTrim },
   getCalcCatalog:          { auth: true, fn: handleGetCalcCatalog },
   syncCalcCatalog:         { auth: true, fn: handleSyncCalcCatalog },
 
@@ -297,6 +299,8 @@ PERMISSIONS['addUser'] = ['admin'];
 PERMISSIONS['updateUser'] = ['admin'];
 PERMISSIONS['deleteUser'] = ['admin'];
 PERMISSIONS['resetUserPassword'] = ['admin'];
+PERMISSIONS['dbStatus'] = ['admin'];
+PERMISSIONS['dbTrim'] = ['admin'];
 PERMISSIONS['getLoginOverview'] = ['admin'];
 PERMISSIONS['getLoginLogs'] = ['admin'];
 PERMISSIONS['forceLogout'] = ['admin'];
@@ -523,6 +527,72 @@ function setup() {
   return log.join('\n');
 }
 
+// ------------------------------------------------------------
+// 資料庫管理：容量檢視 + 釋放空白儲存格（僅 admin）
+// Google 試算表上限是「每個檔案 1,000 萬個儲存格」（列 × 欄，空白的也算）。新增工作表預設 1000 列 × 26 欄 = 26,000 格，
+// 所以沒資料的工作表也佔空間。dbTrim 把每個工作表最後一筆資料後面多出來的空白列刪掉（保留 20 列緩衝、至少 21 列），不動資料與欄位。
+// ------------------------------------------------------------
+var DB_CELL_LIMIT = 10000000;
+var DB_KEEP_SPARE_ROWS = 20;
+
+/** 這個工作表「資料最後一列 + 緩衝」要保留的列數（至少 21 列）。 */
+function dbKeepRows_(sheet) {
+  return Math.max(sheet.getLastRow() + DB_KEEP_SPARE_ROWS, DB_KEEP_SPARE_ROWS + 1);
+}
+
+function dbSheetInfo_(sheet) {
+  var maxRows = sheet.getMaxRows();
+  var maxCols = sheet.getMaxColumns();
+  var keep = dbKeepRows_(sheet);
+  return {
+    name: sheet.getName(),
+    dataRows: Math.max(0, sheet.getLastRow() - 1),
+    maxRows: maxRows,
+    maxCols: maxCols,
+    cells: maxRows * maxCols,
+    releasable: maxRows > keep ? (maxRows - keep) * maxCols : 0,
+  };
+}
+
+function handleDbStatus(body) {
+  var sheets = getDb_(false).getSheets().map(dbSheetInfo_);
+  var total = 0;
+  var releasable = 0;
+  sheets.forEach(function (s) {
+    total += s.cells;
+    releasable += s.releasable;
+  });
+  sheets.sort(function (a, b) {
+    return b.cells - a.cells;
+  });
+  return { success: true, sheets: sheets, totalCells: total, limit: DB_CELL_LIMIT, percent: Math.round((total / DB_CELL_LIMIT) * 10000) / 100, releasable: releasable };
+}
+
+function handleDbTrim(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var released = 0;
+    var trimmed = 0;
+    getDb_(false).getSheets().forEach(function (sheet) {
+      var keep = dbKeepRows_(sheet);
+      var max = sheet.getMaxRows();
+      if (max > keep) {
+        released += (max - keep) * sheet.getMaxColumns();
+        sheet.deleteRows(keep + 1, max - keep);
+        trimmed++;
+      }
+    });
+    SpreadsheetApp.flush();
+    var st = handleDbStatus(body);
+    st.released = released;
+    st.trimmedSheets = trimmed;
+    return st;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** 定時觸發用：碰一下試算表跟快取，讓 Apps Script 保持「熱」的狀態，網頁操作比較不會卡好幾秒。 */
 function keepWarm() {
   getDb_(false).getSheets().length;
@@ -665,6 +735,12 @@ function sheetToObjects(sheetName) {
   return { header: header, rows: rows };
 }
 
+/** 列數不夠就自動補列（釋放空白儲存格 dbTrim 之後，工作表可能剛好只剩幾列空白）。lastNeededRow = 這次寫入要用到的最後一列。 */
+function ensureRows_(sheet, lastNeededRow) {
+  var max = sheet.getMaxRows();
+  if (lastNeededRow > max) sheet.insertRowsAfter(max, Math.max(100, lastNeededRow - max));
+}
+
 function appendObjectRow(sheetName, obj) {
   var sheet = getSheet(sheetName);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -673,6 +749,7 @@ function appendObjectRow(sheetName, obj) {
   });
   // 電話、編號這類文字欄位要先把儲存格設成「純文字」再寫入，不然 0912... 會被 Sheets 當數字吃掉開頭的 0
   var target = sheet.getLastRow() + 1;
+  ensureRows_(sheet, target);
   (TEXT_COLUMNS[sheetName] || []).forEach(function (c) {
     var i = header.indexOf(c);
     if (i > -1) sheet.getRange(target, i + 1).setNumberFormat('@');
@@ -2818,6 +2895,7 @@ function importDehongProducts_(log, opts) {
       });
     });
     var startRow = sheet.getLastRow() + 1;
+    ensureRows_(sheet, startRow + values.length - 1);
     var range = sheet.getRange(startRow, 1, values.length, header.length);
     range.setNumberFormat('@');
     range.setValues(values);
@@ -2997,6 +3075,7 @@ function writeProductRows_(newRows) {
       return obj.hasOwnProperty(h) ? obj[h] : '';
     });
   });
+  ensureRows_(sheet, sheet.getLastRow() + values.length);
   var range = sheet.getRange(sheet.getLastRow() + 1, 1, values.length, header.length);
   range.setNumberFormat('@');
   range.setValues(values);

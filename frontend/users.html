@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>帳號管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261013e" />
+<link rel="stylesheet" href="style.css?v=20261014a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -83,11 +83,31 @@
     <thead><tr><th>帳號</th><th>顯示名稱</th><th>角色</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
+  <details id="db-admin" class="panel" style="margin-top:24px;">
+    <summary style="cursor:pointer;font-weight:bold;font-size:16px;">🗄️ 資料庫管理（容量 / 釋放空白儲存格）</summary>
+    <div class="calc-hint" style="margin:8px 0;">
+      Google 試算表的上限是「<b>每個檔案 1,000 萬個儲存格</b>」（列 × 欄，<b>空白的也算</b>），不是 100 萬列。
+      新增的工作表預設 1000 列 × 26 欄 = 26,000 格，所以只有 1 筆資料也佔 26,000 格，幾十個工作表就吃掉上限的一大塊。
+      資料越多，每次讀整張表也會越慢，建議使用率超過 50% 就規劃整理或封存。
+    </div>
+    <div class="db-bar"><div id="db-bar-fill" class="db-bar-fill"></div></div>
+    <div id="db-summary" style="margin:6px 0;"></div>
+    <div style="margin:8px 0;">
+      <button class="btn-secondary" onclick="loadDbStatus()">↻ 重新整理</button>
+      <button id="db-trim-btn" onclick="trimDb()">釋放空白儲存格</button>
+    </div>
+    <table id="db-table">
+      <thead><tr><th>工作表</th><th>資料列數</th><th>配置列 × 欄</th><th>配置儲存格</th><th>可釋放</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="calc-hint" id="db-note"></div>
+  </details>
 </section>
 
-<script src="config.js?v=20261013e"></script>
-<script src="demo.js?v=20261013e"></script>
-<script src="common.js?v=20261013e"></script>
-<script src="users.js?v=20261013e"></script>
+<script src="config.js?v=20261014a"></script>
+<script src="demo.js?v=20261014a"></script>
+<script src="common.js?v=20261014a"></script>
+<script src="users.js?v=20261014a"></script>
+<script src="dbadmin.js?v=20261014a"></script>
 </body>
 </html>
