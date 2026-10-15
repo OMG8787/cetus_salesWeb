@@ -60,6 +60,80 @@ function demoDocResult(filenamePrefix, format, textSummary) {
   return { success: true, filename: filenamePrefix + ext, mimeType: 'text/plain', base64: btoa(unescape(encodeURIComponent(textSummary))) };
 }
 
+const DEMO_FIELD_LABELS = {
+  CompanyName: '公司名稱', Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', TaxId: '統一編號', Address: '地址',
+  Category: '分類', Urgency: '急迫性', Notes: '客戶備註', HasTransacted: '交易狀態', LastTransactionDate: '最近交易日',
+  NextFollowUpDate: '下次追蹤日', NextFollowUpTime: '預約時間', NextFollowUpNote: '下次洽談內容',
+};
+
+function demoNow() {
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  return { date: `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`, stamp: `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}` };
+}
+
+/** 示範模式：找客戶（先看公司名稱，找不到再看列號），回傳陣列索引或 -1。 */
+function demoFindCustomer(db, rowIndex, companyName) {
+  if (companyName) {
+    const i = db.customers.findIndex((c) => c.CompanyName === companyName);
+    if (i > -1) return i;
+    return -1;
+  }
+  return db.customers[rowIndex] ? Number(rowIndex) : -1;
+}
+
+/** 示範模式：改客戶資料 + 記修改紀錄 + 公司改名連動，等同後端 applyCustomerUpdate_ / handleSaveFollowUp。 */
+function demoSaveCustomer(db, params) {
+  const idx = demoFindCustomer(db, params.rowIndex, params.companyName);
+  if (idx < 0) return { success: false, message: '找不到這間客戶（可能已被刪除或改名），請按「↻ 重撈資料」後再試' };
+  const cust = db.customers[idx];
+  const fields = Object.assign({}, params.fields || {});
+  if (fields.CompanyName !== undefined) {
+    fields.CompanyName = String(fields.CompanyName).trim();
+    if (!fields.CompanyName) return { success: false, message: '公司名稱不能空白' };
+    const key = (v) => String(v).replace(/\s+/g, '').toLowerCase();
+    if (db.customers.some((c, i) => i !== idx && key(c.CompanyName) === key(fields.CompanyName))) return { success: false, message: '已經有「' + fields.CompanyName + '」這間客戶了，不能改成重複的名稱。' };
+  }
+  if (fields.NextFollowUpDate === '') fields.NextFollowUpTime = '';
+  const changed = Object.keys(fields).filter((k) => String(cust[k] == null ? '' : cust[k]).trim() !== String(fields[k] == null ? '' : fields[k]).trim());
+  const oldObj = Object.assign({}, cust);
+  const lines = changed.map((k) => `${DEMO_FIELD_LABELS[k] || k}：${oldObj[k] ? String(oldObj[k]).slice(0, 40) : '（空白）'} → ${fields[k] ? String(fields[k]).slice(0, 40) : '（空白）'}`);
+  let keptOld = false;
+  changed.forEach((k) => (cust[k] = fields[k]));
+  if (changed.indexOf('CompanyName') > -1) {
+    db.cases.forEach((c) => {
+      if (c.CustomerName === oldObj.CompanyName) c.CustomerName = cust.CompanyName;
+      if (c.EndCustomerName === oldObj.CompanyName) c.EndCustomerName = cust.CompanyName;
+    });
+    (db.customerContacts || []).forEach((c) => c.CompanyName === oldObj.CompanyName && (c.CompanyName = cust.CompanyName));
+    db.contactLogs.forEach((l) => l.CompanyName === oldObj.CompanyName && (l.CompanyName = cust.CompanyName));
+  }
+  if (params.keepOldContact && changed.indexOf('Contact') > -1 && oldObj.Contact) {
+    db.customerContacts = db.customerContacts || [];
+    if (!db.customerContacts.some((c) => c.CompanyName === cust.CompanyName && c.ContactName === oldObj.Contact)) {
+      db.customerContacts.push({ CompanyName: cust.CompanyName, ContactName: oldObj.Contact, Phone: oldObj.Phone || '', Email: oldObj.Email || '', Title: '', Notes: '原主要聯絡人（' + demoNow().date + ' 更換）' });
+      keptOld = true;
+    }
+  }
+  const now = demoNow();
+  const follow = ['NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote'];
+  const method = changed.length && changed.every((k) => follow.indexOf(k) > -1) ? '改期' : '資料修改';
+  let log = null;
+  const mk = (o) => {
+    const row = Object.assign({ Date: now.date, CreatedAt: now.stamp, CompanyName: cust.CompanyName, Contact: '', Method: '', Summary: '', Salesperson: typeof currentUsername !== 'undefined' ? currentUsername : '', CaseID: '', Changes: '' }, o);
+    db.contactLogs.push(row);
+    return Object.assign({ RowIndex: db.contactLogs.length - 1 }, row);
+  };
+  if (params.log) {
+    if (!String(params.log.summary || '').trim()) return { success: false, message: '請填寫這次追蹤的結果 / 聯繫內容' };
+    log = mk({ Contact: params.log.contact || '', Method: params.log.method || '', Summary: String(params.log.summary).trim(), CaseID: params.log.caseId || '', Changes: lines.join('\n') });
+  } else if (lines.length && !params.noLog) {
+    log = mk({ Method: params.logMethod || method, Summary: params.logSummary || (method === '改期' ? '修改下次追蹤' : '修改客戶資料'), CaseID: params.caseId || '', Changes: lines.join('\n') });
+  }
+  saveDemoDB(db);
+  return { success: true, customer: Object.assign({ RowIndex: idx }, cust), log, changes: lines, keptOldContact: keptOld };
+}
+
 function handleDemoApi(action, params) {
   const db = loadDemoDB();
 
@@ -585,16 +659,17 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
-    case 'updateCustomer': {
-      const c = db.customers[params.rowIndex];
-      if (!c) return { success: false, message: '查無此客戶' };
-      Object.assign(c, params.fields || {});
-      saveDemoDB(db);
-      return { success: true };
-    }
+    case 'updateCustomer':
+    case 'saveFollowUp':
+      return demoSaveCustomer(db, params);
 
     case 'deleteCustomer': {
-      db.customers.splice(params.rowIndex, 1);
+      const idx = demoFindCustomer(db, params.rowIndex, params.companyName);
+      if (idx < 0) return { success: false, message: '找不到這間客戶（可能已被刪除），請重新整理' };
+      const name = db.customers[idx].CompanyName;
+      const n = db.cases.filter((c) => c.CustomerName === name).length;
+      if (n && !params.force) return { success: false, needConfirm: true, caseCount: n, message: '「' + name + '」底下還有 ' + n + ' 個案件，刪除客戶後這些案件會找不到客戶資料。' };
+      db.customers.splice(idx, 1);
       saveDemoDB(db);
       return { success: true };
     }
@@ -638,24 +713,29 @@ function handleDemoApi(action, params) {
 
     // ---------------- 客戶聯繫紀錄 ----------------
     case 'addContactLog': {
-      db.contactLogs.push({
-        Date: new Date().toISOString().slice(0, 10),
-        CompanyName: params.companyName || '',
+      if (!String(params.companyName || '').trim()) return { success: false, message: '請填公司名稱' };
+      const now = demoNow();
+      const row = {
+        Date: now.date,
+        CreatedAt: now.stamp,
+        CompanyName: String(params.companyName).trim(),
         Contact: params.contact || '',
         Method: params.method || '',
         Summary: params.summary || '',
-        Salesperson: params.salesperson || '',
+        Salesperson: params.salesperson || (typeof currentUsername !== 'undefined' ? currentUsername : ''),
         CaseID: params.caseId || '',
-      });
+        Changes: '',
+      };
+      db.contactLogs.push(row);
       saveDemoDB(db);
-      return { success: true };
+      return { success: true, log: Object.assign({ RowIndex: db.contactLogs.length - 1 }, row) };
     }
 
     case 'getContactLogs': {
-      let logs = db.contactLogs.map((l, i) => Object.assign({ RowIndex: i }, l));
+      let logs = db.contactLogs.map((l, i) => Object.assign({ RowIndex: i, CreatedAt: '', Changes: '' }, l));
       if (params.date) logs = logs.filter((l) => l.Date === params.date);
       if (params.companyName) logs = logs.filter((l) => l.CompanyName === params.companyName);
-      logs.sort((a, b) => new Date(b.Date) - new Date(a.Date));
+      logs.sort((a, b) => String(b.Date).localeCompare(String(a.Date)) || String(b.CreatedAt).localeCompare(String(a.CreatedAt)) || b.RowIndex - a.RowIndex);
       return { success: true, logs };
     }
 

@@ -44,7 +44,9 @@
  *                    Category 固定四選一：AOI同業資料／器材原廠／機構合作設備商／一般客戶）
  *   CustomerContacts - CompanyName, ContactName, Phone, Email, Title, Notes
  *                    （一間公司可能對應多列，用 CompanyName 關聯，管理多個聯絡窗口）
- *   ContactLogs   - Date, CompanyName, Contact, Method, Summary, Salesperson, CaseID
+ *   ContactLogs   - Date, CompanyName, Contact, Method, Summary, Salesperson, CaseID, CreatedAt, Changes
+ *                    （CreatedAt = 記錄時間 yyyy-MM-dd HH:mm；Changes = 這次改了哪些客戶資料 / 追蹤日，一行一項。
+ *                    Method 為「資料修改」「改期」的是系統自動記下的修改紀錄，不是實際聯繫，工作日報會略過）
  *                    （CaseID 選填，標記這筆聯繫是針對哪個案件/專案，同客戶有多案件時用來分開查）
  *   Users         - Username, PasswordHash, Role, DisplayName, Phone, Email, Birthday（個人資料可由本人在「個人資料」頁修改）
  *   LoginLogs     - LoginTime, Username, DisplayName, Result, DeviceId, DeviceLabel, LastActive, EndTime, EndReason（登入歷程）
@@ -177,6 +179,7 @@ var ROUTES = {
   getCustomers:            { auth: true, fn: handleGetCustomers },
   addCustomer:             { auth: true, fn: handleAddCustomer },
   updateCustomer:          { auth: true, fn: handleUpdateCustomer },
+  saveFollowUp:            { auth: true, fn: handleSaveFollowUp },
   deleteCustomer:          { auth: true, fn: handleDeleteCustomer },
 
   // 客戶聯絡人（一間公司可以有多個聯絡窗口/電話/信箱）
@@ -242,7 +245,7 @@ SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectCont
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
 SCHEMA[SHEET_STAFF] = ['Name', 'Role'];
 SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime', 'CompanyPhone', 'TaxId', 'Address'];
-SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID'];
+SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID', 'CreatedAt', 'Changes'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
 SCHEMA[SHEET_USERS] = ['Username', 'PasswordHash', 'Role', 'DisplayName', 'Phone', 'Email', 'Birthday'];
@@ -265,7 +268,7 @@ SCHEMA[SHEET_DEVICES] = ['DeviceId', 'Username', 'DeviceLabel', 'TokenHash', 'Cr
 var TEXT_COLUMNS = {};
 TEXT_COLUMNS[SHEET_CASES] = ['ContactPhone', 'CaseID'];
 TEXT_COLUMNS[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'AccuracyUm'];
-TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID'];
+TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID', 'CreatedAt'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime', 'CompanyPhone', 'TaxId']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
 TEXT_COLUMNS[SHEET_CUSTOMER_CONTACTS] = ['Phone'];
@@ -569,9 +572,7 @@ function handleDbStatus(body) {
 }
 
 function handleDbTrim(body) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
+  return withLock_(function () {
     var released = 0;
     var trimmed = 0;
     getDb_(false).getSheets().forEach(function (sheet) {
@@ -588,9 +589,7 @@ function handleDbTrim(body) {
     st.released = released;
     st.trimmedSheets = trimmed;
     return st;
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 /** 定時觸發用：碰一下試算表跟快取，讓 Apps Script 保持「熱」的狀態，網頁操作比較不會卡好幾秒。 */
@@ -735,6 +734,24 @@ function sheetToObjects(sheetName) {
   return { header: header, rows: rows };
 }
 
+/**
+ * 寫入鎖：同一時間只讓一個請求寫資料，避免兩個人同時新增時算到同一列（後寫的蓋掉先寫的）。
+ * 可以巢狀呼叫（外層已經拿到鎖時直接執行），等太久（30 秒）會丟出錯誤請使用者稍後再試。
+ */
+var LOCK_DEPTH_ = 0;
+function withLock_(fn) {
+  if (LOCK_DEPTH_ > 0) return fn();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('系統忙碌中（其他人正在寫入資料），請稍後再試一次');
+  LOCK_DEPTH_++;
+  try {
+    return fn();
+  } finally {
+    LOCK_DEPTH_--;
+    lock.releaseLock();
+  }
+}
+
 /** 列數不夠就自動補列（釋放空白儲存格 dbTrim 之後，工作表可能剛好只剩幾列空白）。lastNeededRow = 這次寫入要用到的最後一列。 */
 function ensureRows_(sheet, lastNeededRow) {
   var max = sheet.getMaxRows();
@@ -742,20 +759,22 @@ function ensureRows_(sheet, lastNeededRow) {
 }
 
 function appendObjectRow(sheetName, obj) {
-  var sheet = getSheet(sheetName);
-  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var row = header.map(function (h) {
-    return obj.hasOwnProperty(h) ? obj[h] : '';
+  return withLock_(function () {
+    var sheet = getSheet(sheetName);
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var row = header.map(function (h) {
+      return obj.hasOwnProperty(h) ? obj[h] : '';
+    });
+    // 電話、編號這類文字欄位要先把儲存格設成「純文字」再寫入，不然 0912... 會被 Sheets 當數字吃掉開頭的 0
+    var target = sheet.getLastRow() + 1;
+    ensureRows_(sheet, target);
+    (TEXT_COLUMNS[sheetName] || []).forEach(function (c) {
+      var i = header.indexOf(c);
+      if (i > -1) sheet.getRange(target, i + 1).setNumberFormat('@');
+    });
+    sheet.getRange(target, 1, 1, row.length).setValues([row]);
+    return target;
   });
-  // 電話、編號這類文字欄位要先把儲存格設成「純文字」再寫入，不然 0912... 會被 Sheets 當數字吃掉開頭的 0
-  var target = sheet.getLastRow() + 1;
-  ensureRows_(sheet, target);
-  (TEXT_COLUMNS[sheetName] || []).forEach(function (c) {
-    var i = header.indexOf(c);
-    if (i > -1) sheet.getRange(target, i + 1).setNumberFormat('@');
-  });
-  sheet.getRange(target, 1, 1, row.length).setValues([row]);
-  return target;
 }
 
 /** 依欄位名稱更新某一列的部分欄位。fields = {欄位名: 新值}。 */
@@ -3068,6 +3087,12 @@ function importFlirThermal_() {
 /** 一次把整批新產品寫進 Products（文字格式，避免型號被轉成日期或數字）。 */
 function writeProductRows_(newRows) {
   if (!newRows.length) return 0;
+  return withLock_(function () {
+    return writeProductRowsUnlocked_(newRows);
+  });
+}
+
+function writeProductRowsUnlocked_(newRows) {
   var sheet = getSheet(SHEET_PRODUCTS);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var values = newRows.map(function (obj) {
@@ -4893,23 +4918,39 @@ function handleGetCustomers(body) {
   return { success: true, customers: customers };
 }
 
-function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer) {
-  if (!customer['NextFollowUpDate']) return;
+/** 日期統一成 yyyy-MM-dd（Date 物件、2026/9/3 這類手打的也可以）；不是日期回傳空字串。 */
+function dateKey_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'GMT+8', 'yyyy-MM-dd');
+  var m = String(v == null ? '' : v).match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  return m ? m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2) : '';
+}
 
+/**
+ * 客戶的下次追蹤同步到執行者的 Google 日曆：
+ *  - 有預約時間 → 有時間的行程（預設 1 小時）；沒有 → 整天行程；
+ *  - 下次追蹤日清空（不再追蹤）→ 把之前建立的行程刪掉。
+ */
+function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer) {
+  var eventIdCol = header.indexOf('CalendarEventId');
+  var existingId = eventIdCol > -1 ? String(customer['CalendarEventId'] || '') : '';
+  var ds = dateKey_(customer['NextFollowUpDate']);
   try {
     var calendar = CalendarApp.getDefaultCalendar();
+    if (!ds) {
+      if (existingId) {
+        var oldEvent = calendar.getEventById(existingId);
+        if (oldEvent) oldEvent.deleteEvent();
+        sheet.getRange(rowNum, eventIdCol + 1).setValue('');
+      }
+      return;
+    }
     var title = '[AOI客戶追蹤] ' + customer['CompanyName'] + (customer['Contact'] ? '（' + customer['Contact'] + '）' : '');
-    var date = new Date(customer['NextFollowUpDate']);
+    var day = new Date(ds + 'T12:00:00+08:00'); // 用台灣當天中午代表「這一天」，不管專案時區設定都不會差一天
     var time = normTimeStr_(customer['NextFollowUpTime']);
-    var eventIdCol = header.indexOf('CalendarEventId');
-    var existingId = eventIdCol > -1 ? customer['CalendarEventId'] : '';
-    var desc = (time ? '預約時間：' + time + '\n' : '') + (customer['NextFollowUpNote'] ? '下次追蹤說明：\n' + customer['NextFollowUpNote'] : '');
-    // 有預約時間 → 有時間的行程（預設 1 小時）；沒有 → 整天行程
+    var desc = (time ? '預約時間：' + time + '\n' : '') + (customer['NextFollowUpNote'] ? '下次洽談內容：\n' + customer['NextFollowUpNote'] : '');
     var start = null;
     var end = null;
     if (time) {
-      var ds = Utilities.formatDate(date, 'GMT+8', 'yyyy-MM-dd');
-      if (/^\d{4}-\d{2}-\d{2}$/.test(String(customer['NextFollowUpDate']))) ds = String(customer['NextFollowUpDate']);
       start = new Date(ds + 'T' + time + ':00+08:00');
       end = new Date(start.getTime() + 60 * 60 * 1000);
     }
@@ -4923,17 +4964,15 @@ function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer) {
         } else {
           existingEvent.setTitle(title);
           if (time) existingEvent.setTime(start, end);
-          else existingEvent.setAllDayDate(date);
+          else existingEvent.setAllDayDate(day);
           existingEvent.setDescription(desc);
           return;
         }
       }
     }
 
-    var newEvent = time ? calendar.createEvent(title, start, end, { description: desc }) : calendar.createAllDayEvent(title, date, { description: desc });
-    if (eventIdCol > -1) {
-      sheet.getRange(rowNum, eventIdCol + 1).setValue(newEvent.getId());
-    }
+    var newEvent = time ? calendar.createEvent(title, start, end, { description: desc }) : calendar.createAllDayEvent(title, day, { description: desc });
+    if (eventIdCol > -1) sheet.getRange(rowNum, eventIdCol + 1).setValue(newEvent.getId());
   } catch (calErr) {
     Logger.log('日曆同步失敗: ' + calErr.message);
   }
@@ -4987,27 +5026,322 @@ function handleAddCustomer(body) {
   return { success: true };
 }
 
-function handleUpdateCustomer(body) {
-  var rowNum = body.rowIndex;
-  if (!rowNum) return { success: false, message: '缺少 rowIndex' };
+// ---- 客戶資料修改：比對差異、記下修改紀錄、公司改名連動 ----
+/** 會記進「修改紀錄」的客戶欄位與中文名稱。 */
+var CUSTOMER_FIELD_LABELS = {
+  CompanyName: '公司名稱',
+  Contact: '聯絡人',
+  Phone: '聯繫人電話',
+  Email: 'Email',
+  CompanyPhone: '公司電話',
+  TaxId: '統一編號',
+  Address: '地址',
+  Category: '分類',
+  Urgency: '急迫性',
+  Notes: '客戶備註',
+  HasTransacted: '交易狀態',
+  LastTransactionDate: '最近交易日',
+  NextFollowUpDate: '下次追蹤日',
+  NextFollowUpTime: '預約時間',
+  NextFollowUpNote: '下次洽談內容',
+};
+var CUSTOMER_FOLLOW_FIELDS = ['NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote'];
 
-  if (body.fields && body.fields.CompanyName != null) {
-    if (!String(body.fields.CompanyName).trim()) return { success: false, message: '公司名稱不能空白' };
-    var dup = findDuplicateCustomerRow_(body.fields.CompanyName, rowNum);
-    if (dup) return { success: false, message: '已經有「' + String(body.fields.CompanyName).trim() + '」這間客戶了（第 ' + dup + ' 列），不能改成重複的名稱。' };
-  }
-  if (body.fields && body.fields.NextFollowUpTime !== undefined) body.fields.NextFollowUpTime = normTimeStr_(body.fields.NextFollowUpTime);
-  var header = updateRowFields(SHEET_CUSTOMERS, rowNum, body.fields);
-  var customer = readRowAsObject(SHEET_CUSTOMERS, rowNum);
-  syncCustomerFollowUpToCalendar(rowNum, header, getSheet(SHEET_CUSTOMERS), customer);
-
-  return { success: true };
+/** 比對用的值：日期轉 yyyy-MM-dd、時間轉 HH:mm、其他轉字串去頭尾空白。 */
+function custVal_(field, v) {
+  if (v == null) return '';
+  if (field === 'NextFollowUpTime') return normTimeStr_(v);
+  if (field === 'NextFollowUpDate' || field === 'LastTransactionDate') return dateKey_(v) || String(v).trim();
+  if (v instanceof Date) return Utilities.formatDate(v, 'GMT+8', 'yyyy-MM-dd');
+  return String(v).replace(/\r\n/g, '\n').trim();
 }
 
+function clip_(v, n) {
+  var t = String(v == null ? '' : v).replace(/\s*\n\s*/g, ' / ');
+  return t.length > n ? t.slice(0, n) + '…' : t;
+}
+
+/** 這次修改的中文說明，一項一行，例如「聯絡人：王先生 → 李小姐」。 */
+function describeCustomerChanges_(oldObj, newObj, changed) {
+  var has = function (f) {
+    return changed.indexOf(f) > -1;
+  };
+  var show = function (v) {
+    return v === '' ? '（空白）' : v;
+  };
+  var lines = [];
+  ['CompanyName', 'Contact', 'Phone', 'Email', 'CompanyPhone', 'TaxId', 'Address', 'Category', 'Urgency'].forEach(function (f) {
+    if (has(f)) lines.push(CUSTOMER_FIELD_LABELS[f] + '：' + show(clip_(custVal_(f, oldObj[f]), 60)) + ' → ' + show(clip_(custVal_(f, newObj[f]), 60)));
+  });
+  if (has('HasTransacted') || has('LastTransactionDate')) {
+    var tx = function (o) {
+      var d = custVal_('LastTransactionDate', o.LastTransactionDate);
+      return custVal_('HasTransacted', o.HasTransacted) === '是' || d ? '已交易' + (d ? '（' + d + '）' : '') : '未交易';
+    };
+    lines.push('交易狀態：' + tx(oldObj) + ' → ' + tx(newObj));
+  }
+  if (has('NextFollowUpDate') || has('NextFollowUpTime')) {
+    var when = function (o, emptyText) {
+      var d = custVal_('NextFollowUpDate', o.NextFollowUpDate);
+      var t = custVal_('NextFollowUpTime', o.NextFollowUpTime);
+      return d ? d + (t ? ' ' + t : '') : emptyText;
+    };
+    lines.push('下次追蹤：' + when(oldObj, '未設定') + ' → ' + when(newObj, '不再追蹤'));
+  }
+  if (has('NextFollowUpNote')) {
+    lines.push('下次洽談內容：' + show(clip_(custVal_('NextFollowUpNote', oldObj.NextFollowUpNote), 80)) + ' → ' + show(clip_(custVal_('NextFollowUpNote', newObj.NextFollowUpNote), 80)));
+  }
+  if (has('Notes')) {
+    var o = custVal_('Notes', oldObj.Notes);
+    var n = custVal_('Notes', newObj.Notes);
+    if (o && n.indexOf(o) === 0) lines.push('客戶備註：新增「' + clip_(n.slice(o.length).trim(), 80) + '」');
+    else lines.push('客戶備註：' + (n ? '已修改（現在：' + clip_(n, 60) + '）' : '已清空'));
+  }
+  return lines;
+}
+
+/**
+ * 找到要改的客戶列：前端給的列號，再用公司名稱確認是同一間（列號可能因為別人刪了資料而位移）；
+ * 對不上就用公司名稱重新找。沒給公司名稱時（舊版前端）只看列號。找不到回傳 0。
+ */
+function resolveCustomerRow_(rowIndex, companyName) {
+  var sheet = getSheet(SHEET_CUSTOMERS);
+  var data = sheet.getDataRange().getValues();
+  var col = data[0].map(String).indexOf('CompanyName');
+  var r = Number(rowIndex);
+  var want = companyName != null && String(companyName).trim() !== '' ? normCompanyName_(companyName) : null;
+  if (r >= 2 && r <= data.length && (want === null || normCompanyName_(data[r - 1][col]) === want)) return r;
+  if (want === null) return 0;
+  for (var i = 1; i < data.length; i++) {
+    if (normCompanyName_(data[i][col]) === want) return i + 1;
+  }
+  return 0;
+}
+
+/** 某分頁某欄等於 oldVal 的儲存格全部改成 newVal，回傳改了幾格。 */
+function replaceColumnValue_(sheetName, columnName, oldVal, newVal) {
+  var sheet = getDb_(false).getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  var col = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String).indexOf(columnName);
+  if (col < 0) return 0;
+  var range = sheet.getRange(2, col + 1, sheet.getLastRow() - 1, 1);
+  var want = String(oldVal).trim();
+  var n = 0;
+  var out = range.getValues().map(function (r) {
+    if (String(r[0]).trim() === want) {
+      n++;
+      return [newVal];
+    }
+    return [r[0]];
+  });
+  if (n) range.setValues(out);
+  return n;
+}
+
+/**
+ * 公司改名時，其他分頁用公司名稱關聯的資料一起改，不然案件、聯絡窗口、聯繫紀錄會「找不到客戶」。
+ * 案件編號（專案名稱）裡的客戶名稱不會自動改，要改請用案件頁的「修改專案名稱」。
+ */
+function renameCompanyEverywhere_(oldName, newName) {
+  return {
+    cases: replaceColumnValue_(SHEET_CASES, 'CustomerName', oldName, newName),
+    endCustomer: replaceColumnValue_(SHEET_CASES, 'EndCustomerName', oldName, newName),
+    caseCompanies: replaceColumnValue_(SHEET_CASE_COMPANIES, 'CompanyName', oldName, newName),
+    contacts: replaceColumnValue_(SHEET_CUSTOMER_CONTACTS, 'CompanyName', oldName, newName),
+    contactLogs: replaceColumnValue_(SHEET_CONTACT_LOGS, 'CompanyName', oldName, newName),
+  };
+}
+
+/** 換主要聯絡人時，把原本的聯絡人存到「其他聯絡窗口」（已經有同名的就不重複加）。 */
+function keepOldContact_(companyName, oldObj) {
+  var name = custVal_('Contact', oldObj.Contact);
+  if (!name) return false;
+  var exists = sheetToObjects(SHEET_CUSTOMER_CONTACTS).rows.some(function (r) {
+    return String(r['CompanyName']).trim() === String(companyName).trim() && String(r['ContactName']).trim() === name;
+  });
+  if (exists) return false;
+  appendObjectRow(SHEET_CUSTOMER_CONTACTS, {
+    CompanyName: companyName,
+    ContactName: name,
+    Phone: custVal_('Phone', oldObj.Phone),
+    Email: custVal_('Email', oldObj.Email),
+    Title: '',
+    Notes: '原主要聯絡人（' + todayStr() + ' 更換）',
+  });
+  return true;
+}
+
+/** 回傳給前端的客戶資料（含列號、預約時間統一成 HH:mm）。 */
+function customerOut_(rowNum) {
+  var obj = readRowAsObject(SHEET_CUSTOMERS, rowNum);
+  obj.RowIndex = rowNum;
+  obj.NextFollowUpTime = normTimeStr_(obj.NextFollowUpTime);
+  return obj;
+}
+
+/**
+ * 修改一筆客戶：只寫入真的有變的欄位，公司改名時連動其他分頁，追蹤日 / 聯絡人有變才同步日曆。
+ * 回傳 { customer, changed:[欄位], changes:[中文說明], renamed, keptOld } 或 { error }。
+ */
+function applyCustomerUpdate_(rowNum, fields, opts) {
+  opts = opts || {};
+  var sheet = getSheet(SHEET_CUSTOMERS);
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var oldObj = readRowAsObject(SHEET_CUSTOMERS, rowNum);
+  var input = {};
+  Object.keys(fields || {}).forEach(function (k) {
+    if (header.indexOf(k) < 0 || k === 'CalendarEventId') return; // 行事曆 ID 只由系統維護
+    var v = fields[k] == null ? '' : fields[k];
+    if (k === 'NextFollowUpTime') v = normTimeStr_(v);
+    else if (k === 'NextFollowUpDate') v = dateKey_(v);
+    else if (typeof v === 'string' && k !== 'Notes' && k !== 'NextFollowUpNote') v = v.trim();
+    input[k] = v;
+  });
+  if (input.CompanyName !== undefined) {
+    if (!input.CompanyName) return { error: '公司名稱不能空白' };
+    var dup = findDuplicateCustomerRow_(input.CompanyName, rowNum);
+    if (dup) return { error: '已經有「' + input.CompanyName + '」這間客戶了（第 ' + dup + ' 列），不能改成重複的名稱。' };
+  }
+  if (input.NextFollowUpDate === '' && fields.NextFollowUpDate != null && String(fields.NextFollowUpDate).trim() !== '') {
+    return { error: '下次追蹤日格式不對（要是 YYYY-MM-DD）' };
+  }
+  if (input.NextFollowUpDate === '') input.NextFollowUpTime = ''; // 不再追蹤就不會有預約時間
+
+  var changed = Object.keys(input).filter(function (k) {
+    return custVal_(k, oldObj[k]) !== custVal_(k, input[k]);
+  });
+  if (!changed.length) return { customer: customerOut_(rowNum), changed: [], changes: [], renamed: null, keptOld: false };
+
+  var write = {};
+  changed.forEach(function (k) {
+    write[k] = input[k];
+  });
+  updateRowFields(SHEET_CUSTOMERS, rowNum, write);
+  var newObj = Object.assign({}, oldObj, write);
+
+  var renamed = null;
+  if (changed.indexOf('CompanyName') > -1) renamed = renameCompanyEverywhere_(oldObj.CompanyName, newObj.CompanyName);
+  var keptOld = false;
+  if (opts.keepOldContact && changed.indexOf('Contact') > -1) keptOld = keepOldContact_(newObj.CompanyName, oldObj);
+  var calendarFields = ['NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote', 'CompanyName', 'Contact'];
+  if (changed.some(function (f) { return calendarFields.indexOf(f) > -1; })) syncCustomerFollowUpToCalendar(rowNum, header, sheet, newObj);
+
+  return {
+    customer: customerOut_(rowNum),
+    changed: changed,
+    changes: describeCustomerChanges_(oldObj, newObj, changed),
+    renamed: renamed,
+    keptOld: keptOld,
+  };
+}
+
+/** 只改了追蹤日 / 洽談內容的算「改期」，其他算「資料修改」。 */
+function changeLogMethod_(changed) {
+  return changed.every(function (f) {
+    return CUSTOMER_FOLLOW_FIELDS.indexOf(f) > -1;
+  })
+    ? '改期'
+    : '資料修改';
+}
+
+function handleUpdateCustomer(body) {
+  return withLock_(function () {
+    var rowNum = resolveCustomerRow_(body.rowIndex, body.companyName);
+    if (!rowNum) return { success: false, message: '找不到這間客戶（可能已被刪除或改名），請按「↻ 重撈資料」後再試' };
+    var res = applyCustomerUpdate_(rowNum, body.fields || {}, { keepOldContact: !!body.keepOldContact });
+    if (res.error) return { success: false, message: res.error };
+    var entry = null;
+    if (res.changes.length && !body.noLog) {
+      var method = changeLogMethod_(res.changed);
+      entry = appendContactLog_(
+        {
+          companyName: res.customer.CompanyName,
+          method: body.logMethod || method,
+          summary: body.logSummary || (method === '改期' ? '修改下次追蹤' : '修改客戶資料'),
+          caseId: body.caseId || '',
+          changes: res.changes.join('\n'),
+        },
+        body._user
+      );
+    }
+    return { success: true, customer: res.customer, log: entry, changes: res.changes, renamed: res.renamed, keptOldContact: res.keptOld };
+  });
+}
+
+/**
+ * 追蹤視窗一次存檔：記下這次聯繫（log，可省略）+ 更新客戶資料與下次追蹤（fields）。
+ *  - 有 log：寫一筆聯繫紀錄，Changes 欄記下這次一併改了哪些資料 / 追蹤日；
+ *  - 沒有 log 但有改資料：寫一筆「資料修改」或「改期」紀錄，之後在歷史紀錄看得到改了什麼。
+ * body: { rowIndex, companyName(用來確認是同一間), fields, log:{method,contact,summary,caseId}, keepOldContact, caseId }
+ */
+function handleSaveFollowUp(body) {
+  return withLock_(function () {
+    var rowNum = resolveCustomerRow_(body.rowIndex, body.companyName);
+    if (!rowNum) return { success: false, message: '找不到「' + (body.companyName || '') + '」這間客戶（可能已被刪除或改名），請按「↻ 重撈資料」後再試' };
+    var log = body.log || null;
+    if (log && !String(log.summary || '').trim()) return { success: false, message: '請填寫這次追蹤的結果 / 聯繫內容' };
+    var res = applyCustomerUpdate_(rowNum, body.fields || {}, { keepOldContact: !!body.keepOldContact });
+    if (res.error) return { success: false, message: res.error };
+    var changesText = res.changes.join('\n');
+    var entry = null;
+    if (log) {
+      entry = appendContactLog_(
+        { companyName: res.customer.CompanyName, contact: log.contact, method: log.method, summary: String(log.summary).trim(), caseId: log.caseId, changes: changesText },
+        body._user
+      );
+    } else if (res.changes.length) {
+      var method = changeLogMethod_(res.changed);
+      entry = appendContactLog_(
+        { companyName: res.customer.CompanyName, method: method, summary: method === '改期' ? '修改下次追蹤' : '修改客戶資料', caseId: body.caseId || '', changes: changesText },
+        body._user
+      );
+    }
+    return { success: true, customer: res.customer, log: entry, changes: res.changes, renamed: res.renamed, keptOldContact: res.keptOld };
+  });
+}
+
+/** 刪除客戶：還有案件掛在這間客戶底下時先回報，前端確認後帶 force 再刪；同時刪掉日曆上的追蹤提醒。聯繫紀錄與聯絡窗口保留。 */
 function handleDeleteCustomer(body) {
-  if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
-  getSheet(SHEET_CUSTOMERS).deleteRow(body.rowIndex);
-  return { success: true };
+  return withLock_(function () {
+    var rowNum = resolveCustomerRow_(body.rowIndex, body.companyName);
+    if (!rowNum) return { success: false, message: '找不到這間客戶（可能已被刪除），請重新整理' };
+    var cust = readRowAsObject(SHEET_CUSTOMERS, rowNum);
+    var name = String(cust['CompanyName'] || '').trim();
+    var caseCount = sheetToObjects(SHEET_CASES).rows.filter(function (r) {
+      return String(r['CustomerName']).trim() === name;
+    }).length;
+    if (caseCount && !body.force) {
+      return { success: false, needConfirm: true, caseCount: caseCount, message: '「' + name + '」底下還有 ' + caseCount + ' 個案件，刪除客戶後這些案件會找不到客戶資料。' };
+    }
+    if (cust['CalendarEventId']) {
+      try {
+        var ev = CalendarApp.getDefaultCalendar().getEventById(String(cust['CalendarEventId']));
+        if (ev) ev.deleteEvent();
+      } catch (e) {
+        // 行程已經被手動刪掉或沒有日曆權限，略過
+      }
+    }
+    getSheet(SHEET_CUSTOMERS).deleteRow(rowNum);
+    return { success: true };
+  });
+}
+
+/**
+ * 依列號改 / 刪資料前確認這一列還是前端看到的那筆（expect = {欄位: 值}），
+ * 避免別人刪了上面的資料後列號位移，改到 / 刪到別筆。回傳錯誤訊息，沒問題回傳空字串。
+ */
+function checkRowExpect_(sheetName, rowNum, expect) {
+  rowNum = Number(rowNum);
+  var sheet = getSheet(sheetName);
+  if (!(rowNum >= 2 && rowNum <= sheet.getLastRow())) return '找不到這筆資料（可能已被刪除），請重新整理後再試';
+  if (!expect) return '';
+  var obj = readRowAsObject(sheetName, rowNum);
+  var bad = Object.keys(expect).some(function (k) {
+    var a = k === 'Date' ? dateKey_(obj[k]) || String(obj[k]) : String(obj[k] == null ? '' : obj[k]).trim();
+    var b = k === 'Date' ? dateKey_(expect[k]) || String(expect[k]) : String(expect[k] == null ? '' : expect[k]).trim();
+    return a !== b;
+  });
+  return bad ? '這筆資料已經被修改或刪除（列號對不上），請重新整理後再試' : '';
 }
 
 // ------------------------------------------------------------
@@ -5042,37 +5376,60 @@ function handleAddCustomerContact(body) {
 
 function handleUpdateCustomerContact(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
-  updateRowFields(SHEET_CUSTOMER_CONTACTS, body.rowIndex, body.fields);
-  return { success: true };
+  return withLock_(function () {
+    var err = checkRowExpect_(SHEET_CUSTOMER_CONTACTS, body.rowIndex, body.expect);
+    if (err) return { success: false, message: err };
+    updateRowFields(SHEET_CUSTOMER_CONTACTS, body.rowIndex, body.fields);
+    return { success: true };
+  });
 }
 
 function handleDeleteCustomerContact(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
-  getSheet(SHEET_CUSTOMER_CONTACTS).deleteRow(body.rowIndex);
-  return { success: true };
+  return withLock_(function () {
+    var err = checkRowExpect_(SHEET_CUSTOMER_CONTACTS, body.rowIndex, body.expect);
+    if (err) return { success: false, message: err };
+    getSheet(SHEET_CUSTOMER_CONTACTS).deleteRow(body.rowIndex);
+    return { success: true };
+  });
 }
 
 // ------------------------------------------------------------
 // 客戶聯繫紀錄
 // ------------------------------------------------------------
-function handleAddContactLog(body) {
-  appendObjectRow(SHEET_CONTACT_LOGS, {
-    Date: Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd'),
-    CompanyName: body.companyName || '',
-    Contact: body.contact || '',
-    Method: body.method || '',
-    Summary: body.summary || '',
-    Salesperson: body.salesperson || '',
-    CaseID: body.caseId || '',
-  });
-  return { success: true };
+/** 寫一筆聯繫紀錄（Date = 今天、CreatedAt = 現在；業務沒給就用登入者）。回傳寫入的資料（含列號）。 */
+function appendContactLog_(o, user) {
+  var row = {
+    Date: todayStr(),
+    CreatedAt: nowStr(),
+    CompanyName: o.companyName || '',
+    Contact: o.contact || '',
+    Method: o.method || '',
+    Summary: o.summary || '',
+    Salesperson: o.salesperson || (user && (user.displayName || user.username)) || '',
+    CaseID: o.caseId || '',
+    Changes: o.changes || '',
+  };
+  row.RowIndex = appendObjectRow(SHEET_CONTACT_LOGS, row);
+  return row;
 }
 
-/** date：只看某一天；companyName：只看某間公司(客戶管理頁的聯繫紀錄列表用)，兩個都可以不給。 */
+function handleAddContactLog(body) {
+  if (!String(body.companyName || '').trim()) return { success: false, message: '請填公司名稱' };
+  var entry = appendContactLog_(
+    { companyName: String(body.companyName).trim(), contact: body.contact, method: body.method, summary: body.summary, salesperson: body.salesperson, caseId: body.caseId },
+    body._user
+  );
+  return { success: true, log: entry };
+}
+
+/** date：只看某一天；companyName：只看某間公司，兩個都可以不給。新的在前（同一天依記錄時間 / 寫入順序）。 */
 function handleGetContactLogs(body) {
   var data = sheetToObjects(SHEET_CONTACT_LOGS);
   var rows = data.rows.map(function (r, i) {
-    return Object.assign({ RowIndex: i + 2 }, r);
+    var o = Object.assign({ RowIndex: i + 2 }, r);
+    o.Date = dateKey_(r['Date']) || String(r['Date'] || '');
+    return o;
   });
   if (body.date) {
     rows = rows.filter(function (r) {
@@ -5080,24 +5437,37 @@ function handleGetContactLogs(body) {
     });
   }
   if (body.companyName) {
+    var want = String(body.companyName).trim();
     rows = rows.filter(function (r) {
-      return r['CompanyName'] === body.companyName;
+      return String(r['CompanyName']).trim() === want;
     });
   }
   rows.sort(function (a, b) {
-    return new Date(b['Date']) - new Date(a['Date']);
+    return String(b['Date']).localeCompare(String(a['Date'])) || String(b['CreatedAt'] || '').localeCompare(String(a['CreatedAt'] || '')) || b.RowIndex - a.RowIndex;
   });
   return { success: true, logs: rows };
 }
 
 function handleUpdateContactLog(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
-  updateRowFields(SHEET_CONTACT_LOGS, body.rowIndex, body.fields);
-  return { success: true };
+  return withLock_(function () {
+    var err = checkRowExpect_(SHEET_CONTACT_LOGS, body.rowIndex, body.expect);
+    if (err) return { success: false, message: err };
+    var fields = {};
+    ['Contact', 'Method', 'Summary', 'CaseID'].forEach(function (k) {
+      if (body.fields && body.fields[k] !== undefined) fields[k] = body.fields[k];
+    });
+    updateRowFields(SHEET_CONTACT_LOGS, body.rowIndex, fields);
+    return { success: true };
+  });
 }
 
 function handleDeleteContactLog(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
-  getSheet(SHEET_CONTACT_LOGS).deleteRow(body.rowIndex);
-  return { success: true };
+  return withLock_(function () {
+    var err = checkRowExpect_(SHEET_CONTACT_LOGS, body.rowIndex, body.expect);
+    if (err) return { success: false, message: err };
+    getSheet(SHEET_CONTACT_LOGS).deleteRow(body.rowIndex);
+    return { success: true };
+  });
 }

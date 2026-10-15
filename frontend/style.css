@@ -420,3 +420,50 @@ header, .tabs { position: relative; z-index: 300; }
 /* ---- 資料庫管理 ---- */
 .db-bar { height: 18px; background: #e3e8ee; border-radius: 9px; overflow: hidden; }
 .db-bar-fill { height: 100%; width: 0; background: #2ecc71; transition: width .3s; }
+
+/* ---- 追蹤完畢 / 改日 視窗（加在 body 底下，不在 .tab-content 裡，所以自己定義輸入框與按鈕樣式）---- */
+#followup-dialog .fu-box { max-width: 720px; }
+#followup-dialog label { font-size: 14px; }
+#followup-dialog input:not([type="checkbox"]), #followup-dialog select, #followup-dialog textarea {
+  padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background: #fff;
+}
+#followup-dialog textarea { display: block; width: 100%; margin: 4px 0 6px; }
+#followup-dialog button { padding: 7px 14px; background: #2c5aa0; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+#followup-dialog button:disabled { background: #b8c4d6; cursor: default; }
+#followup-dialog button.btn-mini, #followup-dialog .time-quick button { padding: 3px 8px; font-size: 12px; background: #64748b; margin: 0 2px 2px 0; }
+#followup-dialog button.btn-secondary, #followup-dialog .modal-header button { background: #64748b; }
+#followup-dialog .fu-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0; }
+#followup-dialog .fu-block { display: block; margin-top: 8px; }
+#followup-dialog .fu-quick { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.fu-info { width: 100%; margin: 0 0 8px; font-size: 13px; background: #f7f9fc; border: 1px solid #dde5f0; }
+.fu-info th, .fu-info td { padding: 5px 8px; font-size: 13px; vertical-align: top; }
+.fu-info th { background: transparent; }
+#followup-dialog .fu-edit-btn { margin-left: 8px; background: #8e44ad; }
+.fu-flash { background: #eaf6ee; border: 1px solid #b7e1c4; color: #1e6b34; border-radius: 4px; padding: 6px 10px; margin-bottom: 8px; font-size: 13px; }
+.fu-edit { border: 1px solid #f0d58c; background: #fffdf5; border-radius: 6px; padding: 10px 12px; margin: 0 0 10px; }
+.fu-edit-title { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 8px; }
+.fu-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+.fu-edit-grid label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #556; }
+.fu-edit-grid label.wide { grid-column: 1 / -1; }
+#followup-dialog .fu-edit-grid input, #followup-dialog .fu-edit-grid select, #followup-dialog .fu-edit-grid textarea { width: 100%; margin: 0; }
+.fu-other-contacts { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+#followup-dialog .fu-chip { background: #eef2f7; color: #2c5aa0; border: 1px solid #c9d6ea; border-radius: 12px; padding: 2px 10px; font-size: 12px; }
+#followup-dialog .fu-chip:hover { background: #dfe7f2; }
+.fu-keep { display: block; margin-top: 8px; font-size: 13px; }
+.fu-edit-actions { margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.fu-hist { border: 1px solid #dde5f0; border-radius: 6px; padding: 6px 10px; margin: 0 0 10px; background: #fff; }
+.fu-hist-head { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; font-size: 13px; }
+.fu-hist-head > div { flex: 1; min-width: 0; }
+.fu-hist-filters { margin: 8px 0 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+#followup-dialog .fu-hist-filters button.active { background: #2c5aa0; }
+.fu-hist-list { max-height: 300px; overflow-y: auto; border-top: 1px solid #eef1f5; }
+.fu-hist-item { padding: 6px 2px; border-bottom: 1px dashed #e3e8ef; font-size: 13px; }
+.fu-hist-item.is-change { background: #fafbfc; color: #556; }
+.fu-hist-meta { color: #667; font-size: 12px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.fu-hist-dot { color: #bbb; }
+.fu-hist-tag { padding: 0 6px; border-radius: 8px; background: #e8f0fb; color: #2c5aa0; }
+.fu-hist-item.is-change .fu-hist-tag { background: #eceff3; color: #666; }
+.fu-hist-case { padding: 0 6px; border-radius: 8px; background: #f3e8fb; color: #7d3c98; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fu-hist-sum { white-space: pre-wrap; margin-top: 2px; word-break: break-word; }
+.fu-hist-changes { white-space: pre-wrap; margin-top: 3px; font-size: 12px; color: #6b5a1e; background: #fffbe6; border-left: 3px solid #f1c40f; padding: 2px 6px; word-break: break-word; }
+@media (max-width: 600px) { .fu-edit-grid { grid-template-columns: 1fr; } }

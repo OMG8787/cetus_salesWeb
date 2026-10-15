@@ -23,9 +23,9 @@ function renderStaffTable() {
   tbody.innerHTML = '';
   allStaff.forEach((s) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${s.Name}</td><td>${s.Role || ''}</td>
+    tr.innerHTML = `<td>${htmlEsc(s.Name)}</td><td>${htmlEsc(s.Role || '')}</td>
       <td>
-        <button onclick="editStaffRole(${s.RowIndex}, '${(s.Role || '').replace(/'/g, "\\'")}')">修改角色</button>
+        <button onclick="editStaffRole(${s.RowIndex}, decodeURIComponent('${encodeURIComponent(s.Role || '')}'))">修改角色</button>
         <button onclick="deleteStaffRow(${s.RowIndex})">刪除</button>
       </td>`;
     tbody.appendChild(tr);

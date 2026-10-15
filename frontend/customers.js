@@ -95,69 +95,87 @@ function renderCustomerTable() {
   rows.forEach((c) => {
     const tr = document.createElement('tr');
     const transactedText = c.HasTransacted === '是' ? `已交易${c.LastTransactionDate ? '（' + c.LastTransactionDate + '）' : ''}` : '未交易';
-    tr.innerHTML = `<td>${c.CompanyName}${[c.TaxId && '統編 ' + c.TaxId, c.CompanyPhone && '公司電話 ' + c.CompanyPhone, c.Address].filter(Boolean).map((x) => '<div class="calc-hint" style="margin:0;">' + String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>').join('')}</td><td>${c.Contact}</td><td>${c.Phone}</td><td>${c.Category || ''}</td><td>${c.Urgency || ''}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote, c.NextFollowUpTime)}</td><td>${transactedText}</td>
+    const nameArg = encodeURIComponent(c.CompanyName || '');
+    const nm = `decodeURIComponent('${nameArg}')`;
+    tr.innerHTML = `<td>${htmlEsc(c.CompanyName)}${[c.TaxId && '統編 ' + c.TaxId, c.CompanyPhone && '公司電話 ' + c.CompanyPhone, c.Address].filter(Boolean).map((x) => '<div class="calc-hint" style="margin:0;">' + htmlEsc(x) + '</div>').join('')}</td><td>${htmlEsc(c.Contact)}</td><td>${htmlEsc(c.Phone)}</td><td>${htmlEsc(c.Category || '')}</td><td>${htmlEsc(c.Urgency || '')}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote, c.NextFollowUpTime)}</td><td>${htmlEsc(transactedText)}</td>
       <td>
-        <button onclick="openCustomerContactsModal('${escapeAttr(c.CompanyName)}')">聯絡窗口</button>
-        <button onclick="viewCasesForCompany('${escapeAttr(c.CompanyName)}')">相關案件</button>
-        <button style="background:#8e44ad;" onclick="createCaseForCompany('${escapeAttr(c.CompanyName)}')">建立案件</button>
-        <button onclick="openCustomerEditModal(${c.RowIndex})">編輯</button>
-        <button style="background:#27ae60;" onclick="doneCustomerFollowUp(${c.RowIndex})">追蹤完畢</button>
-        <button onclick="editCustomerFollowUp(${c.RowIndex})">編輯追蹤日</button>
-        <button onclick="editCustomerTransaction(${c.RowIndex}, '${c.LastTransactionDate || ''}')">編輯交易狀態</button>
-        <button onclick="deleteCustomerRow(${c.RowIndex})">刪除</button>
+        <button onclick="openCustomerContactsModal(${nm})">聯絡窗口</button>
+        <button onclick="viewCasesForCompany(${nm})">相關案件</button>
+        <button style="background:#8e44ad;" onclick="createCaseForCompany(${nm})">建立案件</button>
+        <button onclick="openCustomerEditModal(${nm})">編輯</button>
+        <button style="background:#27ae60;" onclick="doneCustomerFollowUp(${nm})">追蹤完畢</button>
+        <button onclick="editCustomerFollowUp(${nm})">編輯追蹤日</button>
+        <button onclick="editCustomerTransaction(${nm})">編輯交易狀態</button>
+        <button onclick="deleteCustomerRow(${nm})">刪除</button>
       </td>`;
     tbody.appendChild(tr);
   });
 }
 
 function escapeAttr(str) {
-  return String(str == null ? '' : str).replace(/'/g, "\\'");
+  return String(str == null ? '' : str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/** 用公司名稱找客戶（列號在別人新增 / 刪除後會位移，名稱才是穩定的鍵）。 */
+function findCustomerByName(name) {
+  return allCustomers.find((x) => x.CompanyName === name) || null;
+}
+
+/** 存檔後把後端回傳的客戶資料直接套進清單與暫存，畫面馬上更新，不用等重新載入。 */
+function applyCustomerSaved(r, oldName) {
+  if (r && r.customer) {
+    patchCustomerList(allCustomers, r.customer, oldName);
+    setCached('customers', allCustomers);
+    clearCached('casesPageData');
+    if (oldName && r.customer.CompanyName !== oldName) {
+      ContactLogStore.rename(oldName, r.customer.CompanyName);
+      updateCustomerDatalist();
+    }
+    renderCustomerTable();
+  }
 }
 
 /** 追蹤日欄位：逾期紅字、今天橘字、3 天內黃字，一眼看出誰該追蹤了。 */
 function customerFollowUpHtml(dateStr, note, timeStr) {
   if (!normalizeDateStr(dateStr)) return '（未設定）' + followNoteHtml(note);
   const f = followUpInfo(dateStr, timeStr);
-  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(note)}`;
+  return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${htmlEsc(f.text)}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(note)}`;
 }
 
-function doneCustomerFollowUp(rowIndex) {
-  const c = allCustomers.find((x) => x.RowIndex === rowIndex);
-  if (!c) return;
+function doneCustomerFollowUp(name) {
+  const c = findCustomerByName(name);
+  if (!c) return alert('找不到「' + name + '」，請按「重新整理」後再試');
   openFollowUpDialog({
     companyName: c.CompanyName,
-    rowIndex,
+    rowIndex: c.RowIndex,
     contact: c.Contact || '',
     customer: c,
-    currentDate: c.NextFollowUpDate,
-    currentNote: c.NextFollowUpNote,
-    onDone: () => {
-      loadCustomers();
-      if (typeof loadContactLogs === 'function') loadContactLogs();
-    },
+    onSaved: applyCustomerSaved,
+    onDone: () => loadContactLogs(),
   });
 }
 
-function editCustomerFollowUp(rowIndex) {
-  const c = allCustomers.find((x) => x.RowIndex === rowIndex);
-  if (!c) return;
+function editCustomerFollowUp(name) {
+  const c = findCustomerByName(name);
+  if (!c) return alert('找不到「' + name + '」，請按「重新整理」後再試');
   openFollowUpDialog({
     companyName: c.CompanyName,
-    rowIndex,
+    rowIndex: c.RowIndex,
     customer: c,
-    currentDate: c.NextFollowUpDate,
-    currentNote: c.NextFollowUpNote,
     editOnly: true,
-    onDone: () => loadCustomers(),
+    onSaved: applyCustomerSaved,
+    onDone: () => loadContactLogs(),
   });
 }
 
 let editingCustomerRow = null;
+let editingCustomerName = null; // 打開編輯視窗當下的公司名稱（儲存時用來確認改的是同一間）
 
-function openCustomerEditModal(rowIndex) {
-  const c = allCustomers.find((x) => x.RowIndex === rowIndex);
-  if (!c) return;
-  editingCustomerRow = rowIndex;
+function openCustomerEditModal(name) {
+  const c = findCustomerByName(name);
+  if (!c) return alert('找不到「' + name + '」，請按「重新整理」後再試');
+  editingCustomerRow = c.RowIndex;
+  editingCustomerName = c.CompanyName;
   const set = (id, v) => (document.getElementById(id).value = v || '');
   set('ce-company', c.CompanyName); set('ce-contact', c.Contact); set('ce-phone', c.Phone); set('ce-company-phone', c.CompanyPhone); set('ce-taxid', c.TaxId); set('ce-address', c.Address); set('ce-email', c.Email);
   set('ce-category', c.Category || '一般客戶'); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate); set('ce-followup-time', c.NextFollowUpTime); set('ce-followup-note', c.NextFollowUpNote);
@@ -169,6 +187,7 @@ function openCustomerEditModal(rowIndex) {
 function closeCustomerEditModal() {
   document.getElementById('customer-edit-modal').style.display = 'none';
   editingCustomerRow = null;
+  editingCustomerName = null;
 }
 
 async function saveCustomerEdit() {
@@ -178,6 +197,7 @@ async function saveCustomerEdit() {
   const hasTx = document.getElementById('ce-has-transacted').checked || !!last;
   const result = await callApi('updateCustomer', {
     rowIndex: editingCustomerRow,
+    companyName: editingCustomerName,
     fields: {
       CompanyName: val('ce-company').trim(), Contact: val('ce-contact'), Phone: val('ce-phone'), CompanyPhone: val('ce-company-phone'), TaxId: val('ce-taxid').trim(), Address: val('ce-address').trim(), Email: val('ce-email'),
       Category: val('ce-category'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'), NextFollowUpTime: val('ce-followup-time'), NextFollowUpNote: val('ce-followup-note'),
@@ -185,34 +205,41 @@ async function saveCustomerEdit() {
     },
   });
   if (!result.success) return alert(result.message);
+  const oldName = editingCustomerName;
+  closeCustomerEditModal();
+  applyCustomerSaved(result, oldName);
+  if (result.log) ContactLogStore.add(result.log);
+  loadContactLogs();
+  loadCustomers(); // 背景跟資料庫同步
+}
+
+async function editCustomerTransaction(name) {
+  const c = findCustomerByName(name);
+  if (!c) return alert('找不到「' + name + '」，請按「重新整理」後再試');
+  const date = prompt('上次交易日期 (格式 YYYY-MM-DD，留空表示尚未交易過)：', c.LastTransactionDate || '');
+  if (date === null) return;
+  const d = date.trim();
+  if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return alert('日期格式要是 YYYY-MM-DD，例如 2026-10-15');
+  const result = await callApi('updateCustomer', { rowIndex: c.RowIndex, companyName: c.CompanyName, fields: { HasTransacted: d ? '是' : '', LastTransactionDate: d } });
+  if (!result.success) return alert(result.message);
+  applyCustomerSaved(result, c.CompanyName);
+  if (result.log) ContactLogStore.add(result.log);
+  loadContactLogs();
+}
+
+async function deleteCustomerRow(name) {
+  const c = findCustomerByName(name);
+  if (!c) return alert('找不到「' + name + '」，請按「重新整理」後再試');
+  if (!confirm('確定要刪除「' + c.CompanyName + '」嗎？此動作無法復原。\n\n（這間客戶的聯繫紀錄與聯絡窗口會保留在試算表裡，不會一起刪除。）')) return;
+  let result = await callApi('deleteCustomer', { rowIndex: c.RowIndex, companyName: c.CompanyName });
+  if (!result.success && result.needConfirm) {
+    if (!confirm(result.message + '\n\n確定還是要刪除這間客戶嗎？')) return;
+    result = await callApi('deleteCustomer', { rowIndex: c.RowIndex, companyName: c.CompanyName, force: true });
+  }
+  if (!result.success) return alert(result.message);
   clearCached('customers');
   clearCached('casesPageData');
-  closeCustomerEditModal();
   loadCustomers();
-}
-
-async function editCustomerTransaction(rowIndex, currentDate) {
-  const date = prompt('上次交易日期 (格式 YYYY-MM-DD，留空表示尚未交易過)：', currentDate || '');
-  if (date === null) return;
-  const result = await callApi('updateCustomer', { rowIndex, fields: { HasTransacted: date ? '是' : '', LastTransactionDate: date } });
-  if (result.success) {
-    clearCached('customers');
-    loadCustomers();
-  } else {
-    alert(result.message);
-  }
-}
-
-async function deleteCustomerRow(rowIndex) {
-  if (!confirm('確定要刪除這位客戶嗎？此動作無法復原。')) return;
-  const result = await callApi('deleteCustomer', { rowIndex });
-  if (result.success) {
-    clearCached('customers');
-    clearCached('casesPageData');
-    loadCustomers();
-  } else {
-    alert(result.message);
-  }
 }
 
 /** 客戶列表按「建立案件」：跳到案件管理的「建立新案件」，客戶名稱、聯絡人、電話、業務先帶好，只要再填案件內容。 */
@@ -247,8 +274,9 @@ async function loadCustomerContacts() {
   if (!result.success) return alert(result.message);
   result.contacts.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${c.ContactName}</td><td>${c.Title || ''}</td><td>${c.Phone || ''}</td><td>${c.Email || ''}</td><td>${c.Notes || ''}</td>
-      <td><button onclick="editCustomerContact(${c.RowIndex}, '${escapeAttr(c.ContactName)}', '${escapeAttr(c.Phone)}', '${escapeAttr(c.Email)}')">編輯</button> <button onclick="deleteCustomerContact(${c.RowIndex})">刪除</button></td>`;
+    const enc = (v) => encodeURIComponent(v == null ? '' : v);
+    tr.innerHTML = `<td>${htmlEsc(c.ContactName)}</td><td>${htmlEsc(c.Title || '')}</td><td>${htmlEsc(c.Phone || '')}</td><td>${htmlEsc(c.Email || '')}</td><td>${htmlEsc(c.Notes || '')}</td>
+      <td><button onclick="editCustomerContact(${c.RowIndex}, decodeURIComponent('${enc(c.ContactName)}'), decodeURIComponent('${enc(c.Phone)}'), decodeURIComponent('${enc(c.Email)}'))">編輯</button> <button onclick="deleteCustomerContact(${c.RowIndex}, decodeURIComponent('${enc(c.ContactName)}'))">刪除</button></td>`;
     tbody.appendChild(tr);
   });
 }
@@ -276,15 +304,18 @@ async function editCustomerContact(rowIndex, name, phone, email) {
   if (p === null) return;
   const e = prompt('Email：', email);
   if (e === null) return;
-  const result = await callApi('updateCustomerContact', { rowIndex, fields: { ContactName: n, Phone: p, Email: e } });
-  if (!result.success) return alert(result.message);
+  const result = await callApi('updateCustomerContact', { rowIndex, expect: { CompanyName: currentContactsCompany, ContactName: name }, fields: { ContactName: n, Phone: p, Email: e } });
+  if (!result.success) {
+    alert(result.message);
+    return loadCustomerContacts();
+  }
   loadCustomerContacts();
 }
 
-async function deleteCustomerContact(rowIndex) {
-  if (!confirm('確定要刪除這個聯絡窗口嗎？')) return;
-  const result = await callApi('deleteCustomerContact', { rowIndex });
-  if (!result.success) return alert(result.message);
+async function deleteCustomerContact(rowIndex, name) {
+  if (!confirm('確定要刪除聯絡窗口「' + name + '」嗎？')) return;
+  const result = await callApi('deleteCustomerContact', { rowIndex, expect: { CompanyName: currentContactsCompany, ContactName: name } });
+  if (!result.success) alert(result.message);
   loadCustomerContacts();
 }
 
@@ -326,6 +357,8 @@ async function onLogCompanyChange() {
 }
 
 async function addContactLog() {
+  if (!document.getElementById('log-company').value.trim()) return alert('請先填公司名稱');
+  if (!document.getElementById('log-summary').value.trim() && !confirm('聯繫內容摘要是空的，確定要新增嗎？')) return;
   const result = await callApi('addContactLog', {
     companyName: document.getElementById('log-company').value,
     contact: document.getElementById('log-contact').value,
@@ -338,6 +371,7 @@ async function addContactLog() {
     alert('已新增聯繫紀錄');
     ['log-contact', 'log-summary'].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('log-case').value = '';
+    if (result.log) ContactLogStore.add(result.log);
     loadContactLogs();
   } else {
     alert(result.message);
@@ -350,27 +384,43 @@ async function loadContactLogs() {
   const tbody = document.querySelector('#contact-log-table tbody');
   tbody.innerHTML = '';
   if (!result.success) return;
+  currentLogRows = {};
+  if (companyName) ContactLogStore.byCompany[companyName] = result.logs.slice().sort(compareLogsDesc);
+  else ContactLogStore.setAll(result.logs);
   result.logs.forEach((l) => {
+    currentLogRows[l.RowIndex] = l;
     const tr = document.createElement('tr');
-    const caseCell = l.CaseID ? `<a href="cases.html?caseId=${encodeURIComponent(l.CaseID)}">${l.CaseID}</a>` : '';
-    tr.innerHTML = `<td>${l.Date}</td><td>${l.CompanyName}</td><td>${l.Contact || ''}</td><td>${l.Method || ''}</td><td>${l.Summary || ''}</td><td>${l.Salesperson || ''}</td><td>${caseCell}</td>
-      <td><button onclick="editContactLog(${l.RowIndex}, '${escapeAttr((l.Summary || '').replace(/\n/g, ' '))}')">編輯摘要</button> <button onclick="deleteContactLog(${l.RowIndex})">刪除</button></td>`;
+    const caseCell = l.CaseID ? `<a href="cases.html?caseId=${encodeURIComponent(l.CaseID)}">${htmlEsc(l.CaseID)}</a>` : '';
+    const change = isChangeLog(l);
+    const summary = `${change && (l.Summary === '修改客戶資料' || l.Summary === '修改下次追蹤') ? '' : htmlEsc(l.Summary || '')}${l.Changes ? `<div class="fu-hist-changes">${htmlEsc(l.Changes)}</div>` : ''}`;
+    tr.innerHTML = `<td>${htmlEsc(l.Date)}${l.CreatedAt && String(l.CreatedAt).slice(0, 10) === l.Date ? '<br><small class="calc-hint">' + htmlEsc(String(l.CreatedAt).slice(11, 16)) + '</small>' : ''}</td><td>${htmlEsc(l.CompanyName)}</td><td>${htmlEsc(l.Contact || '')}</td><td>${change ? '✏️ ' : ''}${htmlEsc(l.Method || '')}</td><td style="white-space:pre-wrap;">${summary}</td><td>${htmlEsc(l.Salesperson || '')}</td><td>${caseCell}</td>
+      <td>${change ? '' : `<button onclick="editContactLog(${l.RowIndex})">編輯摘要</button> `}<button onclick="deleteContactLog(${l.RowIndex})">刪除</button></td>`;
     tbody.appendChild(tr);
   });
 }
 
-async function editContactLog(rowIndex, summary) {
-  const v = prompt('修改聯繫內容摘要：', summary);
+let currentLogRows = {}; // 列號 → 目前列表上的聯繫紀錄（編輯 / 刪除時用來確認還是同一筆）
+
+function logExpect(l) {
+  return { CompanyName: l.CompanyName, Date: l.Date, Summary: l.Summary };
+}
+
+async function editContactLog(rowIndex) {
+  const l = currentLogRows[rowIndex];
+  if (!l) return;
+  const v = prompt('修改聯繫內容摘要：', l.Summary || '');
   if (v === null) return;
-  const result = await callApi('updateContactLog', { rowIndex, fields: { Summary: v } });
-  if (!result.success) return alert(result.message);
+  const result = await callApi('updateContactLog', { rowIndex, expect: logExpect(l), fields: { Summary: v } });
+  if (!result.success) alert(result.message);
   loadContactLogs();
 }
 
 async function deleteContactLog(rowIndex) {
-  if (!confirm('確定要刪除這筆聯繫紀錄嗎？')) return;
-  const result = await callApi('deleteContactLog', { rowIndex });
-  if (!result.success) return alert(result.message);
+  const l = currentLogRows[rowIndex];
+  if (!l) return;
+  if (!confirm('確定要刪除這筆聯繫紀錄嗎？\n\n' + l.Date + '　' + l.CompanyName + '\n' + String(l.Summary || l.Changes || '').slice(0, 60))) return;
+  const result = await callApi('deleteContactLog', { rowIndex, expect: logExpect(l) });
+  if (!result.success) alert(result.message);
   loadContactLogs();
 }
 
@@ -399,7 +449,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 // 導覽列「↻ 重撈資料」
-window.refreshPageData = () => loadCustomers();
+window.refreshPageData = async () => {
+  await loadCustomers();
+  await loadContactLogs();
+};
 
 // ------------------------------------------------------------
 // 從客戶直接建立案件（編輯客戶視窗的「建立案件」）
@@ -447,7 +500,7 @@ async function loadNewCaseLists() {
 }
 
 function openNewCaseModal() {
-  const c = allCustomers.find((x) => x.RowIndex === editingCustomerRow);
+  const c = findCustomerByName(editingCustomerName);
   if (!c) return;
   if (document.getElementById('ce-company').value.trim() !== String(c.CompanyName).trim()) {
     return alert('公司名稱已經被修改但還沒儲存，請先按「儲存」再建立案件。');
@@ -530,7 +583,7 @@ async function submitNewCase() {
   if (!r.success) return alert(r.message);
   let msg = '案件已建立：' + r.caseId;
   if (followup) {
-    const u = await callApi('updateCustomer', { rowIndex: ncCustomer.RowIndex, fields: { NextFollowUpDate: followup, NextFollowUpTime: document.getElementById('nc-followup-time').value, NextFollowUpNote: document.getElementById('nc-followup-note').value.trim() } });
+    const u = await callApi('updateCustomer', { rowIndex: ncCustomer.RowIndex, companyName: ncCustomer.CompanyName, logMethod: '改期', logSummary: '建立案件「' + r.caseId + '」並設定下次追蹤', caseId: r.caseId, fields: { NextFollowUpDate: followup, NextFollowUpTime: document.getElementById('nc-followup-time').value, NextFollowUpNote: document.getElementById('nc-followup-note').value.trim() } });
     msg += u.success ? '\n下次追蹤日已設定為 ' + followup : '\n（案件已建立，但追蹤日設定失敗：' + u.message + '）';
   }
   clearCached('customers');

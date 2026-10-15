@@ -132,12 +132,23 @@ async function callApi(action, params, opts) {
       });
       return await res.json();
     };
-    let result = await send();
+    let result;
+    try {
+      result = await send();
+    } catch (e) {
+      // 網路斷線、Apps Script 回傳錯誤頁（不是 JSON）時，回傳失敗物件讓畫面顯示原因，而不是整個流程默默中斷
+      return { success: false, networkError: true, message: '連線失敗，請檢查網路後再試一次（' + (e && e.message ? e.message : e) + '）' };
+    }
     // 登入逾期（快取的工作階段最多 6 小時）或被登出：先悄悄用「記住的裝置」換新的登入再重送一次，
     // 使用者完全無感；換不到（例如被管理員強制登出）才回登入頁。
     if (result && result.success === false && AUTH_ERROR_PATTERN.test(result.message || '') && action !== 'login' && action !== 'resumeSession') {
-      if (await refreshSession()) result = await send();
-      else goToLogin();
+      if (await refreshSession()) {
+        try {
+          result = await send();
+        } catch (e) {
+          return { success: false, networkError: true, message: '連線失敗，請檢查網路後再試一次（' + (e && e.message ? e.message : e) + '）' };
+        }
+      } else goToLogin();
     }
     return result;
   } finally {
@@ -541,118 +552,562 @@ function followNoteHtml(note) {
   return `<div class="fu-note" title="${esc}">📝 ${esc}</div>`;
 }
 
-/**
- * 「追蹤完畢」小視窗：記下這次聯繫的結果（寫進客戶聯繫紀錄）+ 設定下次追蹤日（或不再追蹤），一次完成。
- * opts: { companyName, rowIndex, contact, currentDate, currentNote, caseId, editOnly, onDone }
- * editOnly = true：只改下次追蹤日與說明（不記聯繫紀錄）。
- */
-/** 追蹤視窗上方的「本案資料」：客戶與案件的聯絡人、電話、Email、案件重點，打電話前一眼看到。 */
-function followInfoHtml(opts) {
-  const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  const cust = opts.customer || {};
-  const cs = opts.caseData || {};
-  const phone = (p) => {
-    const t = String(p || '').trim();
-    return t ? `<a href="tel:${esc(t.replace(/[^\d+#,]/g, ''))}">${esc(t)}</a>` : '—';
-  };
-  const mail = (m) => {
-    const t = String(m || '').trim();
-    return t ? `<a href="mailto:${esc(t)}">${esc(t)}</a>` : '—';
-  };
-  const row = (label, html) => `<tr><th style="white-space:nowrap;width:1%;text-align:left;font-weight:normal;color:#667;">${label}</th><td>${html}</td></tr>`;
-  const rows = [];
-  const planned = String((cust.CompanyName ? cust.NextFollowUpNote : opts.currentNote) || '').trim();
-  if (planned) {
-    rows.push(row('本次需要洽談', `<div style="background:#fffbe6;border-left:3px solid #f1c40f;padding:4px 8px;white-space:pre-wrap;font-weight:600;">${esc(planned)}</div>`));
-  } else {
-    const dis = discussText(cust);
-    if (dis.text) rows.push(row('客戶備註', `<div style="white-space:pre-wrap;color:#555;max-height:110px;overflow:auto;">${esc(dis.text)}</div><div class="calc-hint">（還沒寫「本次需要洽談」，這是客戶備註最後的內容，僅供參考）</div>`));
-  }
-  if (cs.CaseID) {
-    rows.push(row('案件', `<b>${esc(cs.CaseID)}</b>${cs.Status ? '　<span class="calc-hint">' + esc(cs.Status) + '</span>' : ''}${cs.Urgency ? '　緊急：' + esc(cs.Urgency) : ''}`));
-    const what = [cs.ProductApplication && '應用：' + cs.ProductApplication, cs.TestObject && '待測物：' + cs.TestObject, cs.SoftwareName && '軟體：' + cs.SoftwareName].filter(Boolean);
-    if (what.length) rows.push(row('內容', esc(what.join('　'))));
-    if (cs.ProjectContact || cs.ContactPhone) rows.push(row('案件聯絡人', `${esc(cs.ProjectContact) || '—'}　${phone(cs.ContactPhone)}`));
-    if (cs.EndCustomerName) rows.push(row('終端客戶', esc(cs.EndCustomerName)));
-    if (cs.Salesperson || cs.FAE) rows.push(row('業務 / FAE', esc([cs.Salesperson, cs.FAE].filter(Boolean).join(' / '))));
-  }
-  rows.push(row('客戶', `<b>${esc(opts.companyName)}</b>${cust.Category ? '　<span class="calc-hint">' + esc(cust.Category) + '</span>' : ''}`));
-  rows.push(row('聯絡人', `${esc(cust.Contact) || '—'}　${phone(cust.Phone)}`));
-  if (cust.Email) rows.push(row('Email', mail(cust.Email)));
-  return `<table style="width:100%;margin:0 0 8px;font-size:13px;background:#f7f9fc;border:1px solid #dde5f0;"><tbody>${rows.join('')}</tbody></table>
-    <div id="fu-recent" class="calc-hint" style="margin-bottom:8px;"></div>`;
+// ------------------------------------------------------------
+// 聯繫紀錄暫存：追蹤視窗的「歷史紀錄」用。頁面一打開就先在背景載入，按「展開」時馬上有資料，不擋畫面。
+// ------------------------------------------------------------
+/** Method 是這兩種的，是系統自動記下的修改紀錄（改了客戶資料 / 下次追蹤），不是實際聯繫，工作日報與「上次聯繫」都會略過。 */
+const CHANGE_LOG_METHODS = ['資料修改', '改期'];
+
+function isChangeLog(l) {
+  return !!l && CHANGE_LOG_METHODS.indexOf(l.Method) > -1;
 }
 
+function htmlEsc(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** 紀錄排序：日期新的在前，同一天看記錄時間，再看寫入順序（列號）。 */
+function compareLogsDesc(a, b) {
+  return (
+    String(b.Date || '').localeCompare(String(a.Date || '')) ||
+    String(b.CreatedAt || '').localeCompare(String(a.CreatedAt || '')) ||
+    (Number(b.RowIndex) || 0) - (Number(a.RowIndex) || 0)
+  );
+}
+
+const ContactLogStore = {
+  all: null, // 全部紀錄（頁面有整批載入過才有）
+  byCompany: {}, // 公司名稱 → 紀錄（新的在前）
+  pending: {},
+  allPromise: null,
+  listeners: [],
+  setAll(logs) {
+    this.all = (logs || []).slice().sort(compareLogsDesc);
+    this.byCompany = {};
+    this.all.forEach((l) => (this.byCompany[l.CompanyName] = this.byCompany[l.CompanyName] || []).push(l));
+    this.notify(null);
+  },
+  /** 某間公司的紀錄（新的在前）；還沒載入過回傳 null。 */
+  get(company) {
+    if (this.byCompany[company]) return this.byCompany[company];
+    return this.all ? [] : null;
+  },
+  /** 背景整批載入全部紀錄（不顯示遮罩）；同時多處呼叫只打一次 API。 */
+  loadAll(force) {
+    if (this.allPromise && !force) return this.allPromise;
+    const p = callApi('getContactLogs', {}, { silent: true }).then((r) => {
+      if (r && r.success) this.setAll(r.logs);
+      else if (this.allPromise === p) this.allPromise = null; // 失敗的話下次可以重試
+      return this.all || [];
+    });
+    this.allPromise = p;
+    return p;
+  },
+  /** 背景重新載入某間公司的紀錄。 */
+  loadCompany(company) {
+    if (!company) return Promise.resolve([]);
+    if (this.pending[company]) return this.pending[company];
+    const p = callApi('getContactLogs', { companyName: company }, { silent: true }).then((r) => {
+      delete this.pending[company];
+      if (r && r.success) {
+        this.byCompany[company] = (r.logs || []).slice().sort(compareLogsDesc);
+        if (this.all) this.all = this.all.filter((l) => l.CompanyName !== company).concat(this.byCompany[company]).sort(compareLogsDesc);
+        this.notify(company);
+      }
+      return this.get(company) || [];
+    });
+    this.pending[company] = p;
+    return p;
+  },
+  /** 剛存好的紀錄直接放進暫存，不用等重新載入。 */
+  add(log) {
+    if (!log || !log.CompanyName) return;
+    const list = (this.byCompany[log.CompanyName] = this.byCompany[log.CompanyName] || []);
+    if (!list.some((l) => l.RowIndex === log.RowIndex && l.CreatedAt === log.CreatedAt)) list.unshift(log);
+    list.sort(compareLogsDesc);
+    if (this.all && this.all.indexOf(log) < 0) {
+      this.all.unshift(log);
+      this.all.sort(compareLogsDesc);
+    }
+    this.notify(log.CompanyName);
+  },
+  /** 公司改名：暫存裡的紀錄一起換成新名稱。 */
+  rename(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+    const moved = this.byCompany[oldName] || [];
+    moved.forEach((l) => (l.CompanyName = newName));
+    if (this.all) this.all.forEach((l) => l.CompanyName === oldName && (l.CompanyName = newName));
+    delete this.byCompany[oldName];
+    this.byCompany[newName] = (this.byCompany[newName] || []).concat(moved).sort(compareLogsDesc);
+    this.notify(newName);
+  },
+  /** 訂閱資料更新，回傳取消訂閱的函式。 */
+  onChange(fn) {
+    this.listeners.push(fn);
+    return () => (this.listeners = this.listeners.filter((x) => x !== fn));
+  },
+  notify(company) {
+    this.listeners.slice().forEach((fn) => {
+      try {
+        fn(company);
+      } catch (e) {
+        // 單一畫面更新失敗不影響其他
+      }
+    });
+  },
+};
+
+/** 最近一筆「真正的聯繫」（略過系統記的修改紀錄）。caseId 有給時優先找同案件的。 */
+function lastRealContact(logs, caseId) {
+  const real = (logs || []).filter((l) => !isChangeLog(l));
+  return (caseId && real.find((l) => l.CaseID === caseId)) || real[0] || null;
+}
+
+/** 把存檔後的客戶資料套回頁面上的客戶清單（用列號或舊名稱找到同一筆），找不到就加進去。 */
+function patchCustomerList(list, customer, oldName) {
+  if (!Array.isArray(list) || !customer) return;
+  let i = list.findIndex((c) => c.CompanyName === (oldName || customer.CompanyName));
+  if (i < 0) i = list.findIndex((c) => c.RowIndex === customer.RowIndex && c.CompanyName === customer.CompanyName);
+  if (i < 0) list.push(customer);
+  else list[i] = Object.assign({}, list[i], customer);
+}
+
+// ------------------------------------------------------------
+// 追蹤視窗（業務行事曆、案件管理、客戶管理共用）
+// ------------------------------------------------------------
+const CUSTOMER_CATEGORY_OPTIONS = ['AOI同業資料', '器材原廠', '機構合作設備商', '一般客戶'];
+// 視窗裡「修改客戶資料」可以改的欄位：[欄位, 輸入框 id]
+const FU_EDIT_FIELDS = [
+  ['CompanyName', 'fe-company'],
+  ['Category', 'fe-category'],
+  ['Urgency', 'fe-urgency'],
+  ['Contact', 'fe-contact'],
+  ['Phone', 'fe-phone'],
+  ['Email', 'fe-email'],
+  ['CompanyPhone', 'fe-company-phone'],
+  ['TaxId', 'fe-taxid'],
+  ['Address', 'fe-address'],
+  ['Notes', 'fe-notes'],
+];
+
+function fuAddDays(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function fuPhoneLink(p) {
+  const t = String(p || '').trim();
+  return t ? `<a href="tel:${htmlEsc(t.replace(/[^\d+#,]/g, ''))}">${htmlEsc(t)}</a>` : '—';
+}
+
+/** 視窗上方的「本案資料」：客戶與案件的聯絡人、電話、Email、案件重點，打電話前一眼看到。 */
+function followInfoHtml(st) {
+  const cust = st.customer || {};
+  const cs = st.caseData || {};
+  const row = (label, html) => `<tr><th style="white-space:nowrap;width:1%;text-align:left;font-weight:normal;color:#667;">${label}</th><td>${html}</td></tr>`;
+  const rows = [];
+  const planned = String(cust.NextFollowUpNote || '').trim();
+  if (planned) {
+    rows.push(row('本次需要洽談', `<div style="background:#fffbe6;border-left:3px solid #f1c40f;padding:4px 8px;white-space:pre-wrap;font-weight:600;">${htmlEsc(planned)}</div>`));
+  } else {
+    const dis = discussText(cust);
+    if (dis.text) rows.push(row('客戶備註', `<div style="white-space:pre-wrap;color:#555;max-height:110px;overflow:auto;">${htmlEsc(dis.text)}</div><div class="calc-hint">（還沒寫「本次需要洽談」，這是客戶備註最後的內容，僅供參考）</div>`));
+  }
+  if (cs.CaseID) {
+    rows.push(row('案件', `<b>${htmlEsc(cs.CaseID)}</b>${cs.Status ? '　<span class="calc-hint">' + htmlEsc(cs.Status) + '</span>' : ''}${cs.Urgency ? '　緊急：' + htmlEsc(cs.Urgency) : ''}`));
+    const what = [cs.ProductApplication && '應用：' + cs.ProductApplication, cs.TestObject && '待測物：' + cs.TestObject, cs.SoftwareName && '軟體：' + cs.SoftwareName].filter(Boolean);
+    if (what.length) rows.push(row('內容', htmlEsc(what.join('　'))));
+    if (cs.ProjectContact || cs.ContactPhone) rows.push(row('案件聯絡人', `${htmlEsc(cs.ProjectContact) || '—'}　${fuPhoneLink(cs.ContactPhone)}`));
+    if (cs.EndCustomerName) rows.push(row('終端客戶', htmlEsc(cs.EndCustomerName)));
+    if (cs.Salesperson || cs.FAE) rows.push(row('業務 / FAE', htmlEsc([cs.Salesperson, cs.FAE].filter(Boolean).join(' / '))));
+  }
+  rows.push(
+    row(
+      '客戶',
+      `<b>${htmlEsc(st.companyName)}</b>${cust.Category ? '　<span class="calc-hint">' + htmlEsc(cust.Category) + '</span>' : ''}${cust.TaxId ? '　<span class="calc-hint">統編 ' + htmlEsc(cust.TaxId) + '</span>' : ''}
+      <button type="button" class="btn-mini fu-edit-btn" id="fu-edit-open" title="換聯絡人、改電話、公司名稱打錯…直接在這裡改">✏️ 修改客戶資料</button>`
+    )
+  );
+  rows.push(row('聯絡人', `${htmlEsc(cust.Contact) || '—'}　${fuPhoneLink(cust.Phone)}`));
+  if (cust.CompanyPhone) rows.push(row('公司電話', fuPhoneLink(cust.CompanyPhone)));
+  if (cust.Email) rows.push(row('Email', `<a href="mailto:${htmlEsc(cust.Email)}">${htmlEsc(cust.Email)}</a>`));
+  if (cust.Address) rows.push(row('地址', htmlEsc(cust.Address)));
+  return `<table class="fu-info"><tbody>${rows.join('')}</tbody></table>`;
+}
+
+/** 修改客戶資料的表單（預設收起來）。 */
+function followEditHtml(st) {
+  const c = st.customer || {};
+  const cats = CUSTOMER_CATEGORY_OPTIONS.indexOf(c.Category) < 0 && c.Category ? [c.Category].concat(CUSTOMER_CATEGORY_OPTIONS) : CUSTOMER_CATEGORY_OPTIONS;
+  const opt = (list, cur) => list.map((v) => `<option value="${htmlEsc(v)}"${v === cur ? ' selected' : ''}>${htmlEsc(v)}</option>`).join('');
+  const val = (v) => htmlEsc(v == null ? '' : v);
+  return `<div class="fu-edit-title"><b>修改客戶資料</b><span class="calc-hint">換聯絡人、改電話、公司名稱打錯都可以直接在這裡改，修改內容會留在歷史紀錄。</span></div>
+    <div class="fu-edit-grid">
+      <label class="wide">公司名稱<input id="fe-company" value="${val(c.CompanyName)}" /></label>
+      <label>分類<select id="fe-category">${opt(cats, c.Category || '一般客戶')}</select></label>
+      <label>急迫性<select id="fe-urgency">${opt(['高', '中', '低'], c.Urgency || '中')}</select></label>
+      <label>主要聯絡人<input id="fe-contact" list="fe-contact-list" value="${val(c.Contact)}" /></label>
+      <label>聯繫人電話<input id="fe-phone" value="${val(c.Phone)}" /></label>
+      <label>Email<input id="fe-email" value="${val(c.Email)}" /></label>
+      <label>公司電話<input id="fe-company-phone" value="${val(c.CompanyPhone)}" /></label>
+      <label>統一編號<input id="fe-taxid" maxlength="8" value="${val(c.TaxId)}" /></label>
+      <label>地址<input id="fe-address" value="${val(c.Address)}" /></label>
+      <label class="wide">客戶備註<textarea id="fe-notes" rows="3">${val(c.Notes)}</textarea></label>
+    </div>
+    <datalist id="fe-contact-list"></datalist>
+    <div id="fe-other-contacts" class="fu-other-contacts"></div>
+    <label id="fe-keep-wrap" class="fu-keep" style="display:none;"><input type="checkbox" id="fe-keep-old" checked /> 把原本的主要聯絡人「<span id="fe-old-contact"></span>」保留到「其他聯絡窗口」</label>
+    <div id="fe-rename-hint" class="calc-hint" style="display:none;color:#b9770e;">改公司名稱會一併更新這間公司的案件、聯絡窗口、聯繫紀錄（案件編號 / 專案名稱不會自動改）。</div>
+    <div class="fu-edit-actions"><button type="button" id="fe-save">儲存客戶資料</button> <button type="button" class="btn-secondary" id="fe-cancel">取消</button> <span id="fe-msg" class="calc-hint"></span></div>`;
+}
+
+/** 一筆歷史紀錄。 */
+function followHistItemHtml(l) {
+  const change = isChangeLog(l);
+  const time = String(l.CreatedAt || '').slice(0, 10) === String(l.Date || '') ? String(l.CreatedAt).slice(11, 16) : '';
+  const autoSummary = change && (l.Summary === '修改客戶資料' || l.Summary === '修改下次追蹤');
+  const meta = [
+    `<b>${htmlEsc(l.Date)}</b>${time ? ' ' + htmlEsc(time) : ''}`,
+    `<span class="fu-hist-tag">${change ? '✏️ ' : ''}${htmlEsc(l.Method || '—')}</span>`,
+    l.Contact ? '聯絡人：' + htmlEsc(l.Contact) : '',
+    l.Salesperson ? htmlEsc(l.Salesperson) : '',
+    l.CaseID ? `<span class="fu-hist-case" title="${htmlEsc(l.CaseID)}">${htmlEsc(l.CaseID)}</span>` : '',
+  ].filter(Boolean);
+  return `<div class="fu-hist-item${change ? ' is-change' : ''}">
+    <div class="fu-hist-meta">${meta.join('<span class="fu-hist-dot">·</span>')}</div>
+    ${l.Summary && !autoSummary ? `<div class="fu-hist-sum">${htmlEsc(l.Summary)}</div>` : ''}
+    ${l.Changes ? `<div class="fu-hist-changes">${htmlEsc(l.Changes)}</div>` : ''}
+  </div>`;
+}
+
+/**
+ * 「追蹤完畢 / 改日」小視窗：
+ *   - 上方「本案資料」可直接「✏️ 修改客戶資料」（換聯絡人、改電話、公司名稱打錯…），存檔後會留下修改紀錄；
+ *   - 「上次聯繫」可展開看這間公司全部的歷史紀錄（聯繫了什麼、改了哪些資料），開視窗時就先在背景載入；
+ *   - 追蹤完畢：記下這次聯繫的結果（寫進客戶聯繫紀錄）+ 設定下次追蹤日與洽談內容（或不再追蹤），一次完成。
+ * opts: { companyName, rowIndex, customer, contact, caseData, caseId, currentDate, currentNote, editOnly, onSaved(result, oldName), onDone(result) }
+ * editOnly = true：只改下次追蹤（不記聯繫紀錄）。
+ */
 function openFollowUpDialog(opts) {
   const old = document.getElementById('followup-dialog');
-  if (old) old.remove();
-  const addDays = (n) => {
-    const d = new Date();
-    d.setDate(d.getDate() + n);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (old && typeof old._cleanup === 'function') old._cleanup();
+  else if (old) old.remove();
+
+  const st = {
+    companyName: opts.companyName,
+    rowIndex: opts.rowIndex,
+    customer: Object.assign(
+      { CompanyName: opts.companyName, RowIndex: opts.rowIndex, Contact: opts.contact || '', NextFollowUpDate: opts.currentDate || '', NextFollowUpNote: opts.currentNote || '' },
+      opts.customer || {}
+    ),
+    caseData: opts.caseData || null,
+    caseId: opts.caseId || '',
+    contacts: null, // 其他聯絡窗口（背景載入）
+    histOpen: false,
+    histFilter: 'all',
+    editOpen: false,
+    editInitial: {}, // 打開「修改客戶資料」當下各欄位的值，用來判斷哪些欄位真的有改
   };
-  const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const currentNote = st.customer.NextFollowUpNote || '';
+  const currentDate = st.customer.NextFollowUpDate || '';
+  const defaultContact = (st.caseData && st.caseData.ProjectContact) || st.customer.Contact || opts.contact || '';
+
   const wrap = document.createElement('div');
   wrap.id = 'followup-dialog';
   wrap.className = 'modal-overlay';
   wrap.innerHTML = `
-    <div class="modal-box" style="max-width:620px;">
-      <div class="modal-header"><h3 style="margin:0;">${opts.editOnly ? '修改下次追蹤' : '追蹤完畢'}：${esc(opts.companyName)}</h3><button type="button" id="fu-close">關閉</button></div>
-      ${followInfoHtml(opts)}
-      <div class="calc-hint" style="margin-bottom:8px;">${opts.editOnly ? '只修改下次追蹤日與說明，不會新增聯繫紀錄。' : '這次追蹤的結果會記進「客戶聯繫紀錄」，並更新客戶的下次追蹤日與說明（也會同步到行事曆）。'}</div>
-      ${opts.editOnly ? '' : `<label>聯繫方式：
-        <select id="fu-method"><option>電話</option><option>Email</option><option>LINE</option><option>拜訪</option><option>其他</option></select></label>
-      <label>聯絡人：<input id="fu-contact" value="${esc((opts.caseData && opts.caseData.ProjectContact) || opts.contact)}" /></label>
-      <label>追蹤結果 / 聯繫內容（這次做了什麼、談到哪）：</label>
-      <textarea id="fu-summary" rows="4" style="width:100%;" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>`}
-      <label>下次追蹤日：<input id="fu-date" type="date" value="${esc(normalizeDateStr(opts.currentDate)) || addDays(7)}" /></label>
-      <label>預約時間：<input id="fu-time" type="time" value="${esc((opts.customer && opts.customer.NextFollowUpTime) || '')}" title="跟客戶約的時間點；沒約時間就留空（日曆會是整天行程）" /></label>
-      <button type="button" class="btn-mini" onclick="document.getElementById('fu-time').value=''">清除時間</button>
-      <span id="fu-quick"></span>
-      <label style="display:block;margin-top:6px;">${opts.editOnly ? '下次洽談內容（下次追蹤時要談什麼）：' : '下次洽談內容（下次追蹤時要談什麼、準備什麼；上面「本次需要洽談」是這次的）：'}
-        ${!opts.editOnly && opts.currentNote ? '<button type="button" class="btn-mini" id="fu-reuse">沿用本次內容</button>' : ''}</label>
-      <textarea id="fu-note" rows="3" style="width:100%;" placeholder="例如：等客戶主管確認預算後，回覆報價；先備好 500 萬相機 + 2 倍鏡頭的報價單">${opts.editOnly ? esc(opts.currentNote) : ''}</textarea>
-      <label style="display:block;margin-top:6px;"><input type="checkbox" id="fu-stop" /> 不再追蹤（清除下次追蹤日，例如已結案、客戶表示不需要）</label>
+    <div class="modal-box fu-box">
+      <div class="modal-header"><h3 style="margin:0;">${opts.editOnly ? '修改下次追蹤' : '追蹤完畢'}：<span id="fu-title"></span></h3><button type="button" id="fu-close">關閉</button></div>
+      <div id="fu-info"></div>
+      <div id="fu-edit" class="fu-edit" style="display:none;"></div>
+      <div id="fu-hist" class="fu-hist"></div>
+      <div class="calc-hint" style="margin-bottom:8px;">${opts.editOnly ? '只修改下次追蹤日與洽談內容，不會新增聯繫紀錄（修改內容會記在歷史紀錄）。' : '這次追蹤的結果會記進「客戶聯繫紀錄」，並更新客戶的下次追蹤日與洽談內容（也會同步到行事曆）。'}</div>
+      ${
+        opts.editOnly
+          ? ''
+          : `<div class="fu-row">
+        <label>聯繫方式：<select id="fu-method"><option>電話</option><option>Email</option><option>LINE</option><option>拜訪</option><option>其他</option></select></label>
+        <label>聯絡人：<input id="fu-contact" list="fu-contact-list" value="${htmlEsc(defaultContact)}" /></label>
+        <datalist id="fu-contact-list"></datalist>
+      </div>
+      <label class="fu-block">追蹤結果 / 聯繫內容（這次做了什麼、談到哪）：</label>
+      <textarea id="fu-summary" rows="4" placeholder="例如：已電話聯繫，客戶說下週會議後再回覆；需補寄報價單"></textarea>`
+      }
+      <div class="fu-row">
+        <label>下次追蹤日：<input id="fu-date" type="date" value="${htmlEsc(normalizeDateStr(currentDate)) || fuAddDays(7)}" /></label>
+        <span id="fu-quick" class="fu-quick"></span>
+      </div>
+      <div class="fu-row">
+        <label>預約時間：<input id="fu-time" type="time" value="${htmlEsc(st.customer.NextFollowUpTime || '')}" title="跟客戶約的時間點；沒約時間就留空（日曆會是整天行程）" /></label>
+        <button type="button" class="btn-mini" id="fu-time-clear">清除時間</button>
+      </div>
+      <label class="fu-block">${opts.editOnly ? '下次洽談內容（下次追蹤時要談什麼）：' : '下次洽談內容（下次追蹤時要談什麼、準備什麼；上面「本次需要洽談」是這次的）：'}
+        ${!opts.editOnly && currentNote ? '<button type="button" class="btn-mini" id="fu-reuse">沿用本次內容</button>' : ''}</label>
+      <textarea id="fu-note" rows="3" placeholder="例如：等客戶主管確認預算後，回覆報價；先備好 500 萬相機 + 2 倍鏡頭的報價單">${opts.editOnly ? htmlEsc(currentNote) : ''}</textarea>
+      <label class="fu-block"><input type="checkbox" id="fu-stop" /> 不再追蹤（清除下次追蹤日，例如已結案、客戶表示不需要）</label>
       <div style="margin-top:12px;"><button type="button" id="fu-save">儲存</button></div>
     </div>`;
   document.body.appendChild(wrap);
-  enhanceTimeInputs(wrap);
   const $ = (id) => document.getElementById(id);
-  // 最近幾筆聯繫紀錄（同案件優先），接續上次進度用
-  callApi('getContactLogs', { companyName: opts.companyName }, { silent: true }).then((r) => {
-    const box = $('fu-recent');
-    if (!box || !r || !r.success) return;
-    let logs = r.logs || [];
-    if (opts.caseId) {
-      const mine = logs.filter((l) => l.CaseID === opts.caseId);
-      if (mine.length) logs = mine;
-    }
-    logs = logs.slice(0, 3);
-    if (!logs.length) {
-      box.textContent = '（還沒有這間客戶的聯繫紀錄）';
+  let unsubscribe = null;
+  const close = () => {
+    if (unsubscribe) unsubscribe();
+    wrap.remove();
+  };
+  wrap._cleanup = close;
+  enhanceTimeInputs(wrap);
+
+  // ---- 本案資料 + 修改客戶資料 ----
+  const renderInfo = () => {
+    $('fu-title').textContent = st.companyName;
+    $('fu-info').innerHTML = followInfoHtml(st);
+    $('fu-edit-open').onclick = () => (st.editOpen ? closeEdit() : openEdit());
+  };
+  const renderContactChoices = () => {
+    const others = (st.contacts || []).filter((c) => c.ContactName);
+    const names = [...new Set([st.customer.Contact].concat(others.map((c) => c.ContactName)).filter(Boolean))];
+    ['fu-contact-list', 'fe-contact-list'].forEach((id) => {
+      const dl = $(id);
+      if (dl) dl.innerHTML = names.map((n) => `<option value="${htmlEsc(n)}"></option>`).join('');
+    });
+    const box = $('fe-other-contacts');
+    if (!box) return;
+    if (st.contacts == null) {
+      box.innerHTML = '<span class="calc-hint">其他聯絡窗口載入中…</span>';
       return;
     }
-    box.innerHTML = '<b>最近聯繫紀錄：</b>' + logs.map((l) => `<div style="margin-top:2px;">${esc(l.Date)}　${esc(l.Method)}${l.Contact ? '（' + esc(l.Contact) + '）' : ''}：${esc(String(l.Summary || '').replace(/\n+/g, ' ').slice(0, 80))}</div>`).join('');
+    box.innerHTML = others.length
+      ? '<span class="calc-hint">換成其他聯絡窗口（點一下帶入）：</span>' +
+        others.map((c, i) => `<button type="button" class="fu-chip" data-i="${i}" title="${htmlEsc([c.Title, c.Phone, c.Email].filter(Boolean).join(' / '))}">${htmlEsc(c.ContactName)}${c.Phone ? ' ' + htmlEsc(c.Phone) : ''}</button>`).join('')
+      : '<span class="calc-hint">這間公司還沒有其他聯絡窗口（換聯絡人時可勾選把原聯絡人留下來）。</span>';
+    box.querySelectorAll('.fu-chip').forEach((b) => {
+      b.onclick = () => {
+        const c = others[Number(b.dataset.i)];
+        $('fe-contact').value = c.ContactName || '';
+        $('fe-phone').value = c.Phone || '';
+        $('fe-email').value = c.Email || '';
+        updateEditHints();
+      };
+    });
+  };
+  const editValue = (id) => {
+    const el = $(id);
+    if (!el) return '';
+    return id === 'fe-notes' ? el.value.replace(/\s+$/, '') : el.value.trim();
+  };
+  /** 修改客戶資料表單中「使用者有改過」的欄位（跟打開表單當下比，沒動過的欄位不送，避免蓋掉別人剛改的資料）。 */
+  const editChanged = () => {
+    const out = {};
+    if (!st.editOpen) return out;
+    FU_EDIT_FIELDS.forEach(([field, id]) => {
+      const v = editValue(id);
+      if (v !== st.editInitial[id]) out[field] = v;
+    });
+    return out;
+  };
+  const updateEditHints = () => {
+    if (!st.editOpen) return;
+    const oldContact = String(st.customer.Contact || '').trim();
+    const contactChanged = editValue('fe-contact') !== st.editInitial['fe-contact'] && editValue('fe-contact') !== oldContact;
+    $('fe-keep-wrap').style.display = contactChanged && oldContact ? '' : 'none';
+    $('fe-old-contact').textContent = oldContact;
+    $('fe-rename-hint').style.display = editValue('fe-company') !== st.editInitial['fe-company'] ? '' : 'none';
+  };
+  const openEdit = () => {
+    st.editOpen = true;
+    const box = $('fu-edit');
+    box.innerHTML = followEditHtml(st);
+    box.style.display = '';
+    st.editInitial = {};
+    FU_EDIT_FIELDS.forEach(([, id]) => (st.editInitial[id] = editValue(id)));
+    renderContactChoices();
+    box.querySelectorAll('input,select,textarea').forEach((el) => el.addEventListener('input', updateEditHints));
+    $('fe-save').onclick = saveEdit;
+    $('fe-cancel').onclick = () => {
+      if (Object.keys(editChanged()).length && !confirm('修改的客戶資料還沒儲存，確定要取消嗎？')) return;
+      closeEdit();
+    };
+    updateEditHints();
+    $('fe-contact').focus();
+  };
+  const closeEdit = () => {
+    st.editOpen = false;
+    $('fu-edit').style.display = 'none';
+    $('fu-edit').innerHTML = '';
+  };
+  const keepOldChecked = () => !!($('fe-keep-old') && $('fe-keep-wrap').style.display !== 'none' && $('fe-keep-old').checked);
+  const checkEditFields = (fields) => {
+    if (fields.CompanyName !== undefined) {
+      if (!fields.CompanyName) {
+        alert('公司名稱不能空白');
+        return false;
+      }
+      if (!confirm(`要把公司名稱「${st.companyName}」改成「${fields.CompanyName}」嗎？\n\n這間公司的案件、聯絡窗口、聯繫紀錄會一起改成新名稱（案件編號 / 專案名稱不會自動改）。`)) return false;
+    }
+    if (fields.TaxId && !/^\d{8}$/.test(fields.TaxId) && !confirm(`統一編號「${fields.TaxId}」不是 8 位數字，確定要這樣存嗎？`)) return false;
+    return true;
+  };
+
+  /** 存檔成功後：更新視窗內容、暫存的紀錄，並通知頁面更新清單。 */
+  const applySaved = (r) => {
+    const oldName = st.companyName;
+    if (r.customer) {
+      st.customer = Object.assign({}, st.customer, r.customer);
+      st.companyName = r.customer.CompanyName || st.companyName;
+      if (r.customer.RowIndex != null) st.rowIndex = r.customer.RowIndex;
+    }
+    if (oldName !== st.companyName) {
+      ContactLogStore.rename(oldName, st.companyName);
+      if (st.caseData && st.caseData.CustomerName === oldName) st.caseData = Object.assign({}, st.caseData, { CustomerName: st.companyName });
+    }
+    if (r.log) ContactLogStore.add(r.log);
+    clearCached('customers');
+    clearCached('casesPageData');
+    if (typeof opts.onSaved === 'function') {
+      try {
+        opts.onSaved(r, oldName);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return oldName;
+  };
+
+  /** 後端還沒部署新版（沒有 saveFollowUp）時，退回舊的作法：先記聯繫紀錄、再改客戶。 */
+  const legacySave = async (body) => {
+    if (body.log) {
+      const log = await callApi('addContactLog', Object.assign({ companyName: body.companyName, salesperson: typeof currentUsername !== 'undefined' ? currentUsername : '' }, body.log));
+      if (!log.success) return log;
+    }
+    const upd = await callApi('updateCustomer', { rowIndex: body.rowIndex, companyName: body.companyName, fields: body.fields });
+    if (!upd.success) return upd;
+    if (!followUpLegacyWarned) {
+      followUpLegacyWarned = true;
+      alert('已儲存。\n\n提醒：後端程式還是舊版，修改紀錄、公司改名連動等新功能要等管理員把最新的 Code.gs 部署成新版本後才會生效。');
+    }
+    return { success: true, customer: Object.assign({}, st.customer, body.fields), log: null };
+  };
+  const saveFollowUp = async (body) => {
+    const r = await callApi('saveFollowUp', body);
+    if (r && !r.success && /未知的操作/.test(r.message || '')) return legacySave(body);
+    return r;
+  };
+
+  const saveEdit = async () => {
+    const fields = editChanged();
+    if (!Object.keys(fields).length) return closeEdit();
+    if (!checkEditFields(fields)) return;
+    const r = await saveFollowUp({ rowIndex: st.rowIndex, companyName: st.companyName, fields, keepOldContact: keepOldChecked(), caseId: st.caseId });
+    if (!r.success) return alert(r.message);
+    const oldContact = st.customer.Contact;
+    applySaved(r);
+    if ($('fu-contact') && $('fu-contact').value.trim() === String(oldContact || '').trim()) $('fu-contact').value = st.customer.Contact || '';
+    if (r.keptOldContact) st.contacts = null; // 其他聯絡窗口有變，重新載入
+    closeEdit();
+    renderInfo();
+    renderHistory();
+    loadContacts();
+    flash('✓ 客戶資料已儲存' + (r.keptOldContact ? '，原聯絡人已留在其他聯絡窗口' : ''));
+  };
+
+  const flash = (text) => {
+    let el = $('fu-flash');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'fu-flash';
+      el.className = 'fu-flash';
+      $('fu-info').before(el);
+    }
+    el.textContent = text;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.remove(), 4000);
+  };
+
+  // ---- 上次聯繫 / 歷史紀錄 ----
+  const renderHistory = () => {
+    const box = $('fu-hist');
+    if (!box) return;
+    const logs = ContactLogStore.get(st.companyName);
+    const loading = logs == null;
+    const list = logs || [];
+    const last = lastRealContact(list, st.caseId);
+    const lastHtml = loading
+      ? '<span class="calc-hint">載入中…</span>'
+      : last
+        ? `${htmlEsc(last.Date)} ${htmlEsc(last.Method || '')}${last.Contact ? '（' + htmlEsc(last.Contact) + '）' : ''}：${htmlEsc(String(last.Summary || '').replace(/\s*\n\s*/g, ' ').slice(0, 90))}${String(last.Summary || '').length > 90 ? '…' : ''}`
+        : '<span class="calc-hint">（還沒有聯繫紀錄）</span>';
+    const nContact = list.filter((l) => !isChangeLog(l)).length;
+    const nChange = list.length - nContact;
+    const nCase = st.caseId ? list.filter((l) => l.CaseID === st.caseId).length : 0;
+    let html = `<div class="fu-hist-head"><div><b>上次聯繫：</b>${lastHtml}</div>
+      <button type="button" class="btn-mini" data-act="toggle">${st.histOpen ? '▾ 收合' : '▸ 展開歷史紀錄'}${loading ? '' : `（${list.length}）`}</button></div>`;
+    if (st.histOpen) {
+      const filters = [['all', '全部', list.length], ['contact', '聯繫', nContact], ['change', '修改', nChange]];
+      if (st.caseId) filters.push(['case', '此案件', nCase]);
+      const shown = list.filter((l) => (st.histFilter === 'contact' ? !isChangeLog(l) : st.histFilter === 'change' ? isChangeLog(l) : st.histFilter === 'case' ? l.CaseID === st.caseId : true));
+      html += `<div class="fu-hist-filters">${filters.map(([k, label, n]) => `<button type="button" class="btn-mini${st.histFilter === k ? ' active' : ''}" data-filter="${k}">${label} ${n}</button>`).join('')}</div>`;
+      html += loading
+        ? '<div class="calc-hint" style="padding:6px 0;">歷史紀錄載入中…（不影響下面填寫，可以先繼續操作）</div>'
+        : shown.length
+          ? `<div class="fu-hist-list">${shown.map(followHistItemHtml).join('')}</div>`
+          : '<div class="calc-hint" style="padding:6px 0;">沒有符合的紀錄。</div>';
+    }
+    box.innerHTML = html;
+  };
+  $('fu-hist').addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.act === 'toggle') st.histOpen = !st.histOpen;
+    else if (t.dataset.filter) st.histFilter = t.dataset.filter;
+    else return;
+    renderHistory();
   });
+  unsubscribe = ContactLogStore.onChange((company) => {
+    if (!company || company === st.companyName) renderHistory();
+  });
+
+  // ---- 其他聯絡窗口（背景載入，給聯絡人下拉與「換成其他聯絡窗口」用）----
+  const loadContacts = () => {
+    const name = st.companyName;
+    callApi('getCustomerContacts', { companyName: name }, { silent: true }).then((r) => {
+      if (!document.body.contains(wrap) || name !== st.companyName) return;
+      st.contacts = r && r.success ? r.contacts || [] : [];
+      renderContactChoices();
+    });
+  };
+
+  renderInfo();
+  renderHistory();
+  renderContactChoices();
+  ContactLogStore.loadCompany(st.companyName); // 一打開就先在背景載入歷史紀錄，按「展開」時已經有資料
+  loadContacts();
+
+  // ---- 下次追蹤 ----
   [['明天', 1], ['3 天後', 3], ['1 週後', 7], ['2 週後', 14], ['1 個月後', 30]].forEach(([label, n]) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn-mini';
     b.textContent = label;
     b.onclick = () => {
-      $('fu-date').value = addDays(n);
+      $('fu-date').value = fuAddDays(n);
       $('fu-stop').checked = false;
       $('fu-date').disabled = false;
+      $('fu-time').disabled = false;
     };
     $('fu-quick').appendChild(b);
   });
+  $('fu-time-clear').onclick = () => ($('fu-time').value = '');
   $('fu-stop').onchange = () => {
     $('fu-date').disabled = $('fu-stop').checked;
     $('fu-time').disabled = $('fu-stop').checked;
   };
-  const close = () => wrap.remove();
-  if ($('fu-reuse')) $('fu-reuse').onclick = () => ($('fu-note').value = String(opts.currentNote || ''));
-  $('fu-close').onclick = close;
+  if ($('fu-reuse')) $('fu-reuse').onclick = () => ($('fu-note').value = String(currentNote || ''));
+  $('fu-close').onclick = () => {
+    if (st.editOpen && Object.keys(editChanged()).length && !confirm('修改的客戶資料還沒儲存，確定要關閉嗎？')) return;
+    close();
+  };
+
   $('fu-save').onclick = async () => {
     const summary = opts.editOnly ? '' : $('fu-summary').value.trim();
     if (!opts.editOnly && !summary) return alert('請填寫這次追蹤的結果 / 聯繫內容');
@@ -662,22 +1117,27 @@ function openFollowUpDialog(opts) {
     const note = stop ? '' : $('fu-note').value.trim();
     const time = stop ? '' : $('fu-time').value;
     if (!stop && !note && !confirm('還沒有填「下次洽談內容」，之後可能會忘記下次要談什麼。\n\n還是要儲存嗎？')) return;
-    if (!opts.editOnly) {
-      const log = await callApi('addContactLog', {
-        companyName: opts.companyName,
-        contact: $('fu-contact').value,
-        method: $('fu-method').value,
-        summary,
-        salesperson: typeof currentUsername !== 'undefined' ? currentUsername : '',
-        caseId: opts.caseId || '',
-      });
-      if (!log.success) return alert(log.message);
+    const editFields = editChanged();
+    if (Object.keys(editFields).length && !checkEditFields(editFields)) return;
+    const body = {
+      rowIndex: st.rowIndex,
+      companyName: st.companyName,
+      fields: Object.assign({}, editFields, { NextFollowUpDate: date, NextFollowUpNote: note, NextFollowUpTime: time }),
+      keepOldContact: keepOldChecked(),
+      caseId: st.caseId,
+    };
+    if (!opts.editOnly) body.log = { method: $('fu-method').value, contact: $('fu-contact').value.trim(), summary, caseId: st.caseId };
+    const btn = $('fu-save');
+    btn.disabled = true;
+    try {
+      const r = await saveFollowUp(body);
+      if (!r.success) return alert(r.message);
+      applySaved(r);
+      close();
+      if (typeof opts.onDone === 'function') opts.onDone(r);
+    } finally {
+      btn.disabled = false;
     }
-    const upd = await callApi('updateCustomer', { rowIndex: opts.rowIndex, fields: { NextFollowUpDate: date, NextFollowUpNote: note, NextFollowUpTime: time } });
-    if (!upd.success) return alert((opts.editOnly ? '' : '聯繫紀錄已存，但') + '更新追蹤日失敗：' + upd.message);
-    clearCached('customers');
-    clearCached('casesPageData');
-    close();
-    if (typeof opts.onDone === 'function') opts.onDone();
   };
 }
+let followUpLegacyWarned = false;

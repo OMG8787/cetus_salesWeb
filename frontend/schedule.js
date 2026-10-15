@@ -7,6 +7,7 @@
  */
 let schCustomers = [];
 let schCases = [];
+let schData = null; // 最近一次的 getCasesPageData 結果（存回暫存用）
 
 const URGENCY_RANK = { 高: 0, 中: 1, 低: 2 };
 const URGENCY_STYLE = {
@@ -61,6 +62,7 @@ function matchKeyword(texts) {
 }
 
 function applyScheduleData(data) {
+  schData = data;
   schCustomers = data.customers || [];
   schCases = data.cases || [];
   renderSchedule();
@@ -70,9 +72,32 @@ async function loadScheduleData() {
   const cached = await getCachedAsync('casesPageData');
   if (cached) applyScheduleData(cached);
   const result = await callApi('getCasesPageData', {}, { silent: !!cached });
-  if (!result.success) return alert(result.message);
+  if (!result.success) {
+    if (!cached) alert(result.message);
+    return;
+  }
   setCached('casesPageData', result);
   applyScheduleData(result);
+}
+
+/** 追蹤視窗存檔後：先用回傳的客戶資料直接更新畫面（不用等重新載入），再在背景跟資料庫同步。 */
+function schAfterSave(r, oldName) {
+  if (r && r.customer) {
+    patchCustomerList(schCustomers, r.customer, oldName);
+    if (oldName && r.customer.CompanyName !== oldName) {
+      schCases.forEach((c) => {
+        if (c.CustomerName === oldName) c.CustomerName = r.customer.CompanyName;
+      });
+    }
+    if (schData) setCached('casesPageData', Object.assign({}, schData, { customers: schCustomers, cases: schCases }));
+  }
+  renderSchedule();
+  callApi('getCasesPageData', {}, { silent: true }).then((res) => {
+    if (res && res.success) {
+      setCached('casesPageData', res);
+      applyScheduleData(res);
+    }
+  });
 }
 
 function followCell(c) {
@@ -81,20 +106,27 @@ function followCell(c) {
   return `<span style="color:${f.color};${f.note && f.color !== '#333' ? 'font-weight:bold;' : ''}">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}`;
 }
 
-// 每間客戶最近一筆聯繫紀錄（「上次聯繫」用）
+// 每間客戶最近一筆「真正的聯繫」（「上次聯繫」用；系統記的資料修改 / 改期不算）
 let schLastLog = {};
 
-async function loadScheduleLogs() {
-  const r = await callApi('getContactLogs', {}, { silent: true });
-  if (!r || !r.success) return;
+function rebuildLastLog() {
   const map = {};
-  (r.logs || []).forEach((l) => {
-    const cur = map[l.CompanyName];
-    if (!cur || String(l.Date) > String(cur.Date) || (String(l.Date) === String(cur.Date) && l.RowIndex > cur.RowIndex)) map[l.CompanyName] = l;
+  Object.keys(ContactLogStore.byCompany).forEach((name) => {
+    const l = lastRealContact(ContactLogStore.byCompany[name]);
+    if (l) map[name] = l;
   });
   schLastLog = map;
-  renderSchedule();
 }
+
+/** 全部聯繫紀錄在背景載入（追蹤視窗的歷史紀錄也用同一份，按「展開」不用再等）。 */
+async function loadScheduleLogs() {
+  await ContactLogStore.loadAll(true);
+}
+
+ContactLogStore.onChange(() => {
+  rebuildLastLog();
+  renderSchedule();
+});
 
 /** 「本次需要洽談」：上次追蹤時寫的「下次追蹤說明」，今天打電話前先看這格；下面小字是上次聯繫的結果。 */
 function discussCell(c) {
@@ -167,7 +199,7 @@ function renderSchedule() {
   tbody1.innerHTML = '';
   noCase.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CompanyName)}</td><td>${esc(c.Contact)}</td><td>${esc(c.Phone)}</td><td>${followCell(c)}</td>
+    tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CompanyName)}</td><td>${esc(c.Contact)}</td><td>${c.Phone ? `<a href="tel:${esc(String(c.Phone).replace(/[^\d+#,]/g, ''))}">${esc(c.Phone)}</a>` : ''}</td><td>${followCell(c)}</td>
       <td>${discussCell(c)}</td>
       <td class="sch-notes-dot" ${c.Notes ? `data-full="${esc(c.Notes)}" title="${esc(c.Notes)}"` : ''}>${c.Notes ? '…' : ''}</td>
       <td>
@@ -206,28 +238,21 @@ function schDone(companyName, caseId) {
     contact: cust.Contact || '',
     customer: cust,
     caseData: schCases.find((x) => x.CaseID === caseId) || null,
-    currentDate: cust.NextFollowUpDate,
-    currentNote: cust.NextFollowUpNote,
     caseId: caseId || '',
-    onDone: () => {
-      loadScheduleData();
-      loadScheduleLogs();
-      loadDailyReport();
-    },
+    onSaved: schAfterSave,
+    onDone: () => loadDailyReport(),
   });
 }
 
 function schChangeDate(companyName) {
   const cust = schCustomers.find((c) => c.CompanyName === companyName);
-  if (!cust) return;
+  if (!cust) return alert('客戶資料裡找不到「' + companyName + '」');
   openFollowUpDialog({
     companyName,
     rowIndex: cust.RowIndex,
     customer: cust,
-    currentDate: cust.NextFollowUpDate,
-    currentNote: cust.NextFollowUpNote,
     editOnly: true,
-    onDone: () => loadScheduleData(),
+    onSaved: schAfterSave,
   });
 }
 
@@ -250,9 +275,10 @@ function renderDailyReport() {
   const mineOnly = document.getElementById('rep-mine').checked;
   const me = typeof currentUsername !== 'undefined' ? currentUsername : '';
   const logs = repLogs
+    .filter((l) => !isChangeLog(l)) // 系統自動記的「資料修改 / 改期」不是工作內容
     .filter((l) => !mineOnly || !l.Salesperson || l.Salesperson === me)
     .slice()
-    .sort((a, b) => a.RowIndex - b.RowIndex); // 試算表由上到下＝記錄的先後順序
+    .sort((a, b) => String(a.CreatedAt || '').localeCompare(String(b.CreatedAt || '')) || a.RowIndex - b.RowIndex); // 依記錄的先後順序
   const caseById = {};
   schCases.forEach((c) => (caseById[c.CaseID] = c));
 

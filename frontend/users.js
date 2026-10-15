@@ -25,12 +25,13 @@ function renderUsersTable() {
   tbody.innerHTML = '';
   allUsers.forEach((u) => {
     const tr = document.createElement('tr');
-    const roleOptions = allRoles.map((r) => `<option value="${r}" ${r === u.Role ? 'selected' : ''}>${r}</option>`).join('');
-    tr.innerHTML = `<td>${u.Username}</td><td>${u.DisplayName || ''}</td>
+    const roleOptions = allRoles.map((r) => `<option value="${htmlEsc(r)}" ${r === u.Role ? 'selected' : ''}>${htmlEsc(r)}</option>`).join('');
+    const nameArg = `decodeURIComponent('${encodeURIComponent(u.Username || '')}')`;
+    tr.innerHTML = `<td>${htmlEsc(u.Username)}</td><td>${htmlEsc(u.DisplayName || '')}</td>
       <td><select onchange="changeUserRole(${u.RowIndex}, this.value)">${roleOptions}</select></td>
       <td>
-        <button onclick="resetPassword(${u.RowIndex}, '${u.Username}')">重設密碼</button>
-        <button onclick="deleteUserRow(${u.RowIndex}, '${u.Username}')">刪除</button>
+        <button onclick="resetPassword(${u.RowIndex}, ${nameArg})">重設密碼</button>
+        <button onclick="deleteUserRow(${u.RowIndex}, ${nameArg})">刪除</button>
       </td>`;
     tbody.appendChild(tr);
   });

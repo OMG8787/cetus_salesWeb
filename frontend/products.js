@@ -313,8 +313,8 @@ function renderProductTable(products) {
   products.forEach((p) => {
     const tr = document.createElement('tr');
     const isFav = favoriteSet.has(String(p.InternalModel));
-    tr.innerHTML = `<td><input type="checkbox" ${selectedRows.has(p.RowIndex) ? 'checked' : ''} onchange="toggleRowSelect(${p.RowIndex}, this.checked)" /></td><td>${p.InternalModel ? `<button class="fav-star ${isFav ? '' : 'off'}" title="${isFav ? '取消常用' : '加入常用'}" onclick="toggleFavorite('${String(p.InternalModel).replace(/'/g, "\\'")}')">${isFav ? '★' : '☆'}</button>` : ''}</td><td>${p.InternalModel || '<span class="badge-warn">（缺內部型號）</span>'}</td><td>${p.SupplierModel || ''}</td><td>${p.Supplier || ''}</td><td>${p.Category || ''}</td><td>${p.RefPrice || '<span class="badge-warn">無</span>'}</td><td>${p.InquiryCount || 0}</td><td>${productAlertHtml(p)}</td><td><div class="pt-notes" title="${pdEsc(p.Notes || '')}">${pdEsc(p.Notes || '')}</div></td>
-      <td><button onclick="viewProduct('${String(p.InternalModel || '').replace(/'/g, "\\'")}', ${p.RowIndex})">查看/詢價</button></td>`;
+    tr.innerHTML = `<td><input type="checkbox" ${selectedRows.has(p.RowIndex) ? 'checked' : ''} onchange="toggleRowSelect(${p.RowIndex}, this.checked)" /></td><td>${p.InternalModel ? `<button class="fav-star ${isFav ? '' : 'off'}" title="${isFav ? '取消常用' : '加入常用'}" onclick="toggleFavorite(decodeURIComponent('${encodeURIComponent(String(p.InternalModel))}'))">${isFav ? '★' : '☆'}</button>` : ''}</td><td>${pdEsc(p.InternalModel) || '<span class="badge-warn">（缺內部型號）</span>'}</td><td>${pdEsc(p.SupplierModel)}</td><td>${pdEsc(p.Supplier)}</td><td>${pdEsc(p.Category)}</td><td>${pdEsc(p.RefPrice) || '<span class="badge-warn">無</span>'}</td><td>${p.InquiryCount || 0}</td><td>${productAlertHtml(p)}</td><td><div class="pt-notes" title="${pdEsc(p.Notes || '')}">${pdEsc(p.Notes || '')}</div></td>
+      <td><button onclick="viewProduct(decodeURIComponent('${encodeURIComponent(String(p.InternalModel || ''))}'), ${p.RowIndex})">查看/詢價</button></td>`;
     tbody.appendChild(tr);
   });
   updateBulkInfo();
@@ -334,13 +334,13 @@ async function viewProduct(internalModel, rowIndex) {
   document.getElementById('ep-internal-model').value = internalModel;
 
   document.getElementById('pd-last-price').innerHTML = result.lastPrice
-    ? `上次報價：${result.lastPrice.Price} ${result.lastPrice.Currency || ''}（供應商：${result.lastPrice.Supplier}，日期：${result.lastPrice.Date}）`
+    ? `上次報價：${pdEsc(result.lastPrice.Price)} ${pdEsc(result.lastPrice.Currency || '')}（供應商：${pdEsc(result.lastPrice.Supplier)}，日期：${pdEsc(result.lastPrice.Date)}）`
     : '尚無詢價紀錄';
 
   document.getElementById('pd-compatible').innerHTML =
-    '可搭配產品：' + (result.compatibleProducts.length ? result.compatibleProducts.map((p) => p.InternalModel).join('、') : '無');
+    '可搭配產品：' + (result.compatibleProducts.length ? result.compatibleProducts.map((p) => pdEsc(p.InternalModel)).join('、') : '無');
 
-  document.getElementById('pd-notes').innerHTML = '備註：' + (result.product.Notes || '（無）') + (result.product.Origin ? '｜產地：' + result.product.Origin : '');
+  document.getElementById('pd-notes').innerHTML = '備註：' + (pdEsc(result.product.Notes) || '（無）') + (result.product.Origin ? '｜產地：' + pdEsc(result.product.Origin) : '');
   if (result.product.SourceUrl) {
     const link = document.createElement('a');
     link.href = result.product.SourceUrl;
@@ -422,7 +422,7 @@ function renderPriceHistoryTable(history) {
   tbody.innerHTML = '';
   history.forEach((h) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${h.Date}</td><td>${h.Supplier}</td><td>${h.Price}</td><td>${h.Currency || ''}</td><td>${h.Notes || ''}</td>
+    tr.innerHTML = `<td>${pdEsc(h.Date)}</td><td>${pdEsc(h.Supplier)}</td><td>${pdEsc(h.Price)}</td><td>${pdEsc(h.Currency || '')}</td><td>${pdEsc(h.Notes || '')}</td>
       <td>
         <button onclick="editPriceRecord(${h.RowIndex})">編輯</button>
         <button onclick="deletePriceRecord(${h.RowIndex})">刪除</button>
@@ -977,14 +977,10 @@ async function importAllMissing() {
       // 網路偶爾斷線(Failed to fetch)時，同一段最多重試 3 次，已寫入的資料不會重複
       let r;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          r = await callApi(action, Object.assign({}, base, stage ? { stage } : {}, { offset }));
-          break;
-        } catch (e) {
-          if (attempt === 3) throw e;
-          setLoadingText('匯入 ' + label + '：連線中斷，重試第 ' + attempt + ' 次...');
-          await new Promise((res) => setTimeout(res, 4000));
-        }
+        r = await callApi(action, Object.assign({}, base, stage ? { stage } : {}, { offset }));
+        if (!r || !r.networkError || attempt === 3) break;
+        setLoadingText('匯入 ' + label + '：連線中斷，重試第 ' + attempt + ' 次...');
+        await new Promise((res) => setTimeout(res, 4000));
       }
       if (!r.success) throw new Error(r.message || '失敗');
       sum.added += r.added || 0;

@@ -60,9 +60,9 @@ function renderCcdBlocks(context) {
     CCD_FIELDS.forEach((f) => {
       const val = ccd[f.key] || '';
       if (f.type === 'textarea') {
-        fieldsHtml += `<textarea placeholder="${f.label}" oninput="updateCcdField('${context}', ${idx}, '${f.key}', this.value)">${val}</textarea>`;
+        fieldsHtml += `<textarea placeholder="${htmlEsc(f.label)}" oninput="updateCcdField('${context}', ${idx}, '${f.key}', this.value)">${htmlEsc(val)}</textarea>`;
       } else {
-        fieldsHtml += `<input placeholder="${f.label}" value="${val}" oninput="updateCcdField('${context}', ${idx}, '${f.key}', this.value)" />`;
+        fieldsHtml += `<input placeholder="${htmlEsc(f.label)}" value="${htmlEsc(val)}" oninput="updateCcdField('${context}', ${idx}, '${f.key}', this.value)" />`;
       }
     });
     div.innerHTML = fieldsHtml;
@@ -99,7 +99,7 @@ function renderRelatedCompanyBlocks(context) {
     div.className = 'er-row';
     const options = RELATED_COMPANY_ROLE_OPTIONS.map((r) => `<option value="${r}" ${rc.Role === r ? 'selected' : ''}>${r}</option>`).join('');
     div.innerHTML = `
-      <input placeholder="公司名稱" list="case-customer-datalist" value="${rc.CompanyName || ''}"
+      <input placeholder="公司名稱" list="case-customer-datalist" value="${htmlEsc(rc.CompanyName || '')}"
         oninput="updateRelatedCompanyField('${context}', ${idx}, 'CompanyName', this.value)"
         onblur="onCaseCustomerBlur(this)" />
       <select onchange="updateRelatedCompanyField('${context}', ${idx}, 'Role', this.value)">${options}</select>
@@ -147,13 +147,7 @@ async function reloadCustomersForCase() {
   const result = await callApi('getCustomers', {});
   if (!result.success) return;
   allCustomersForCase = result.customers;
-  const list = document.getElementById('case-customer-datalist');
-  list.innerHTML = '';
-  [...new Set(allCustomersForCase.map((c) => c.CompanyName).filter(Boolean))].forEach((name) => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    list.appendChild(opt);
-  });
+  refreshCustomerDatalist();
 }
 
 async function reloadStaffForCase() {
@@ -393,10 +387,11 @@ function renderCaseTable(cases) {
   tbody.innerHTML = '';
   cases.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${c.CaseID}</td><td>${c.CustomerName}</td><td>${caseUrgencyBadge(c.Urgency)}</td><td>${c.Status}</td><td>${followUpCellHtml(c.CustomerName, c.CaseID)}</td><td>${c.CreatedDate}</td>
+    const idArg = encodeURIComponent(c.CaseID || '');
+    tr.innerHTML = `<td>${htmlEsc(c.CaseID)}</td><td>${htmlEsc(c.CustomerName)}</td><td>${caseUrgencyBadge(c.Urgency)}</td><td>${htmlEsc(c.Status)}</td><td>${followUpCellHtml(c.CustomerName, c.CaseID)}</td><td>${htmlEsc(c.CreatedDate)}</td>
       <td>
-        <button onclick="viewCase('${c.CaseID}')">查看</button>
-        <button onclick="deleteCase('${c.CaseID}')">刪除</button>
+        <button onclick="viewCase(decodeURIComponent('${idArg}'))">查看</button>
+        <button onclick="deleteCase(decodeURIComponent('${idArg}'))">刪除</button>
       </td>`;
     tbody.appendChild(tr);
   });
@@ -406,19 +401,56 @@ function renderCaseTable(cases) {
 function caseUrgencyBadge(u) {
   const t = u || '中';
   const style = { 高: 'background:#c0392b;color:#fff;', 中: 'background:#e67e22;color:#fff;', 低: 'background:#7f8c8d;color:#fff;' }[t] || '';
-  return `<span style="${style}padding:1px 8px;border-radius:10px;font-size:12px;font-weight:bold;">${t}</span>`;
+  return `<span style="${style}padding:1px 8px;border-radius:10px;font-size:12px;font-weight:bold;">${htmlEsc(t)}</span>`;
 }
 
 function followUpCellHtml(customerName, caseId) {
   const cust = findExactCustomer(customerName);
   if (!cust) return '<span style="color:#999;">（客戶資料中沒有這間公司）</span>';
   const f = followUpInfo(cust.NextFollowUpDate, cust.NextFollowUpTime);
-  return `<span style="color:${f.color};font-weight:${f.note && f.color !== '#333' ? 'bold' : 'normal'};">${f.text}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(cust.NextFollowUpNote)}
+  return `<span style="color:${f.color};font-weight:${f.note && f.color !== '#333' ? 'bold' : 'normal'};">${htmlEsc(f.text)}</span>${f.note ? `<br><small style="color:${f.color};">${f.note}</small>` : ''}${followNoteHtml(cust.NextFollowUpNote)}
     <button class="btn-mini" onclick="editCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'))">改</button>
     <button class="btn-mini" style="background:#27ae60;" onclick="doneCaseFollowUp(decodeURIComponent('${encodeURIComponent(customerName || '')}'), decodeURIComponent('${encodeURIComponent(caseId || '')}'))">追蹤完畢</button>`;
 }
 
-/** 追蹤完畢：一次記下這次聯繫的結果（寫進客戶聯繫紀錄）並設定下次追蹤日。 */
+/** 追蹤視窗存檔後：用回傳的客戶資料直接更新列表（公司改名也一起換），背景再跟資料庫同步客戶清單。 */
+function caseAfterFollowUpSave(r, oldName) {
+  if (!r || !r.customer) return;
+  patchCustomerList(allCustomersForCase, r.customer, oldName);
+  const newName = r.customer.CompanyName;
+  if (oldName && newName !== oldName) {
+    renderedCases.forEach((c) => {
+      if (c.CustomerName === oldName) c.CustomerName = newName;
+      if (c.EndCustomerName === oldName) c.EndCustomerName = newName;
+    });
+    const cd = document.getElementById('cd-customer');
+    if (cd && cd.value === oldName) cd.value = newName;
+    if (companyFilterForCases === oldName) companyFilterForCases = newName;
+  }
+  refreshCustomerDatalist();
+  renderCaseTable(renderedCases);
+  if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
+  callApi('getCustomers', {}, { silent: true }).then((res) => {
+    if (!res || !res.success) return;
+    allCustomersForCase = res.customers;
+    refreshCustomerDatalist();
+    renderCaseTable(renderedCases);
+    if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
+  });
+}
+
+function refreshCustomerDatalist() {
+  const list = document.getElementById('case-customer-datalist');
+  if (!list) return;
+  list.innerHTML = '';
+  [...new Set(allCustomersForCase.map((c) => c.CompanyName).filter(Boolean))].forEach((name) => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    list.appendChild(opt);
+  });
+}
+
+/** 追蹤完畢：一次記下這次聯繫的結果（寫進客戶聯繫紀錄）並設定下次追蹤日；也可以在視窗裡直接改客戶資料、看歷史紀錄。 */
 function doneCaseFollowUp(customerName, caseId) {
   const cust = findExactCustomer(customerName);
   if (!cust) return alert('客戶資料裡找不到「' + customerName + '」，請先到客戶管理建立');
@@ -428,14 +460,8 @@ function doneCaseFollowUp(customerName, caseId) {
     contact: cust.Contact || '',
     customer: cust,
     caseData: renderedCases.find((x) => x.CaseID === caseId) || null,
-    currentDate: cust.NextFollowUpDate,
-    currentNote: cust.NextFollowUpNote,
     caseId: caseId || '',
-    onDone: async () => {
-      await reloadCustomersForCase();
-      loadCases();
-      if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
-    },
+    onSaved: caseAfterFollowUpSave,
   });
 }
 
@@ -446,14 +472,8 @@ function editCaseFollowUp(customerName) {
     companyName: customerName,
     rowIndex: cust.RowIndex,
     customer: cust,
-    currentDate: cust.NextFollowUpDate,
-    currentNote: cust.NextFollowUpNote,
     editOnly: true,
-    onDone: async () => {
-      await reloadCustomersForCase();
-      loadCases();
-      if (currentCaseId) showCaseFollowUp(document.getElementById('cd-customer').value);
-    },
+    onSaved: caseAfterFollowUpSave,
   });
 }
 
@@ -466,7 +486,7 @@ function showCaseFollowUp(customerName) {
     return;
   }
   const f = followUpInfo(cust.NextFollowUpDate, cust.NextFollowUpTime);
-  el.innerHTML = `｜下次追蹤：<b style="color:${f.color};">${f.text}</b>${f.note ? `（${f.note}）` : ''}${followNoteHtml(cust.NextFollowUpNote)}`;
+  el.innerHTML = `｜下次追蹤：<b style="color:${f.color};">${htmlEsc(f.text)}</b>${f.note ? `（${f.note}）` : ''}${followNoteHtml(cust.NextFollowUpNote)}`;
 }
 
 /** 修改專案名稱（案件編號）：改了會影響公司內部對這個案件的登記，所以要確認兩次。 */
@@ -502,9 +522,9 @@ async function deleteCase(caseId) {
 }
 
 async function viewCase(caseId) {
-  currentCaseId = caseId;
   const result = await callApi('getCase', { caseId });
   if (!result.success) return alert(result.message);
+  currentCaseId = caseId;
   const c = result.caseData;
 
   document.getElementById('case-detail').style.display = 'block';
@@ -583,7 +603,7 @@ function renderAttachmentsList() {
   currentAttachments.forEach((a) => {
     const div = document.createElement('div');
     div.className = 'preview-item-header';
-    div.innerHTML = `<a href="${a.url}" target="_blank" rel="noopener">${a.name}</a> <button onclick="deleteAttachment('${a.fileId}')">刪除</button>`;
+    div.innerHTML = `<a href="${htmlEsc(a.url)}" target="_blank" rel="noopener">${htmlEsc(a.name)}</a> <button onclick="deleteAttachment(decodeURIComponent('${encodeURIComponent(a.fileId || '')}'))">刪除</button>`;
     box.appendChild(div);
   });
 }
@@ -806,7 +826,7 @@ async function applyCaseQueryParams() {
     companyFilterForCases = company;
     const hint = document.getElementById('case-filter-hint');
     hint.style.display = '';
-    hint.innerHTML = `目前只顯示「${company}」相關的案件（含主要客戶與相關公司）。<button type="button" onclick="clearCompanyFilter()">顯示全部案件</button>`;
+    hint.innerHTML = `目前只顯示「${htmlEsc(company)}」相關的案件（含主要客戶與相關公司）。<button type="button" onclick="clearCompanyFilter()">顯示全部案件</button>`;
     await loadCases();
   }
   const newFor = params.get('newCaseFor');
@@ -824,10 +844,16 @@ window.addEventListener('DOMContentLoaded', async () => {
   applyAdminOnlyVisibility();
   await loadCasesPageInit();
   applyCaseQueryParams();
+  ContactLogStore.loadAll(); // 背景載入，按「追蹤完畢」時歷史紀錄已經準備好
 
   bindEnterSubmit('#case-search-panel', loadCases);
   bindEnterSubmit('#case-edit-panel', saveCaseEdit);
 });
 
-// 導覽列「↻ 重撈資料」
-window.refreshPageData = () => loadCasesPageInit();
+// 導覽列「↻ 重撈資料」：重抓後保留目前的篩選（公司 / 關鍵字 / 狀態）
+window.refreshPageData = async () => {
+  await loadCasesPageInit();
+  const filtered = companyFilterForCases || document.getElementById('case-search-keyword').value || document.getElementById('case-search-status').value;
+  if (filtered) await loadCases();
+  ContactLogStore.loadAll(true);
+};
