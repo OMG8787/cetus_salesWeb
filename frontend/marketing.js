@@ -173,7 +173,12 @@ function mkFit() {
   const d = f.contentDocument;
   if (!d || !d.documentElement) return;
   mkDrawGuides();
-  f.style.height = Math.max(600, d.documentElement.scrollHeight + 20) + 'px';
+  f.style.height = Math.max(600, mkContentHeight(d) + 20) + 'px';
+}
+
+/** 文件內容的實際高度（documentElement.scrollHeight 至少等於 iframe 高度，會越撐越高、頁數誤判）。 */
+function mkContentHeight(doc) {
+  return Math.ceil(doc.body.getBoundingClientRect().bottom + doc.defaultView.scrollY);
 }
 
 // ---------------- PDF 分頁線 ----------------
@@ -207,7 +212,7 @@ function mkDrawGuides() {
     if (label) label.textContent = '';
     return;
   }
-  const total = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+  const total = mkContentHeight(doc);
   const pages = Math.max(1, Math.ceil((total - 2) / pageH));
   if (label) label.textContent = `約 ${pages} 頁`;
   if (!document.getElementById('mk-guide').checked) return;

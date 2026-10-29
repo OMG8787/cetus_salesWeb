@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>報價系統 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261015a" />
+<link rel="stylesheet" href="style.css?v=20261029a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -54,8 +54,12 @@
   </div>
 </nav>
 
-<section class="tab-content">
-  <h2>報價設定</h2>
+<section class="tab-content q-page">
+  <h2>報價系統</h2>
+  <div class="calc-hint">進入頁面時會一次載入整份產品資料庫（有暫存時馬上可用，背景再更新），之後搜尋型號、帶入品名 / 底價 / 規格都不用再等伺服器。</div>
+  <div id="q-product-status" class="calc-hint q-status">產品資料庫載入中…</div>
+
+  <h3>報價設定</h3>
   <input id="quote-customer-name" placeholder="客戶名稱(會印在報價單抬頭)" />
 
   <label>客戶類型：</label>
@@ -68,17 +72,20 @@
 
   <label style="display:block; margin-top:10px;">
     <input type="checkbox" id="quote-field-mode" onchange="renderQuoteTable()" />
-    客戶現場展示模式（隱藏底價/牌價，只顯示報價，適合直接給客戶看）
+    客戶現場展示模式（下方清單隱藏底價/牌價，只顯示報價，適合直接給客戶看）
   </label>
 
   <h3>新增品項</h3>
   <div id="quote-item-panel">
     <div class="autocomplete-wrap">
-      <input id="qi-internal-model" placeholder="輸入內部型號或關鍵字（會自動搜尋，避免打錯/忘記完整型號）" oninput="onQuoteModelInput()" autocomplete="off" />
+      <input id="qi-internal-model" placeholder="輸入內部型號或關鍵字（可用空白分隔多個關鍵字，↑↓ 選擇、Enter 帶入）" oninput="onQuoteModelInput()" onkeydown="onQuoteModelKey(event)" onfocus="onQuoteModelInput()" autocomplete="off" />
       <div id="qi-model-suggestions" class="suggestions-box"></div>
     </div>
-    <button onclick="fillQuoteItemFromProduct()">帶入（也可直接點上方搜尋建議）</button>
-    <input id="qi-name" placeholder="品名" />
+    <input id="qi-name" placeholder="品名（帶入後可以自己改）" />
+    <details id="qi-spec-box" class="q-spec-box" style="display:none;">
+      <summary>▸ 規格資料（點開查看）</summary>
+      <div id="qi-spec-body"></div>
+    </details>
     <input id="qi-base-price" placeholder="底價" oninput="syncFromBasePrice()" />
     <input id="qi-list-price" placeholder="牌價（= 底價 × 2，可直接輸入自動反推底價）" oninput="syncFromListPrice()" />
     <input id="qi-quantity" placeholder="數量" value="1" />
@@ -87,20 +94,80 @@
   </div>
 
   <h3>報價品項清單</h3>
-  <table id="quote-table">
+  <div class="calc-hint">點品名前面的 ▸ 可以展開這個產品的規格資料；數量可以直接改。</div>
+  <table id="quote-table" class="q-table">
     <thead id="quote-table-head"></thead>
     <tbody></tbody>
   </table>
   <h3>總計：<span id="quote-total">0</span></h3>
 
-  <label>輸出格式：</label>
-  <select id="quote-format">
-    <option value="pdf">PDF</option>
-    <option value="docx">Word</option>
-    <option value="html">HTML（免範本，自己轉檔）</option>
-  </select>
-  <button onclick="generateQuoteDoc()">產生報價單</button>
-  <button onclick="clearQuote()">清空報價單</button>
+  <h3>產生報價單</h3>
+  <div class="panel q-gen">
+    <div class="calc-hint">報價單會先產生成「可以直接修改」的文件：點文字就能改、品名 / 規格 / 價格不需要的可以手動刪掉（整列、整欄、單行規格都行），確定後再輸出。</div>
+    <div class="q-gen-row">
+      <b>表格欄位：</b>
+      <label><input type="checkbox" id="qg-no" checked /> 編號</label>
+      <label><input type="checkbox" id="qg-base" /> 底價（內部資料，給客戶的報價單請不要勾）</label>
+      <label><input type="checkbox" id="qg-list" /> 牌價</label>
+    </div>
+    <div class="q-gen-row">
+      <label><b>規格內容：</b>
+        <select id="qg-spec">
+          <option value="none">不放規格</option>
+          <option value="brief" selected>簡要（選型規格：品牌、介面、解析度…）</option>
+          <option value="full">完整（含官網完整規格，內容很多）</option>
+        </select></label>
+      <label><input type="checkbox" id="qg-terms" checked /> 附備註與報價有效期限</label>
+    </div>
+    <button onclick="generateQuoteDocument()">產生報價單（可編輯）</button>
+    <button class="btn-secondary" onclick="clearQuote()">清空報價單</button>
+  </div>
+</section>
+
+<section id="qd-editor" class="tab-content q-editor" style="display:none;">
+  <h3 style="margin:0 0 8px;">報價單編輯與輸出</h3>
+  <div class="panel qd-bar">
+    <div class="qd-row">
+      <input id="qd-name" placeholder="檔案名稱" />
+      <button onclick="qdDownloadHtml()">⬇ 下載 HTML</button>
+      <button class="btn-secondary" onclick="qdDownloadDoc()" title="存成 .doc，可以用 Word 開啟再微調">⬇ 下載 Word (.doc)</button>
+      <button class="btn-secondary" onclick="qdCopyRich()" title="複製畫面內容，貼進 Gmail / Outlook 信件">📋 複製內容（貼到信件）</button>
+      <button class="btn-secondary" onclick="qdPrint()" title="開啟列印視窗，可選「另存為 PDF」">🖨 列印 / 另存 PDF</button>
+      <button class="btn-secondary" onclick="qdClose()">✕ 關閉編輯</button>
+    </div>
+    <div class="qd-row">
+      <button class="btn-mini" onclick="qdCmd('bold')"><b>B</b></button>
+      <button class="btn-mini" onclick="qdCmd('italic')"><i>I</i></button>
+      <button class="btn-mini" onclick="qdCmd('underline')"><u>U</u></button>
+      <select id="qd-size" onchange="qdFontSize(this.value);this.value=''" title="選取文字後設定大小">
+        <option value="">字級</option>
+        <option>11</option><option>12</option><option>13</option><option>14</option><option>16</option><option>18</option><option>22</option><option>28</option>
+      </select>
+      <label class="mk-color" title="文字顏色">文字色 <input type="color" value="#c0392b" onchange="qdCmd('foreColor', this.value)" /></label>
+      <label class="mk-color" title="文字醒目標示">底色 <input type="color" value="#fff3b0" onchange="qdCmd('hiliteColor', this.value)" /></label>
+      <button class="btn-mini" onclick="qdCmd('justifyLeft')">靠左</button>
+      <button class="btn-mini" onclick="qdCmd('justifyCenter')">置中</button>
+      <button class="btn-mini" onclick="qdCmd('justifyRight')">靠右</button>
+      <button class="btn-mini" onclick="qdCmd('removeFormat')">清除格式</button>
+    </div>
+    <div class="qd-row qd-blockbar">
+      <span id="qd-sel" class="calc-hint">點一下文件裡的文字 / 儲存格 / 規格行可選取（橘色虛線框）。</span>
+      <button class="btn-mini" onclick="qdSelParent()">⬆ 選上一層</button>
+      <button class="btn-mini" onclick="qdDel()" title="刪除目前選取的任何東西（一行規格、一段文字、一個儲存格內容…）">🗑 刪除所選</button>
+      <button class="btn-mini" onclick="qdDelRow()">刪除此列</button>
+      <button class="btn-mini" onclick="qdDelCol()">刪除此欄</button>
+      <button class="btn-mini" onclick="qdAddRow()">＋ 下方新增一列</button>
+      <button class="btn-mini" onclick="qdDup()">⧉ 複製</button>
+      <button class="btn-mini" onclick="qdMove(-1)">↑ 上移</button>
+      <button class="btn-mini" onclick="qdMove(1)">↓ 下移</button>
+      <button class="btn-mini" onclick="qdRecalc()" title="手動改了數量或單價後，重新計算每列小計與合計">∑ 重新計算小計 / 合計</button>
+      <button class="btn-mini" onclick="qdPageBreak()" title="在選取的區塊前面強制換頁">⤓ 此處換頁</button>
+      <button class="btn-mini" onclick="qdUndo()">↶ 還原</button>
+      <label style="font-weight:normal;font-size:13px;"><input type="checkbox" id="qd-guide" checked onchange="qdDrawGuides()" /> 顯示分頁線</label>
+      <span id="qd-pages" class="calc-hint"></span>
+    </div>
+  </div>
+  <div class="mk-frame-wrap"><iframe id="qd-frame" title="報價單"></iframe></div>
 </section>
 
 <div id="preview-modal" class="modal-overlay" style="display:none;">
@@ -110,9 +177,10 @@
   </div>
 </div>
 
-<script src="config.js?v=20261015a"></script>
-<script src="demo.js?v=20261015a"></script>
-<script src="common.js?v=20261015a"></script>
-<script src="quote.js?v=20261015a"></script>
+<script src="config.js?v=20261029a"></script>
+<script src="demo.js?v=20261029a"></script>
+<script src="common.js?v=20261029a"></script>
+<script src="quotedoc.js?v=20261029a"></script>
+<script src="quote.js?v=20261029a"></script>
 </body>
 </html>
