@@ -105,6 +105,48 @@ export interface ThreadMessage {
   text: string;
 }
 
+/** 員工助理：登記的成員、權限與記憶（每則訊息從管理系統取得） */
+export interface StaffMemoryItem {
+  id: number;
+  scope: "user" | "all";
+  category: string;
+  content: string;
+  importance: number;
+}
+
+export interface StaffInfo {
+  allowed: boolean;
+  status: string;
+  problem: string;
+  isNew: boolean;
+  name: string;
+  appName: string;
+  channel: "line" | "web";
+  replyDelay: number;
+  texts: { welcome: string; pending: string };
+  // 以下只有已開通（allowed）才有
+  userId?: string;
+  linked?: boolean;
+  username?: string;
+  /** 各功能區塊的權限：edit / view / none */
+  blocks?: Record<string, "edit" | "view" | "none">;
+  prompt?: string;
+  ai?: AiConfig | null;
+  aiFallback?: AiConfig[];
+  history?: { u: boolean; t: string }[];
+  /** 這個人可以提出的寫入動作（addMemo、logFollowUp…） */
+  writable?: string[];
+  /** 等待確認的修改（摘要） */
+  pending?: string;
+  today?: string;
+  memory?: { enabled: boolean; maxItems: number; confirm: boolean; canShared: boolean; categories: string[]; items: StaffMemoryItem[] };
+}
+
+export interface StaffWrite {
+  action: string;
+  data: Record<string, unknown>;
+}
+
 const TIMEOUT_MS = 25_000;
 
 async function post<T>(body: Record<string, unknown>, retry = true): Promise<T> {
@@ -162,5 +204,41 @@ export const gas = {
   /** 網站訪客的對話：after = 最後一則的編號（只回新的）；不帶 = 最近的對話 */
   csThread(lineUserId: string, after = 0): Promise<{ messages: ThreadMessage[]; paused: boolean }> {
     return post({ op: "csThread", lineUserId, after });
+  },
+
+  // ---- 員工助理（U = LINE 員工，W = 網站登入帳號）----
+  staffStart(lineUserId: string, profile: { displayName?: string; pictureUrl?: string } = {}): Promise<StaffInfo> {
+    return post<StaffInfo>({ op: "start", lineUserId, displayName: profile.displayName ?? "", pictureUrl: profile.pictureUrl ?? "", botUrl: config.botUrl });
+  },
+  /** 查詢（依這個人的權限過濾；沒權限會丟出錯誤） */
+  staffCall(lineUserId: string, call: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    return post({ op: "call", lineUserId, call, params });
+  },
+  /** 提出要寫入的修改：驗證後暫存 15 分鐘，本人確認才寫入 */
+  staffStage(lineUserId: string, ops: StaffWrite[]): Promise<{ token: string; summary: string }> {
+    return post({ op: "stage", lineUserId, ops });
+  },
+  staffCommit(lineUserId: string, token: string): Promise<{ summary: string; count: number; results: Record<string, unknown>[] }> {
+    return post({ op: "commit", lineUserId, token });
+  },
+  staffCancel(lineUserId: string): Promise<boolean> {
+    return post<boolean>({ op: "cancel", lineUserId });
+  },
+  staffRemember(lineUserId: string, turns: { u: boolean; t: string }[]): Promise<number> {
+    return post<number>({ op: "remember", lineUserId, turns });
+  },
+  staffForget(lineUserId: string): Promise<boolean> {
+    return post<boolean>({ op: "forget", lineUserId });
+  },
+  staffUnfollow(lineUserId: string): Promise<boolean> {
+    return post<boolean>({ op: "unfollow", lineUserId });
+  },
+  /** 長期記憶：新增 / 修改 / 刪除 */
+  staffMemory(lineUserId: string, data: Record<string, unknown>): Promise<{ id: number; duplicate?: boolean; deleted?: boolean }> {
+    return post({ op: "memory", lineUserId, data });
+  },
+  /** 要推早報的成員編號 */
+  staffPushTargets(): Promise<string[]> {
+    return post<string[]>({ op: "pushTargets" });
   },
 };

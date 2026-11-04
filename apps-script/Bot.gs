@@ -40,12 +40,13 @@ var BOT_CS_TOPICS = [
   { key: 'shipping', name: '運費 / 交期', words: '運費 配送 寄送 出貨 物流 到貨 交期 現貨 缺貨' },
   { key: 'complaint', name: '客訴 / 退換貨 / 維修', words: '退貨 退款 換貨 客訴 投訴 故障 維修 壞掉 保固 RMA 不良' },
 ];
+var BOT_STAFF_OPS = ['start', 'call', 'stage', 'commit', 'cancel', 'remember', 'forget', 'unfollow', 'memory'];
 var BOT_HANDOFF_WORDS = '真人 客服人員 小編 專人 人工 業務';
 var BOT_TONES = ['friendly', 'formal', 'concise'];
 var BOT_EMOJI = ['many', 'some', 'none'];
 
 function botSchema_() {
-  return {
+  var base = {
     schema: {
       BotConfig: ['Key', 'Value'],
       BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt'],
@@ -53,20 +54,35 @@ function botSchema_() {
     },
     text: { BotMessages: ['Time', 'UserId'], BotKnowledge: [] },
   };
+  return botMerge_(base, typeof botStaffSchema_ === 'function' ? botStaffSchema_() : null);
+}
+
+/** 合併選用子模組（BotStaff.gs）的資料表。 */
+function botMerge_(base, extra) {
+  if (!extra) return base;
+  Object.assign(base.schema, extra.schema || {});
+  Object.assign(base.text, extra.text || {});
+  return base;
 }
 
 /** 動作 → [區塊, 等級]。BOT 設定是可以獨立指定查看 / 編輯的功能區塊；刪除只有系統管理員。 */
 function botPerms_() {
-  return {
+  var base = {
     botGetSettings: ['bot', 'r'], botKbList: ['bot', 'r'], botConversations: ['bot', 'r'], botThread: ['bot', 'r'],
     botSaveSettings: ['bot', 'w'], botSaveAi: ['bot', 'w'], botTestAi: ['bot', 'w'], botKbSave: ['bot', 'w'], botKbImport: ['bot', 'w'],
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
     botKbDelete: ['bot', 'd'], botClear: ['bot', 'd'],
   };
+  return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
+}
+
+function botMergePerms_(base, extra) {
+  Object.keys(extra || {}).forEach(function (k) { base[k] = extra[k]; });
+  return base;
 }
 
 function botRoutes_() {
-  return {
+  var base = {
     bot: { auth: false, fn: handleBotApi },
     botGetSettings: { auth: true, fn: handleBotGetSettings },
     botSaveSettings: { auth: true, fn: handleBotSaveSettings },
@@ -85,6 +101,8 @@ function botRoutes_() {
     botTestToken: { auth: true, fn: handleBotTestToken },
     botClear: { auth: true, fn: handleBotClear },
   };
+  if (typeof botStaffRoutes_ === 'function') botMergePerms_(base, botStaffRoutes_());
+  return base;
 }
 
 // ------------------------------------------------------------
@@ -387,7 +405,8 @@ function handleBotApi(body) {
   if (body.botUrl) botLearnUrl_(body.botUrl);
   try {
     var data;
-    if (op === 'csKnowledge') data = csKnowledge_();
+    if (op === 'pushTargets' && typeof botPushTargets_ === 'function') data = botPushTargets_();
+    else if (op === 'csKnowledge') data = csKnowledge_();
     else if (op === 'csWidget') data = csWidgetConfig_();
     else {
       var id = String(body.lineUserId || '');
@@ -398,6 +417,7 @@ function handleBotApi(body) {
       else if (op === 'csHandoff') data = csHandoff_(id, body);
       else if (op === 'csMessages') data = csMessages_(id, body);
       else if (op === 'csThread') data = csThread_(id, body);
+      else if (BOT_STAFF_OPS.indexOf(op) > -1 && typeof botStaffOp_ === 'function') data = botStaffOp_(op, id, body);
       else return fail('未知的 Bot 操作：' + op);
     }
     return { success: true, data: data };

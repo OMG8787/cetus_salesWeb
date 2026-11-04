@@ -1,0 +1,318 @@
+import assert from "node:assert/strict";
+import { beforeEach, test } from "node:test";
+import type { StaffInfo } from "../src/gas.js";
+import type { LineEvent } from "../src/line.js";
+import { briefingText, handleStaffEvent, pushBriefings, staffConverse, staffSystemPrompt } from "../src/staff.js";
+
+process.env.LINE_CHANNEL_SECRET = "staff-secret";
+process.env.LINE_CHANNEL_ACCESS_TOKEN = "staff-token";
+process.env.GAS_URL = "https://script.example/exec";
+process.env.BOT_SECRET = "aoi-test-secret";
+
+type Call = { op: string; [k: string]: unknown };
+interface State {
+  info: Partial<StaffInfo>;
+  gas: Call[];
+  line: { kind: string; body: Record<string, any> }[];
+  aiRound: number;
+  aiCalls: Record<string, any>[];
+  /** 依輪次回傳 AI 的回應；預設直接回文字 */
+  ai: (round: number, body: Record<string, any>) => Record<string, any>;
+  stageError: string;
+  pending: string;
+  history: { u: boolean; t: string }[];
+}
+let state: State;
+const realFetch = globalThis.fetch;
+
+const text = (t: string) => ({ candidates: [{ content: { role: "model", parts: [{ text: t }] } }] });
+const toolCall = (name: string, args: Record<string, unknown>) => ({ candidates: [{ content: { role: "model", parts: [{ functionCall: { name, args } }] } }] });
+
+function baseInfo(over: Partial<StaffInfo> = {}): StaffInfo {
+  return {
+    allowed: true, status: "已開通", problem: "", isNew: false, name: "小明", appName: "鑫堡", channel: "line", replyDelay: 0,
+    texts: { welcome: "👋 您好小明", pending: "⏳ 等待開通" },
+    userId: "U", linked: true, username: "ed",
+    blocks: { products: "edit", cases: "edit", customers: "edit", files: "edit", copy: "none", bot: "none" },
+    prompt: "稱呼我老闆",
+    ai: { source: "bot", provider: "gemini", apiKey: "KEY", model: "gemini-test", endpoint: "https://ai.example/v1beta" },
+    aiFallback: [], history: state.history,
+    writable: ["addMemo", "logFollowUp", "updateCustomer", "addCustomer", "createCase", "updateCaseStatus", "remember"],
+    pending: state.pending, today: "2026-11-04",
+    memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, categories: ["稱呼與職務", "其他"], items: [{ id: 3, scope: "all", category: "公司規定", content: "上班時間九點", importance: 5 }] },
+    ...over,
+  };
+}
+
+beforeEach(() => {
+  state = {
+    info: {}, gas: [], line: [], aiRound: 0, aiCalls: [], stageError: "", pending: "", history: [],
+    ai: () => text("好的"),
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    if (url === process.env.GAS_URL) {
+      state.gas.push(body);
+      const ok = (data: unknown) => new Response(JSON.stringify({ success: true, data }));
+      const err = (message: string) => new Response(JSON.stringify({ success: false, message }));
+      switch (body.op) {
+        case "start": return ok(baseInfo(state.info));
+        case "call":
+          if (body.call === "customers") return ok({ total: 1, items: [{ CompanyName: "甲公司", Phone: "0912" }] });
+          if (body.call === "cases" && body.lineUserId.startsWith("Ulimited")) return err("你沒有「案件與評估」的查看權限");
+          if (body.call === "me") return ok({ name: "小明" });
+          if (body.call === "overview") return ok({ followups: { total: 2, items: [{ CompanyName: "乙公司", NextFollowUpDate: "2026-11-01", status: "已逾期" }, { CompanyName: "甲公司", NextFollowUpDate: "2026-11-04", NextFollowUpTime: "14:30", NextFollowUpNote: "報價確認", status: "今天" }] }, openCases: { total: 3, byStatus: { 需求單已發出: 2, 評估單已發出: 1 }, high: [{ CaseID: "C-1", CustomerName: "甲公司" }] } });
+          return ok({});
+        case "stage":
+          if (state.stageError) return err(state.stageError);
+          return ok({ token: "abcdef0123", summary: (body.ops as { action: string }[]).map((o) => `📝 ${o.action}`).join("\n") });
+        case "commit": return ok({ summary: "📝 addMemo", count: 1, results: [{ action: "createCase", ok: true, caseId: "S-T-A-甲公司" }] });
+        case "cancel": return ok(true);
+        case "remember": return ok(2);
+        case "forget": return ok(true);
+        case "unfollow": return ok(true);
+        case "memory": return ok({ id: 9 });
+        case "pushTargets": return ok(["U" + "1".repeat(32), "U" + "2".repeat(32)]);
+        default: return err("unknown op " + body.op);
+      }
+    }
+    if (url.startsWith("https://ai.example/")) {
+      state.aiCalls.push(body);
+      return new Response(JSON.stringify(state.ai(state.aiRound++, body)));
+    }
+    if (url.startsWith("https://api.line.me/")) {
+      state.line.push({ kind: url.split("/bot/")[1], body });
+      return new Response("{}");
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+});
+
+const U1 = "U" + "a".repeat(32);
+const evMsg = (t: string): LineEvent => ({ type: "message", replyToken: "rt", source: { type: "user", userId: U1 }, message: { type: "text", text: t } });
+const gasOps = (op: string) => state.gas.filter((g) => g.op === op);
+const replies = () => state.line.filter((l) => l.kind === "message/reply");
+const replyOf = (i = 0) => String(replies()[i]?.body.messages.at(-1)?.text ?? "");
+
+test("提示詞：日期、權限、記憶、管理員規則、等待確認", () => {
+  state.pending = "📝 addMemo";
+  const p = staffSystemPrompt(baseInfo({ pending: "📝 addMemo" }));
+  assert.match(p, /\d{4}-\d{2}-\d{2}/);
+  assert.match(p, /客戶與追蹤：可查看與修改/);
+  assert.match(p, /文案製作：沒有權限/);
+  assert.match(p, /上班時間九點/);
+  assert.match(p, /全公司/);
+  assert.match(p, /稱呼我老闆/);
+  assert.match(p, /等待同事確認/);
+  assert.match(p, /不能刪除任何資料/);
+  const viewer = staffSystemPrompt(baseInfo({ writable: [], blocks: { customers: "view" } }));
+  assert.match(viewer, /只能查詢/);
+  assert.doesNotMatch(viewer, /提出修改的工具/);
+});
+
+test("LINE：未開通的員工 → 回覆等待開通，不呼叫 AI", async () => {
+  state.info = { allowed: false, status: "待開通", isNew: true };
+  await handleStaffEvent(evMsg("你好"));
+  assert.equal(replyOf(), "⏳ 等待開通");
+  assert.equal(state.aiCalls.length, 0);
+  state.info = { allowed: false, status: "停用" };
+  state.line = [];
+  await handleStaffEvent(evMsg("你好"));
+  assert.match(replyOf(), /已停用/);
+});
+
+test("LINE：加好友登記並回覆歡迎詞 / 封鎖通知管理系統", async () => {
+  await handleStaffEvent({ type: "follow", replyToken: "rt", source: { type: "user", userId: U1 } });
+  assert.equal(gasOps("start").length, 1);
+  assert.equal(replyOf(), "👋 您好小明");
+  await handleStaffEvent({ type: "unfollow", source: { type: "user", userId: U1 } });
+  assert.equal(gasOps("unfollow").length, 1);
+});
+
+test("群組裡不回應（避免洩漏資料）", async () => {
+  await handleStaffEvent({ type: "message", replyToken: "rt", source: { type: "group", groupId: "G1", userId: U1 }, message: { type: "text", text: "查客戶" } });
+  assert.equal(state.gas.length, 0);
+  assert.equal(state.line.length, 0);
+});
+
+test("查詢：AI 呼叫 search_customers → 管理系統查詢 → 用結果回答；沒有權限的區塊沒有工具", async () => {
+  state.ai = (round) => (round === 0 ? toolCall("search_customers", { keyword: "甲" }) : text("甲公司，電話 0912"));
+  await handleStaffEvent(evMsg("甲公司的電話"));
+  const call = gasOps("call")[0];
+  assert.equal(call.call, "customers");
+  assert.deepEqual(call.params, { keyword: "甲" });
+  assert.equal(replyOf(), "甲公司，電話 0912");
+  const names = (state.aiCalls[0].tools[0].functionDeclarations as { name: string }[]).map((t) => t.name);
+  assert.ok(names.includes("search_customers") && names.includes("search_products") && names.includes("log_followup"));
+  assert.equal(gasOps("remember").length, 1, "記錄短期對話");
+
+  // 只有案件權限
+  state.info = { blocks: { cases: "view", customers: "none", products: "none" }, writable: ["addMemo"] };
+  state.aiCalls = [];
+  state.aiRound = 0;
+  state.ai = () => text("ok");
+  await handleStaffEvent(evMsg("查"));
+  const names2 = (state.aiCalls[0].tools[0].functionDeclarations as { name: string }[]).map((t) => t.name);
+  assert.ok(names2.includes("search_cases") && !names2.includes("search_customers") && !names2.includes("search_products") && !names2.includes("update_customer"));
+  assert.ok(names2.includes("add_memo") && !names2.includes("log_followup"));
+});
+
+test("沒有任何刪除工具", async () => {
+  state.ai = () => text("ok");
+  await handleStaffEvent(evMsg("hi"));
+  const names = (state.aiCalls[0].tools[0].functionDeclarations as { name: string }[]).map((t) => t.name);
+  assert.ok(names.length > 8);
+  assert.ok(!names.some((n) => /delete|remove|刪/.test(n)), names.join());
+});
+
+test("修改：AI 提出 → 暫存 + 回覆附清單與確認按鈕（還沒寫入）；按確認才 commit", async () => {
+  state.ai = (round) => (round === 0 ? toolCall("add_memo", { title: "提醒", content: "寄樣品" }) : text("好，幫你記了一則備忘錄，請確認。"));
+  await handleStaffEvent(evMsg("記一下明天要寄樣品"));
+  const stage = gasOps("stage")[0];
+  assert.deepEqual(stage.ops, [{ action: "addMemo", data: { title: "提醒", content: "寄樣品", shared: false } }]);
+  assert.equal(gasOps("commit").length, 0, "還沒寫入");
+  const r = replies()[0].body.messages.at(-1);
+  assert.match(r.text, /請確認/);
+  assert.match(r.text, /等你確認後才會寫入/);
+  assert.match(r.text, /addMemo/);
+  const qr = r.quickReply.items.map((i: any) => i.action);
+  assert.equal(qr[0].type, "postback");
+  assert.equal(qr[0].data, "staff:ok:abcdef0123");
+  assert.equal(qr[1].data, "staff:no:abcdef0123");
+
+  // 按確認
+  state.pending = "📝 addMemo";
+  state.line = [];
+  await handleStaffEvent({ type: "postback", replyToken: "rt", source: { type: "user", userId: U1 }, postback: { data: "staff:ok:abcdef0123" } });
+  assert.equal(gasOps("commit").length, 1);
+  assert.equal(gasOps("commit")[0].token, "abcdef0123");
+  assert.match(replyOf(), /✅ 已寫入（1 項）/);
+  assert.match(replyOf(), /案件編號：S-T-A-甲公司/);
+  assert.equal(state.aiCalls.length, 2, "確認時不再呼叫 AI");
+});
+
+test("文字回覆「確認」/「取消」也行（有待確認時）；沒有待確認時照一般對話", async () => {
+  state.pending = "📝 addMemo";
+  await handleStaffEvent(evMsg("確認"));
+  assert.equal(gasOps("commit").length, 1);
+  state.line = [];
+  await handleStaffEvent(evMsg("取消"));
+  assert.equal(gasOps("cancel").length, 1);
+  assert.match(replyOf(), /已取消/);
+
+  state.pending = "";
+  state.gas = [];
+  state.line = [];
+  await handleStaffEvent(evMsg("好"));
+  assert.equal(gasOps("commit").length, 0, "沒有待確認時「好」只是一般訊息");
+  assert.equal(state.aiCalls.length, 1);
+});
+
+test("按舊的確認按鈕（已處理 / 逾期）→ 提示，不寫入", async () => {
+  state.pending = "";
+  await handleStaffEvent({ type: "postback", replyToken: "rt", source: { type: "user", userId: U1 }, postback: { data: "staff:ok:abcdef0123" } });
+  assert.equal(gasOps("commit").length, 0);
+  assert.match(replyOf(), /已經處理過|失效/);
+});
+
+test("提出修改驗證失敗 → 錯誤回給 AI 讓它反問，不暫存", async () => {
+  state.stageError = "找不到客戶「丙公司」";
+  state.ai = (round, body) => {
+    if (round === 0) return toolCall("log_followup", { company: "丙公司", summary: "x" });
+    const last = JSON.stringify(body.contents.at(-1));
+    assert.match(last, /找不到客戶/);
+    return text("找不到丙公司，你是指哪一間？");
+  };
+  await handleStaffEvent(evMsg("記錄丙公司"));
+  assert.match(replyOf(), /找不到丙公司/);
+  assert.doesNotMatch(replyOf(), /等你確認後/);
+  assert.equal(replies()[0].body.messages.at(-1).quickReply, undefined);
+});
+
+test("一次提出多項修改：每次整批重新驗證，最後清單包含全部", async () => {
+  state.ai = (round) => {
+    if (round === 0) return toolCall("update_case", { case_id: "C-1", status: "已結案" });
+    if (round === 1) return toolCall("add_memo", { title: "t" });
+    return text("兩項都整理好了");
+  };
+  await handleStaffEvent(evMsg("C-1 結案並記備忘"));
+  const stages = gasOps("stage");
+  assert.equal(stages.length, 2);
+  assert.equal((stages[1].ops as unknown[]).length, 2);
+  assert.match(replyOf(), /updateCaseStatus/);
+  assert.match(replyOf(), /addMemo/);
+});
+
+test("update_customer 只送有填的欄位；logFollowUp 欄位名稱轉換", async () => {
+  state.ai = (round) => (round === 0 ? toolCall("update_customer", { company: "甲公司", phone: "0922", email: "" }) : round === 1 ? toolCall("log_followup", { company: "甲公司", summary: "報價", next_date: "2026-11-10", next_time: "10:00", stop_following: false }) : text("ok"));
+  await handleStaffEvent(evMsg("改"));
+  const ops = gasOps("stage")[1].ops as { action: string; data: Record<string, any> }[];
+  assert.deepEqual(ops[0].data.fields, { Phone: "0922" });
+  assert.equal(ops[1].data.nextDate, "2026-11-10");
+  assert.equal(ops[1].data.nextTime, "10:00");
+  assert.equal(ops[1].data.stop, undefined);
+});
+
+test("長期記憶：要確認 → 走 stage；不用確認 → 直接寫入；忘記 → 直接刪除", async () => {
+  state.ai = (round) => (round === 0 ? toolCall("remember", { content: "我負責北區", category: "稱呼與職務" }) : text("我記下來了，請確認"));
+  await handleStaffEvent(evMsg("記住我負責北區"));
+  assert.equal((gasOps("stage")[0].ops as { action: string }[])[0].action, "remember");
+  assert.equal(gasOps("memory").length, 0);
+
+  state.gas = [];
+  state.aiRound = 0;
+  state.info = { memory: { enabled: true, maxItems: 30, confirm: false, canShared: false, categories: ["其他"], items: [] } };
+  state.ai = (round) => (round === 0 ? toolCall("remember", { content: "我負責北區", scope: "all" }) : round === 1 ? toolCall("forget_memory", { id: 3 }) : text("好"));
+  await handleStaffEvent(evMsg("記住"));
+  const mem = gasOps("memory");
+  assert.equal(mem.length, 2);
+  assert.deepEqual(mem[0].data, { mode: "add", content: "我負責北區", scope: "all" });
+  assert.deepEqual(mem[1].data, { mode: "delete", id: 3 });
+  assert.equal(gasOps("stage").length, 0);
+});
+
+test("重新開始：清除短期記憶，不呼叫 AI", async () => {
+  await handleStaffEvent(evMsg("重新開始"));
+  assert.equal(gasOps("forget").length, 1);
+  assert.equal(state.aiCalls.length, 0);
+});
+
+test("AI 失敗 → 友善訊息，不洩漏錯誤細節", async () => {
+  state.ai = () => {
+    throw new Error("key AIza-secret invalid");
+  };
+  await handleStaffEvent(evMsg("你好"));
+  assert.match(replyOf(), /AI 暫時忙碌或設定有誤/);
+  assert.doesNotMatch(replyOf(), /AIza/);
+});
+
+test("網站助理：沒有 profile 也行，回傳 pending 讓前端畫確認鈕", async () => {
+  state.ai = (round) => (round === 0 ? toolCall("create_case", { customer_name: "甲公司", software_name: "S", test_object: "T", product_application: "A" }) : text("案件整理好了"));
+  const r = await staffConverse("W" + "c".repeat(32), { text: "建立案件" }, { channel: "web", displayName: "小明" });
+  assert.equal(r.pending?.token, "abcdef0123");
+  assert.match(r.reply, /等你確認後才會寫入/);
+  assert.equal(gasOps("start")[0].displayName, "小明");
+  state.pending = "📝 createCase";
+  const done = await staffConverse("W" + "c".repeat(32), { confirm: true, token: "abcdef0123" }, { channel: "web" });
+  assert.match(done.reply, /已寫入/);
+});
+
+test("早報：固定格式（逾期 / 今天 / 案件）；推播給名單內每個人", async () => {
+  const t = briefingText("小明", {
+    followups: { total: 2, items: [{ CompanyName: "乙公司", NextFollowUpDate: "2026-11-01", status: "已逾期" }, { CompanyName: "甲公司", NextFollowUpDate: "2026-11-04", NextFollowUpTime: "14:30", NextFollowUpNote: "報價確認", status: "今天" }] },
+    openCases: { total: 3, byStatus: { 需求單已發出: 2, 評估單已發出: 1 }, high: [{ CaseID: "C-1", CustomerName: "甲公司" }] },
+    events: [{ Title: "拜訪", Start: "2026-11-04T10:00", AllDay: false }, { Title: "明天的", Start: "2026-11-05T10:00" }],
+  }, "2026-11-04");
+  assert.match(t, /早安，小明/);
+  assert.match(t, /今天 1 家、已逾期 1 家/);
+  assert.match(t, /乙公司（逾期 3 天）/);
+  assert.match(t, /甲公司 14:30：報價確認/);
+  assert.match(t, /進行中案件 3 件（需求單已發出 2、評估單已發出 1）/);
+  assert.match(t, /緊急：C-1/);
+  assert.match(t, /10:00 拜訪/);
+  assert.doesNotMatch(t, /明天的/);
+  const r = await pushBriefings();
+  assert.deepEqual(r, { targets: 2, sent: 2, failed: 0 });
+  assert.equal(state.line.filter((l) => l.kind === "message/push").length, 2);
+});
