@@ -29,6 +29,8 @@ export interface AiRequest {
 export class AiError extends Error {}
 
 export const MAX_TOOL_ROUNDS = 6;
+/** 每個問題最多查幾輪資料：網站「AI 模型」設定的值（1～12），沒設定用預設 */
+const maxRounds = (ai: AiConfig) => Math.min(12, Math.max(1, Math.floor(ai.maxRounds ?? MAX_TOOL_ROUNDS)));
 const TIMEOUT_MS = 40_000;
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 
@@ -93,7 +95,7 @@ async function gemini({ ai, system, turns, tools = [] }: AiRequest): Promise<str
   if (tools.length) body.tools = [{ functionDeclarations: tools.map(({ name, description, parameters }) => ({ name, description, parameters })) }];
   const url = `${ai.endpoint.replace(/\/+$/, "")}/models/${encodeURIComponent(ai.model)}:generateContent`;
 
-  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+  for (let round = 0; round <= maxRounds(ai); round++) {
     const { status, text } = await fetchAi(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey },
@@ -129,7 +131,7 @@ async function claude({ ai, system, turns, tools = [] }: AiRequest): Promise<str
   const toolDefs = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   const url = `${ai.endpoint.replace(/\/+$/, "")}/messages`;
 
-  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+  for (let round = 0; round <= maxRounds(ai); round++) {
     const { status, text } = await fetchAi(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": ai.apiKey, "anthropic-version": "2023-06-01" },
@@ -170,7 +172,7 @@ async function openai({ ai, system, turns, tools = [] }: AiRequest): Promise<str
   const toolDefs = tools.map(({ name, description, parameters }) => ({ type: "function", function: { name, description, parameters } }));
   const url = `${ai.endpoint.replace(/\/+$/, "")}/chat/completions`;
 
-  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+  for (let round = 0; round <= maxRounds(ai); round++) {
     const { status, text } = await fetchAi(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ai.apiKey}` },

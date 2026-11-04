@@ -179,3 +179,25 @@ test("客服機器人：系統提示帶選型規則，AI 呼叫計算工具時�
   assert.match(toolResult, /我整理的需求/);
   assert.doesNotMatch(toolResult, /價格|NT\$/);
 });
+
+test("每個問題最多查幾輪資料：用管理系統設定的 maxRounds（沒設定 = 6）", async () => {
+  const { generate } = await import("../src/ai.js");
+  const run = async (maxRounds?: number) => {
+    let calls = 0;
+    const real = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      calls++;
+      return new Response(JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "t", args: {} } }] } }] }));
+    }) as typeof fetch;
+    try {
+      await generate({ ai: { source: "bot", provider: "gemini", apiKey: "K", model: "m", endpoint: "https://ai.example/v1beta", maxRounds }, system: "s", turns: [{ isUser: true, text: "x" }], tools: [{ name: "t", description: "d", parameters: { type: "object", properties: {} }, handler: async () => "ok" }] });
+    } catch {
+      /* 超過輪數會丟錯，這裡只數次數 */
+    }
+    globalThis.fetch = real;
+    return calls;
+  };
+  assert.equal(await run(), 7, "預設 6 輪（+ 最後一次）");
+  assert.equal(await run(2), 3);
+  assert.equal(await run(99), 13, "上限 12");
+});

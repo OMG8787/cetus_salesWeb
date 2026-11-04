@@ -83,7 +83,7 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 ```bash
 npm install
 npm run typecheck
-npm test          # 61 組：檢索 / 向量、選型計算、客服與員工助理、金鑰分流…
+npm test          # 62 組：檢索 / 向量、選型計算、客服與員工助理、金鑰分流…
 npx tsx test/calc-compare.ts <cases.json> <網站算出的結果.json>   # 選用：與網站 calc.js 逐項比對
 ```
 

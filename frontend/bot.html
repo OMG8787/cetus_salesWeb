@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261104j"></script>
+<script src="theme.js?v=20261105a"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261104j" />
-<link rel="stylesheet" href="dark.css?v=20261104j" />
+<link rel="stylesheet" href="style.css?v=20261105a" />
+<link rel="stylesheet" href="dark.css?v=20261105a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -419,13 +419,16 @@
   <div class="bot-panel" data-panel="ai" style="display:none;">
     <div class="panel">
       <h3 style="margin-top:0;">🧠 AI 模型（依順序備援）</h3>
-      <div class="calc-hint">第一個是主要模型；它失敗（金鑰錯誤、額度用完、服務忙碌）時自動改用下一個。支援 Gemini、Claude、OpenAI 相容服務（OpenAI、OpenRouter、DeepSeek、Groq…）。API Key 只存在你的試算表設定裡，畫面上只顯示最後 4 碼；金鑰欄留空 = 沿用原本的。</div>
+      <div class="calc-hint">可以設定多組（例如一組 Gemini 3.5、一組 3.8），<b>每組勾選要用在哪些功能</b>。用的那組失敗（金鑰錯誤、額度用完、服務忙碌）時，依清單順序自動改用下一組，最後是系統共用的 Gemini；用 ↑ ↓ 調整順序。支援 Gemini、Claude、OpenAI 相容服務（OpenAI、OpenRouter、DeepSeek、Groq…）。</div>
+      <div class="bot-row"><button type="button" class="btn-secondary bot-write" onclick="addAiRow()">＋ 新增 AI</button></div>
       <div id="ai-rows"></div>
+      <div id="ai-summary" class="calc-hint" style="margin:10px 0;line-height:1.7;"></div>
       <div class="bot-row">
-        <button type="button" class="btn-secondary bot-write" onclick="addAiRow()">＋ 新增備援模型</button>
+        <label style="margin:0;">🔁 每個問題最多查幾輪資料 <input type="number" id="ai-rounds" min="1" max="12" value="6" style="width:80px;display:inline-block;" /></label>
         <button type="button" class="bot-write" onclick="saveAi()">💾 儲存 AI 設定</button>
         <span id="ai-msg" class="calc-hint"></span>
       </div>
+      <div class="calc-hint">查詢輪數預設 6：複雜的問題（例如先查客戶再查案件再查產品）可以調高，到了上限機器人會用已經查到的資料回答；調高會多花 AI 費用。每個功能只會用一組：勾在另一組會自動移過去；沒勾的功能用「整個系統」那組；都沒有就用系統共用的 GEMINI_API_KEY。<b>向量</b>只能指定給 Gemini 或 OpenAI 相容的組（Claude 沒有 embedding）。API Key 只存在你的試算表設定裡，畫面上只顯示最後 4 碼；金鑰欄留空 = 沿用原本的。</div>
     </div>
   </div>
 
@@ -549,11 +552,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261104j"></script>
-<script src="demo.js?v=20261104j"></script>
-<script src="common.js?v=20261104j"></script>
-<script src="assistant.js?v=20261104j"></script>
-<script src="bot.js?v=20261104j"></script>
-<script src="botstaff.js?v=20261104j"></script>
+<script src="config.js?v=20261105a"></script>
+<script src="demo.js?v=20261105a"></script>
+<script src="common.js?v=20261105a"></script>
+<script src="assistant.js?v=20261105a"></script>
+<script src="bot.js?v=20261105a"></script>
+<script src="botstaff.js?v=20261105a"></script>
 </body>
 </html>

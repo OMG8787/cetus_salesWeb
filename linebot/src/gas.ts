@@ -17,6 +17,8 @@ export interface AiConfig {
   apiKey: string;
   model: string;
   endpoint: string;
+  /** 每個問題最多查幾輪資料（工具呼叫輪數上限，1～12） */
+  maxRounds?: number;
 }
 
 export interface CsTopic {

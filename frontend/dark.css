@@ -215,6 +215,9 @@ html[data-theme="dark"] .ws-chip.shared { background: rgba(39,174,96,.25); color
 html[data-theme="dark"] .ws-more, html[data-theme="dark"] .todo-row .todo-meta { color: #9aa5b4; }
 html[data-theme="dark"] .todo-row.done .todo-title { color: #66707f; }
 html[data-theme="dark"] .u-group-row { border-bottom-color: #2b333e; }
+html[data-theme="dark"] .bot-ai-card { background: #1d232b; border-color: #323b48; }
+html[data-theme="dark"] .bot-ai-card .bot-ai-no { border-color: #3a4452; }
+html[data-theme="dark"] .bot-ai-edit { border-top-color: #3a4452; }
 }
 
 /* 列印：一律淺色，不印出切換按鈕 */

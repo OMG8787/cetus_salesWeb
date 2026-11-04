@@ -6645,8 +6645,25 @@ function botSettings_() {
 // ------------------------------------------------------------
 // AI（依順序備援：第一個失敗就換下一個）
 // ------------------------------------------------------------
-/** 設定的 AI 清單（含金鑰，只給伺服器內部與 Bot 金鑰的呼叫用）。 */
-function botAiList_() {
+/** 每組 AI 可以指定用在哪些功能（每個功能只會用一組；沒指定的功能用「整個系統」那組）。 */
+var BOT_AI_FEATURES = { all: '整個系統', cs: 'LINE 機器人（含網站客服視窗）', copy: 'AI 文案', staff: '小助理（員工助理）', vector: '向量' };
+
+function botAiUses_(raw) {
+  var seen = {};
+  return (Array.isArray(raw) ? raw : []).map(String).filter(function (u) {
+    if (!BOT_AI_FEATURES[u] || seen[u]) return false;
+    seen[u] = true;
+    return true;
+  });
+}
+
+/** 每個問題最多查幾輪資料（機器人呼叫工具的輪數上限）。 */
+function botAiRounds_() {
+  return botInt_((botCfg_('ai', {}) || {}).maxRounds, 1, 12, 6);
+}
+
+/** 存著的 AI（含金鑰、依存的順序；只給伺服器內部用）。舊設定沒有指定功能時，第一組視為「整個系統」。 */
+function botAiStored_() {
   var cfg = botCfg_('ai', {}) || {};
   var list = Array.isArray(cfg.models) ? cfg.models : [];
   var out = [];
@@ -6654,13 +6671,36 @@ function botAiList_() {
     if (!m || !m.apiKey) return;
     var def = BOT_AI_PROVIDERS[m.provider] || BOT_AI_PROVIDERS.gemini;
     var provider = BOT_AI_PROVIDERS[m.provider] ? m.provider : 'gemini';
-    out.push({ source: 'bot', provider: provider, apiKey: String(m.apiKey), model: String(m.model || '').trim() || def.model, endpoint: String(m.endpoint || '').trim() || def.endpoint });
+    out.push({ source: 'bot', provider: provider, apiKey: String(m.apiKey), model: String(m.model || '').trim() || def.model, endpoint: String(m.endpoint || '').trim() || def.endpoint, name: String(m.name || '').trim().slice(0, 30), uses: botAiUses_(m.uses) });
   });
-  if (!out.length) {
-    var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
-    if (key) out.push({ source: 'system', provider: 'gemini', apiKey: key, model: PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || BOT_AI_PROVIDERS.gemini.model, endpoint: BOT_AI_PROVIDERS.gemini.endpoint });
-  }
+  if (out.length && !out.some(function (m) { return m.uses.length; })) out[0].uses = ['all'];
   return out;
+}
+
+/**
+ * 某個功能用的 AI 清單（含金鑰，只給伺服器內部與 Bot 金鑰的呼叫用），第一個是主要、其餘依序備援：
+ *   主要 = 指定給這個功能的那組 → 沒有就用「整個系統」那組 → 再沒有就用清單第一組；
+ *   備援 = 其他組依清單順序；最後是系統共用的 GEMINI_API_KEY（Script Properties）。
+ * feature：cs / copy / staff / vector / all（不給 = all）。
+ */
+function botAiList_(feature) {
+  var stored = botAiStored_();
+  var rounds = botAiRounds_();
+  var out = [];
+  if (stored.length) {
+    var idx = -1;
+    stored.forEach(function (m, i) { if (idx < 0 && feature && m.uses.indexOf(feature) > -1) idx = i; });
+    stored.forEach(function (m, i) { if (idx < 0 && m.uses.indexOf('all') > -1) idx = i; });
+    if (idx < 0) idx = 0;
+    out = [stored[idx]].concat(stored.filter(function (m, i) { return i !== idx; }));
+  }
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (key && !out.some(function (m) { return m.apiKey === key; })) {
+    out.push({ source: 'system', provider: 'gemini', apiKey: key, model: PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || BOT_AI_PROVIDERS.gemini.model, endpoint: BOT_AI_PROVIDERS.gemini.endpoint });
+  }
+  return out.map(function (m) {
+    return { source: m.source, provider: m.provider, apiKey: m.apiKey, model: m.model, endpoint: m.endpoint, name: m.name || '', maxRounds: rounds };
+  });
 }
 
 /** 呼叫一個 AI（純文字，沒有工具）。messages：[{role:'user'|'assistant', text}]。失敗丟出錯誤。 */
@@ -6820,11 +6860,8 @@ function botSearchCfg_() {
 /** 用哪一組 AI 金鑰算向量（Gemini 或 OpenAI 相容；Claude 沒有 embedding）。找不到回傳 null。 */
 function botEmbedCfg_() {
   var want = botSearchCfg_().embedProvider;
-  var list = botAiList_();
-  var pick = null;
-  (want === 'auto' ? ['gemini', 'openai'] : [want]).forEach(function (p) {
-    if (!pick) pick = list.filter(function (m) { return m.provider === p; })[0] || null;
-  });
+  var list = botAiList_('vector');
+  var pick = list.filter(function (m) { return want === 'auto' ? m.provider === 'gemini' || m.provider === 'openai' : m.provider === want; })[0] || null;
   if (!pick) return null;
   var model = BOT_EMBED_MODELS[pick.provider];
   return { provider: pick.provider, apiKey: pick.apiKey, endpoint: pick.endpoint, model: model, dim: BOT_VEC_DIM, key: pick.provider + ':' + model + ':' + BOT_VEC_DIM };
@@ -7070,7 +7107,7 @@ function csStart_(id, req) {
   var custom = botWords_(cs.customWords);
   if (custom.length) topics.push({ name: '其他指定問題', words: custom, ask: cs.customAsk, askPos: cs.customAskPos });
 
-  var ais = botAiList_();
+  var ais = botAiList_('cs');
   var enabled = channel === 'line' ? cs.enabled : channel === 'web' ? cs.enabled && cs.web.enabled : true;
   var rateLimited = false;
   if (channel === 'web') {
@@ -7364,11 +7401,27 @@ function botKeyHint_(role) {
 
 function botMaskedAi_() {
   var cfg = botCfg_('ai', {}) || {};
-  var list = Array.isArray(cfg.models) ? cfg.models : [];
-  return list.map(function (m) {
+  var list = (Array.isArray(cfg.models) ? cfg.models : []).filter(function (m) { return m && m.apiKey; });
+  var stored = botAiStored_(); // 套用「舊設定第一組 = 整個系統」
+  return list.map(function (m, i) {
     var def = BOT_AI_PROVIDERS[m.provider] || BOT_AI_PROVIDERS.gemini;
-    return { provider: BOT_AI_PROVIDERS[m.provider] ? m.provider : 'gemini', model: String(m.model || ''), endpoint: String(m.endpoint || ''), hasKey: !!m.apiKey, keyHint: m.apiKey ? '••••' + String(m.apiKey).slice(-4) : '', defaultModel: def.model };
+    return { provider: BOT_AI_PROVIDERS[m.provider] ? m.provider : 'gemini', model: String(m.model || ''), endpoint: String(m.endpoint || ''), name: String(m.name || '').trim().slice(0, 30), uses: stored[i] ? stored[i].uses : [], hasKey: !!m.apiKey, keyHint: m.apiKey ? '••••' + String(m.apiKey).slice(-4) : '', defaultModel: def.model };
   });
+}
+
+/** 每個功能現在實際用哪一組（給設定畫面的「目前：…」摘要）。 */
+function botAiAssign_() {
+  var out = {};
+  Object.keys(BOT_AI_FEATURES).forEach(function (f) {
+    var l = f === 'vector' ? [] : botAiList_(f);
+    if (f === 'vector') {
+      var e = botEmbedCfg_();
+      out[f] = e ? { name: '', provider: e.provider, model: e.model } : null;
+    } else {
+      out[f] = l.length ? { name: l[0].name, provider: l[0].provider, model: l[0].model } : null;
+    }
+  });
+  return out;
 }
 
 function handleBotGetSettings(body) {
@@ -7380,13 +7433,16 @@ function handleBotGetSettings(body) {
   } catch (e) {
     url = '';
   }
-  var ais = botAiList_();
+  var ais = botAiList_('cs');
   var kbCount = Math.max(0, getSheet(SHEET_BOT_KB).getLastRow() - 1);
   return {
     success: true,
     cs: cs,
     general: { replyDelay: gen.replyDelay, botUrl: gen.botUrl, brand: csBrand_(), memory: gen.memory },
     ai: botMaskedAi_(),
+    aiFeatures: BOT_AI_FEATURES,
+    aiAssign: botAiAssign_(),
+    aiRounds: botAiRounds_(),
     aiProviders: BOT_AI_PROVIDERS,
     aiUsing: ais.length ? { source: ais[0].source, name: BOT_AI_PROVIDERS[ais[0].provider].name, model: ais[0].model, count: ais.length } : null,
     keys: {
@@ -7439,12 +7495,14 @@ function handleBotSaveSettings(body) {
   });
 }
 
-/** 儲存 AI 模型清單（依順序備援）。每一筆金鑰留空 = 沿用原本同一位置、同一服務的金鑰。 */
+/** 儲存 AI 模型清單（依順序備援）與各組用在哪些功能。每一筆金鑰留空 = 沿用原本同一位置、同一服務的金鑰。 */
 function handleBotSaveAi(body) {
   return withLock_(function () {
-    var old = (botCfg_('ai', {}) || {}).models || [];
+    var oldCfg = botCfg_('ai', {}) || {};
+    var old = oldCfg.models || [];
     var models = [];
-    (Array.isArray(body.models) ? body.models : []).slice(0, 5).forEach(function (m, i) {
+    var taken = {}; // 每個功能只會用一組：重複勾選時，排在前面的保留
+    (Array.isArray(body.models) ? body.models : []).slice(0, 8).forEach(function (m, i) {
       if (!m) return;
       var provider = BOT_AI_PROVIDERS[m.provider] ? m.provider : 'gemini';
       var key = String(m.apiKey || '').trim();
@@ -7452,16 +7510,22 @@ function handleBotSaveAi(body) {
       if (!key) return; // 沒有金鑰的列略過
       var endpoint = String(m.endpoint || '').trim();
       if (endpoint && !/^https:\/\//i.test(endpoint)) throw new Error('Endpoint 要用 https:// 開頭');
-      models.push({ provider: provider, apiKey: key, model: String(m.model || '').trim(), endpoint: endpoint });
+      var uses = botAiUses_(m.uses).filter(function (u) {
+        if (taken[u]) return false;
+        taken[u] = true;
+        return true;
+      });
+      models.push({ provider: provider, apiKey: key, model: String(m.model || '').trim(), endpoint: endpoint, name: String(m.name || '').trim().slice(0, 30), uses: uses });
     });
-    botCfgSet_('ai', { models: models });
-    return { success: true, ai: botMaskedAi_() };
+    var rounds = body.maxRounds !== undefined ? botInt_(body.maxRounds, 1, 12, 6) : botInt_(oldCfg.maxRounds, 1, 12, 6);
+    botCfgSet_('ai', { models: models, maxRounds: rounds });
+    return { success: true, ai: botMaskedAi_(), aiAssign: botAiAssign_(), aiRounds: botAiRounds_() };
   });
 }
 
 /** 用目前存的第 index 個 AI 發一句話測試（金鑰不會出現在回傳）。 */
 function handleBotTestAi(body) {
-  var list = botAiList_();
+  var list = botAiStored_();
   var i = Number(body.index) || 0;
   if (!list.length) return { success: false, message: '還沒有設定 AI（或金鑰是空的）' };
   if (!list[i]) return { success: false, message: '沒有第 ' + (i + 1) + ' 個 AI 模型' };
@@ -8052,7 +8116,7 @@ function botStaffStart_(id, body) {
   var isNew = false;
   if (id.charAt(0) === 'U') isNew = botMemberTouch_(id, prof).isNew;
   var ctx = botStaffCtx_(id);
-  var ais = botAiList_();
+  var ais = botAiList_('staff');
   var base = {
     status: ctx.status,
     allowed: !!ctx.ok,
@@ -9431,7 +9495,7 @@ function copyAiList_() {
     var def = BOT_AI_PROVIDERS[provider];
     out.push({ source: 'copy', provider: provider, apiKey: String(m.apiKey), model: String(m.model || '').trim() || def.model, endpoint: String(m.endpoint || '').trim() || def.endpoint });
   });
-  if (!out.length && typeof botAiList_ === 'function') return botAiList_();
+  if (!out.length && typeof botAiList_ === 'function') return botAiList_('copy');
   return out;
 }
 

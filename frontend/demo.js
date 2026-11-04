@@ -206,12 +206,13 @@ function demoBotApi(action, params, db) {
   const b = demoBotState(db);
   const save = () => saveDemoDB(db);
   const nowStr = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const masked = () => b.ai.map((m) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, hasKey: !!m.apiKey, keyHint: '••••' + String(m.apiKey).slice(-4), defaultModel: '' }));
+  const masked = () => b.ai.map((m, i) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, name: m.name || '', uses: m.uses || (i === 0 ? ['all'] : []), hasKey: !!m.apiKey, keyHint: '••••' + String(m.apiKey).slice(-4), defaultModel: '' }));
   switch (action) {
     case 'botGetSettings':
       return {
         success: true, cs: demoBotCs(b), general: b.general, ai: masked(),
         aiProviders: { gemini: { name: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' }, claude: { name: 'Claude', endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5' }, openai: { name: 'OpenAI 相容', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' } },
+        aiFeatures: { all: '整個系統', cs: 'LINE 機器人（含網站客服視窗）', copy: 'AI 文案', staff: '小助理（員工助理）', vector: '向量' }, aiRounds: b.aiRounds || 6,
         aiUsing: b.ai.length ? { source: 'bot', name: b.ai[0].provider, model: b.ai[0].model || 'default', count: b.ai.length } : null,
         search: b.search || { mode: 'vector', threshold: 0.6, topK: 6, embedProvider: 'auto' }, keys: { cs: { has: !!b.key, hint: b.key ? '••••' + b.key.slice(-4) : '', shared: false }, staff: { has: !!b.staffKey, hint: b.staffKey ? '••••' + b.staffKey.slice(-4) : '', shared: false } }, csProductFields: DEMO_CS_FIELDS, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
       };
@@ -227,7 +228,9 @@ function demoBotApi(action, params, db) {
       return { success: true };
     }
     case 'botSaveAi': {
-      b.ai = (params.models || []).map((m, i) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, apiKey: m.apiKey || (b.ai[i] && b.ai[i].apiKey) || '' })).filter((m) => m.apiKey);
+      const taken = {};
+      b.ai = (params.models || []).slice(0, 8).map((m, i) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, name: m.name || '', uses: (m.uses || []).filter((u) => !taken[u] && (taken[u] = true)), apiKey: m.apiKey || (b.ai[i] && b.ai[i].apiKey) || '' })).filter((m) => m.apiKey);
+      if (params.maxRounds) b.aiRounds = Math.min(12, Math.max(1, Number(params.maxRounds) || 6));
       save();
       return { success: true, ai: masked() };
     }

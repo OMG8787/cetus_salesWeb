@@ -729,52 +729,115 @@ async function resetTest() {
 // AI 模型
 // ------------------------------------------------------------
 let aiRows = [];
+const AI_FEATURE_ORDER = ['all', 'cs', 'copy', 'staff', 'vector'];
+const AI_FEATURE_SHORT = { all: '整個系統', cs: 'LINE 機器人', copy: 'AI 文案', staff: '小助理', vector: '向量' };
+const blankAi = () => ({ provider: 'gemini', model: '', endpoint: '', name: '', uses: [], hasKey: false, keyHint: '', _edit: true });
 
 function fillAi() {
   if (!botData) return;
-  aiRows = botData.ai.map((m) => Object.assign({}, m));
-  if (!aiRows.length) aiRows.push({ provider: 'gemini', model: '', endpoint: '', hasKey: false, keyHint: '' });
+  aiRows = botData.ai.map((m) => Object.assign({ name: '', uses: [] }, m, { uses: (m.uses || []).slice() }));
+  if (!aiRows.length) aiRows.push(Object.assign(blankAi(), { uses: ['all'] }));
+  setVal('ai-rounds', botData.aiRounds || 6);
   renderAi();
+}
+
+/** 每個功能目前實際用哪一組（跟後端同一套規則：指定給它的 → 整個系統 → 第一組）。 */
+function aiResolve(f) {
+  const rows = aiRows.filter((m) => m.hasKey || m.apiKey);
+  if (!rows.length) return null;
+  const order = (feature) => {
+    const i = rows.findIndex((m) => feature !== 'all' && m.uses.includes(feature));
+    const j = i >= 0 ? i : rows.findIndex((m) => m.uses.includes('all'));
+    const k = j >= 0 ? j : 0;
+    return [rows[k]].concat(rows.filter((_, x) => x !== k));
+  };
+  if (f === 'vector') return order('vector').find((m) => m.provider === 'gemini' || m.provider === 'openai') || null;
+  return order(f)[0];
+}
+
+function aiLabel(m) {
+  const P = botData.aiProviders || {};
+  return (m.name ? m.name + '（' : '') + ((P[m.provider] || {}).name || m.provider) + ' ' + (m.model || ((P[m.provider] || {}).model || '')) + (m.name ? '）' : '');
 }
 
 function renderAi() {
   const P = botData.aiProviders;
+  const feats = botData.aiFeatures || {};
   $('ai-rows').innerHTML = aiRows
     .map((m, i) => {
       const def = P[m.provider] || P.gemini;
-      return `<div class="bot-ai-row">
-        <div class="bot-ai-no">${i === 0 ? '主要' : '備援 ' + i}</div>
-        <select onchange="aiField(${i}, 'provider', this.value)">${Object.keys(P).map((k) => `<option value="${k}" ${k === m.provider ? 'selected' : ''}>${htmlEsc(P[k].name)}</option>`).join('')}</select>
-        <input placeholder="模型（預設 ${htmlEsc(def.model)}）" value="${htmlEsc(m.model)}" oninput="aiField(${i}, 'model', this.value)" />
-        <input placeholder="Endpoint（預設 ${htmlEsc(def.endpoint)}）" value="${htmlEsc(m.endpoint)}" oninput="aiField(${i}, 'endpoint', this.value)" />
-        <input type="password" autocomplete="new-password" placeholder="${m.hasKey ? htmlEsc(m.keyHint) + '（留空沿用）' : 'API Key'}" oninput="aiField(${i}, 'apiKey', this.value)" />
-        <span class="nowrap">
-          <button type="button" class="btn-mini" ${m.hasKey && !m.apiKey ? '' : 'disabled'} onclick="testAi(${i})" title="用已儲存的金鑰發一句話測試">測試</button>
-          <button type="button" class="btn-mini bot-write" onclick="moveAi(${i}, -1)">↑</button>
-          <button type="button" class="btn-mini bot-write" onclick="moveAi(${i}, 1)">↓</button>
-          <button type="button" class="btn-mini bot-write" onclick="removeAi(${i})">✕</button>
-        </span>
+      const keyText = m.apiKey ? '（新金鑰，儲存後生效）' : m.hasKey ? '金鑰 ' + m.keyHint : '尚未填金鑰';
+      return `<div class="bot-ai-card">
+        <div class="bot-ai-head">
+          <span class="bot-ai-title"><b>${htmlEsc(m.name || '未命名')}</b> <span class="calc-hint">${htmlEsc(def.name)}・${htmlEsc(m.model || def.model)}・${htmlEsc(keyText)}</span></span>
+          <span class="nowrap">
+            <span class="bot-ai-no">${i + 1}</span>
+            <button type="button" class="btn-mini bot-write" onclick="moveAi(${i}, -1)" title="往前（備援順序）">↑</button>
+            <button type="button" class="btn-mini bot-write" onclick="moveAi(${i}, 1)" title="往後">↓</button>
+            <button type="button" class="btn-mini" ${m.hasKey && !m.apiKey ? '' : 'disabled'} onclick="testAi(${i})" title="用已儲存的金鑰發一句話測試">測試</button>
+            <button type="button" class="btn-mini bot-write" onclick="toggleAiEdit(${i})" title="編輯名稱 / 模型 / 金鑰">✏️</button>
+            <button type="button" class="btn-mini bot-write" onclick="removeAi(${i})" title="刪除">🗑</button>
+          </span>
+        </div>
+        <div class="bot-ai-uses">${AI_FEATURE_ORDER.map((f) => `<label class="bot-check"><input type="checkbox" class="bot-write" ${m.uses.includes(f) ? 'checked' : ''} onchange="aiUse(${i}, '${f}', this.checked)" /> ${htmlEsc(f === 'all' ? '用在整個系統' : feats[f] ? AI_FEATURE_SHORT[f] : f)}</label>`).join('')}</div>
+        <div class="bot-ai-edit" style="${m._edit ? '' : 'display:none;'}">
+          <div class="bot-grid">
+            <div><label>名稱（自己看的，例如：預設、爬蟲）</label><input maxlength="30" value="${htmlEsc(m.name)}" oninput="aiField(${i}, 'name', this.value)" /></div>
+            <div><label>服務</label><select onchange="aiField(${i}, 'provider', this.value)">${Object.keys(P).map((k) => `<option value="${k}" ${k === m.provider ? 'selected' : ''}>${htmlEsc(P[k].name)}</option>`).join('')}</select></div>
+            <div><label>模型</label><input placeholder="預設 ${htmlEsc(def.model)}" value="${htmlEsc(m.model)}" oninput="aiField(${i}, 'model', this.value)" /></div>
+            <div><label>API Key</label><input type="password" autocomplete="new-password" placeholder="${m.hasKey ? htmlEsc(m.keyHint) + '（留空沿用）' : 'API Key'}" oninput="aiField(${i}, 'apiKey', this.value)" /></div>
+          </div>
+          <label>Endpoint（選填，預設 ${htmlEsc(def.endpoint)}）</label>
+          <input value="${htmlEsc(m.endpoint)}" oninput="aiField(${i}, 'endpoint', this.value)" />
+        </div>
         <div class="calc-hint" id="ai-test-${i}"></div>
       </div>`;
     })
     .join('');
+  renderAiSummary();
   applyReadOnly();
+}
+
+function renderAiSummary() {
+  const parts = AI_FEATURE_ORDER.map((f) => {
+    const m = aiResolve(f);
+    const label = f === 'all' ? '整個系統' : AI_FEATURE_SHORT[f];
+    if (f === 'vector') return `${label} → ${m ? htmlEsc(aiLabel(m)) + '（embedding）' : '<span style="color:#c0392b;">沒有可用的（需要 Gemini 或 OpenAI 相容）</span>'}`;
+    return `${label} → ${m ? htmlEsc(aiLabel(m)) : '<span style="color:#c0392b;">沒有 AI</span>'}`;
+  });
+  $('ai-summary').innerHTML = '目前：' + parts.join('　|　');
 }
 
 function aiField(i, k, v) {
   aiRows[i][k] = v;
   if (k === 'provider') renderAi();
+  else if (k === 'name' || k === 'model') renderAiSummary();
+}
+
+/** 每個功能只會用一組：勾在這組，就會從別組移掉。 */
+function aiUse(i, f, on) {
+  aiRows.forEach((m, x) => {
+    m.uses = m.uses.filter((u) => u !== f);
+    if (x === i && on) m.uses.push(f);
+  });
+  renderAi();
+}
+
+function toggleAiEdit(i) {
+  aiRows[i]._edit = !aiRows[i]._edit;
+  renderAi();
 }
 
 function addAiRow() {
-  if (aiRows.length >= 5) return alert('最多 5 個模型');
-  aiRows.push({ provider: 'gemini', model: '', endpoint: '', hasKey: false, keyHint: '' });
+  if (aiRows.length >= 8) return alert('最多 8 組模型');
+  aiRows.push(blankAi());
   renderAi();
 }
 
 function removeAi(i) {
+  if (!confirm('確定要刪除這組 AI 嗎？（按「儲存 AI 設定」才會生效）')) return;
   aiRows.splice(i, 1);
-  if (!aiRows.length) aiRows.push({ provider: 'gemini', model: '', endpoint: '', hasKey: false, keyHint: '' });
+  if (!aiRows.length) aiRows.push(Object.assign(blankAi(), { uses: ['all'] }));
   renderAi();
 }
 
@@ -787,9 +850,9 @@ function moveAi(i, d) {
 
 async function saveAi() {
   if (readOnly()) return;
-  const models = aiRows.map((m) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, apiKey: m.apiKey || '' }));
+  const models = aiRows.map((m) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, name: m.name, uses: m.uses, apiKey: m.apiKey || '' }));
   if (!models.some((m, i) => m.apiKey || aiRows[i].hasKey)) return alert('至少要填一個 API Key');
-  const r = await callApi('botSaveAi', { models });
+  const r = await callApi('botSaveAi', { models, maxRounds: Number($('ai-rounds').value) || 6 });
   if (!r.success) return alert(r.message);
   $('ai-msg').textContent = '✓ 已儲存';
   setTimeout(() => ($('ai-msg').textContent = ''), 3000);
