@@ -1,6 +1,6 @@
 /**
  * 業務行事曆（每天上班照著這頁做）：
- *   ① 行事曆：Google 日曆接下來的行程
+ *   ① 行事曆：自己的內建行事曆（可看別人分享的）；客戶的下次追蹤會自動出現在裡面
  *   ② 需要追蹤、但還沒建立案件的客戶（可直接「建立案件」）
  *   ③ 已建立、進行中的案件（連動客戶的下次追蹤日與緊急程度）
  * 客戶資料與案件資料跟「案件管理」共用同一份暫存（casesPageData），追蹤進度都記在客戶身上。
@@ -311,29 +311,192 @@ async function copyDailyReport() {
   setTimeout(() => (btn.textContent = old), 1500);
 }
 
-// ① Google 日曆行程（客戶追蹤日也會被加進日曆，這裡略過那些，因為下面清單已經列出）
+// ① 我的行事曆（內建；清單 / 月曆）
+let calView = 'list';
+let calMonth = ''; // YYYY-MM
+let calEvents = [];
+
+function ymd(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function addDaysStr2(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return ymd(d);
+}
+
+function calSetView(v) {
+  calView = v;
+  document.getElementById('cal-v-list').classList.toggle('on', v === 'list');
+  document.getElementById('cal-v-month').classList.toggle('on', v === 'month');
+  document.getElementById('sch-days').style.display = v === 'list' ? '' : 'none';
+  document.getElementById('cal-month-nav').style.display = v === 'month' ? 'inline-flex' : 'none';
+  if (v === 'month' && !calMonth) calMonth = localTodayStr().slice(0, 7);
+  loadScheduleEvents();
+}
+
+function calShiftMonth(n) {
+  const [y, m] = calMonth.split('-').map(Number);
+  calMonth = ymd(new Date(y, m - 1 + n, 1)).slice(0, 7);
+  loadScheduleEvents();
+}
+
+function calToday() {
+  calMonth = localTodayStr().slice(0, 7);
+  loadScheduleEvents();
+}
+
+/** 月曆顯示的範圍：從該月 1 號那週的星期日，到該月最後一天那週的星期六。 */
+function monthGrid() {
+  const [y, m] = calMonth.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const start = new Date(y, m - 1, 1 - first.getDay());
+  const last = new Date(y, m, 0);
+  const end = new Date(y, m - 1, last.getDate() + (6 - last.getDay()));
+  return { from: ymd(start), to: ymd(end) };
+}
+
+function evTimeText(ev) {
+  return ev.allDay ? '全天' : ev.startTime + (ev.endTime ? '–' + ev.endTime : '');
+}
+
+function evBadges(ev) {
+  const out = [];
+  if (ev.source === 'followup') out.push('<span class="ws-badge follow">客戶追蹤</span>');
+  if (!ev.isMine) out.push(`<span class="ws-badge shared">${esc(ev.ownerName)} 分享（只能看）</span>`);
+  else if (ev.shareMode !== 'self') out.push(`<span class="ws-badge shared" title="${esc(ev.shareLabel)}">已分享：${esc(ev.shareLabel)}</span>`);
+  return out.join('');
+}
+
 async function loadScheduleEvents() {
-  const days = document.getElementById('sch-days').value;
   const box = document.getElementById('sch-events');
   box.innerHTML = '<span class="calc-hint">讀取中...</span>';
-  const result = await callApi('getCalendarEvents', { days: Number(days) }, { silent: true });
+  let from, to;
+  if (calView === 'month') {
+    ({ from, to } = monthGrid());
+  } else {
+    from = localTodayStr();
+    to = addDaysStr2(from, Number(document.getElementById('sch-days').value) - 1);
+  }
+  const result = await callApi('calGetEvents', { from, to, scope: document.getElementById('cal-scope').value }, { silent: true });
   if (!result.success) {
     box.innerHTML = `<span class="calc-hint">${esc(result.message)}</span>`;
     return;
   }
-  const events = result.events.filter((e) => String(e.Title).indexOf('[AOI客戶追蹤]') !== 0);
-  const skipped = result.events.length - events.length;
-  if (!events.length) {
-    box.innerHTML = `<span class="calc-hint">這段期間沒有其他行程。${skipped ? '（客戶追蹤提醒 ' + skipped + ' 筆已列在下面的清單）' : ''}</span>`;
+  calEvents = result.events || [];
+  renderEvents();
+}
+
+function renderEvents() {
+  const box = document.getElementById('sch-events');
+  if (calView === 'month') return renderMonth(box);
+  document.getElementById('cal-month-title').textContent = '';
+  if (!calEvents.length) {
+    box.innerHTML = '<span class="calc-hint">這段期間沒有行程。按右上「＋ 新增行程」可以加一個。</span>';
     return;
   }
-  box.innerHTML = events
+  box.innerHTML = calEvents
     .map((ev) => {
-      const time = ev.AllDay ? `${ev.Start}（全天）` : ev.Start.replace('T', ' ');
-      return `<div class="event-row"><span class="event-time">${esc(time)}</span><span style="flex:1">${esc(ev.Title)}${ev.Location ? ' <span class="calc-hint">@' + esc(ev.Location) + '</span>' : ''}</span></div>`;
+      const when = ev.endDate && ev.endDate !== ev.startDate ? `${ev.startDate.slice(5)} → ${ev.endDate.slice(5)}` : ev.startDate.slice(5);
+      return `<div class="ws-evrow">
+        <span class="ws-evdate">${esc(when)}</span><span class="ws-evtime">${esc(evTimeText(ev))}</span>
+        <span class="ws-evmain">${esc(ev.title)}${ev.location ? ` <span class="calc-hint">@${esc(ev.location)}</span>` : ''}${evBadges(ev)}${ev.notes ? `<div class="calc-hint">${esc(ev.notes).replace(/\n/g, '<br>')}</div>` : ''}</span>
+        <span class="ws-evact"><button type="button" class="btn-secondary" onclick="openEventModal(${ev.id})">${ev.canEdit && ev.source !== 'followup' ? '編輯' : '查看'}</button></span>
+      </div>`;
     })
     .join('');
-  if (skipped) box.innerHTML += `<div class="calc-hint">（客戶追蹤提醒 ${skipped} 筆已列在下面的清單）</div>`;
+}
+
+function renderMonth(box) {
+  const [y, m] = calMonth.split('-').map(Number);
+  document.getElementById('cal-month-title').textContent = `${y} 年 ${m} 月`;
+  const { from, to } = monthGrid();
+  const today = localTodayStr();
+  const byDay = {};
+  calEvents.forEach((ev) => {
+    let d = ev.startDate < from ? from : ev.startDate;
+    const stop = ev.endDate > to ? to : ev.endDate || ev.startDate;
+    for (let n = 0; d <= stop && n < 70; n++, d = addDaysStr2(d, 1)) (byDay[d] = byDay[d] || []).push(ev);
+  });
+  let html = ['日', '一', '二', '三', '四', '五', '六'].map((w) => `<div class="ws-dow">${w}</div>`).join('');
+  for (let d = from; d <= to; d = addDaysStr2(d, 1)) {
+    const list = byDay[d] || [];
+    const inMonth = d.slice(0, 7) === calMonth;
+    html += `<div class="ws-day${inMonth ? '' : ' other'}${d === today ? ' today' : ''}" onclick="openEventModal(0, '${d}')"><span class="ws-dnum">${Number(d.slice(8))}</span>`;
+    list.slice(0, 3).forEach((ev) => {
+      html += `<span class="ws-chip${ev.source === 'followup' ? ' follow' : !ev.isMine ? ' shared' : ''}" title="${esc(ev.title)}" onclick="event.stopPropagation();openEventModal(${ev.id})">${ev.allDay ? '' : esc(ev.startTime) + ' '}${esc(ev.title)}</span>`;
+    });
+    if (list.length > 3) html += `<div class="ws-more">還有 ${list.length - 3} 項…</div>`;
+    html += '</div>';
+  }
+  box.innerHTML = `<div class="ws-month">${html}</div>`;
+}
+
+function evSyncAllDay() {
+  document.getElementById('ev-times').style.display = document.getElementById('ev-allday').checked ? 'none' : '';
+}
+
+async function openEventModal(id, date) {
+  const ev = id ? calEvents.find((x) => x.id === id) : null;
+  if (id && !ev) return;
+  await ShareUI.mount('ev-share');
+  const editable = !ev || (ev.canEdit && ev.source !== 'followup');
+  document.getElementById('ev-heading').textContent = ev ? (editable ? '編輯行程' : '行程內容') : '新增行程';
+  document.getElementById('ev-id').value = ev ? ev.id : '';
+  document.getElementById('ev-title').value = ev ? ev.title : '';
+  document.getElementById('ev-date').value = ev ? ev.startDate : date || localTodayStr();
+  document.getElementById('ev-enddate').value = ev && ev.endDate !== ev.startDate ? ev.endDate : '';
+  document.getElementById('ev-allday').checked = ev ? ev.allDay : false;
+  document.getElementById('ev-start').value = ev ? ev.startTime : '09:00';
+  document.getElementById('ev-end').value = ev ? ev.endTime : '';
+  document.getElementById('ev-loc').value = ev ? ev.location : '';
+  document.getElementById('ev-notes').value = ev ? ev.notes : '';
+  ShareUI.set('ev-share', ev ? ev.shareMode : 'self', ev ? ev.shareWith : []);
+  evSyncAllDay();
+  ['ev-title', 'ev-date', 'ev-enddate', 'ev-allday', 'ev-start', 'ev-end', 'ev-loc', 'ev-notes'].forEach((k) => (document.getElementById(k).disabled = !editable));
+  document.querySelector('#ev-share .share-mode').disabled = !editable;
+  document.getElementById('ev-share').style.display = ev && !ev.isMine && !editable ? 'none' : '';
+  document.getElementById('ev-save').style.display = editable ? '' : 'none';
+  document.getElementById('ev-del').style.display = ev && ev.canEdit ? '' : 'none';
+  const ro = document.getElementById('ev-readonly');
+  ro.style.display = editable ? 'none' : '';
+  ro.textContent = !ev ? '' : ev.source === 'followup' ? '這是客戶「下次追蹤」自動加的提醒；要改日期請在下面的清單按「改日」或「追蹤完畢」。' : `這是 ${ev.ownerName} 分享給你的行程，只能查看，不能修改。`;
+  document.getElementById('event-modal').style.display = 'flex';
+}
+
+function closeEventModal() {
+  document.getElementById('event-modal').style.display = 'none';
+}
+
+async function saveEvent() {
+  const share = ShareUI.get('ev-share');
+  const body = {
+    id: Number(document.getElementById('ev-id').value) || 0,
+    title: document.getElementById('ev-title').value.trim(),
+    startDate: document.getElementById('ev-date').value,
+    endDate: document.getElementById('ev-enddate').value || '',
+    allDay: document.getElementById('ev-allday').checked,
+    startTime: document.getElementById('ev-allday').checked ? '' : document.getElementById('ev-start').value,
+    endTime: document.getElementById('ev-allday').checked ? '' : document.getElementById('ev-end').value,
+    location: document.getElementById('ev-loc').value.trim(),
+    notes: document.getElementById('ev-notes').value.trim(),
+    shareMode: share.shareMode,
+    shareWith: share.shareWith,
+  };
+  const r = await callApi('calSaveEvent', body);
+  if (!r.success) return alert(r.message);
+  closeEventModal();
+  loadScheduleEvents();
+}
+
+async function deleteEvent() {
+  const id = Number(document.getElementById('ev-id').value);
+  if (!id || !confirm('確定要刪除這個行程嗎？')) return;
+  const r = await callApi('calDeleteEvent', { id });
+  if (!r.success) return alert(r.message);
+  closeEventModal();
+  loadScheduleEvents();
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -345,7 +508,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('rep-mine').addEventListener('change', renderDailyReport);
   ['sch-urgency', 'sch-range', 'sch-sort'].forEach((id) => document.getElementById(id).addEventListener('change', renderSchedule));
   document.getElementById('sch-keyword').addEventListener('input', renderSchedule);
-  document.getElementById('sch-days').addEventListener('change', loadScheduleEvents);
   loadScheduleEvents();
   loadScheduleData();
   loadScheduleLogs();

@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261104i"></script>
+<script src="theme.js?v=20261104j"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>首頁 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261104i" />
-<link rel="stylesheet" href="dark.css?v=20261104i" />
+<link rel="stylesheet" href="style.css?v=20261104j" />
+<link rel="stylesheet" href="dark.css?v=20261104j" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -37,6 +37,7 @@
       <button class="tab-btn" data-block="cases" onclick="location.href='cases.html'">案件管理</button>
       <button class="tab-btn" data-block="customers" onclick="location.href='customers.html'">客戶管理</button>
       <button class="tab-btn" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
+      <button class="tab-btn" onclick="location.href='todos.html'">工作清單</button>
     </div>
   </div>
   <div class="nav-group">
@@ -91,18 +92,27 @@
 
     <!-- 行程 -->
     <div class="home-card">
-      <h3>Google 日曆行程
+      <h3>我的行事曆
         <span class="card-actions">
           <select id="cal-days" onchange="loadEvents()">
             <option value="1">今天</option>
             <option value="7" selected>未來 7 天</option>
             <option value="30">未來 30 天</option>
           </select>
-          <button class="btn-secondary" onclick="loadEvents()">重新整理</button>
+          <button class="btn-secondary" onclick="location.href='schedule.html'">開啟行事曆</button>
         </span>
       </h3>
       <div id="event-list"></div>
-      <div class="calc-hint">讀取的是部署 Apps Script 那個 Google 帳號的預設日曆（客戶追蹤日也會加到這裡）。</div>
+      <div class="calc-hint">每個帳號各自的行事曆（含別人分享給你的）；客戶的「下次追蹤」會自動加進來。</div>
+    </div>
+
+    <!-- 工作清單 -->
+    <div class="home-card">
+      <h3>工作清單
+        <span class="card-actions"><button class="btn-secondary" onclick="location.href='todos.html'">開啟工作清單</button></span>
+      </h3>
+      <div class="toolbar"><input id="todo-quick" placeholder="新增一項工作，按 Enter" maxlength="200" /></div>
+      <div id="todo-list"></div>
     </div>
 
     <!-- 常用型號 -->
@@ -128,8 +138,8 @@
       <div id="memo-add">
         <input id="memo-title" placeholder="標題（選填）" />
         <textarea id="memo-content" placeholder="內容"></textarea>
+        <div id="memo-share" style="margin:6px 0;"></div>
         <div class="toolbar">
-          <label class="inline-check"><input type="checkbox" id="memo-shared" /> 分享給系統裡所有人（不勾就只有我看得到）</label>
           <button onclick="addMemo()">新增備忘</button>
         </div>
       </div>
@@ -138,10 +148,20 @@
   </div>
 </section>
 
-<script src="config.js?v=20261104i"></script>
-<script src="demo.js?v=20261104i"></script>
-<script src="common.js?v=20261104i"></script>
-<script src="assistant.js?v=20261104i"></script>
-<script src="home.js?v=20261104i"></script>
+<div id="memo-share-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-header"><h3 style="margin:0;">備忘錄的分享對象</h3><button type="button" class="btn-secondary" onclick="document.getElementById('memo-share-modal').style.display='none'">關閉</button></div>
+    <input type="hidden" id="memo-share-row" />
+    <div id="memo-share-edit"></div>
+    <div style="margin-top:10px;"><button type="button" onclick="saveMemoShare()">儲存</button></div>
+  </div>
+</div>
+
+<script src="config.js?v=20261104j"></script>
+<script src="demo.js?v=20261104j"></script>
+<script src="common.js?v=20261104j"></script>
+<script src="share.js?v=20261104j"></script>
+<script src="assistant.js?v=20261104j"></script>
+<script src="home.js?v=20261104j"></script>
 </body>
 </html>

@@ -194,7 +194,29 @@ html[data-theme="dark"] [style*="color:#8a5300"], html[data-theme="dark"] [style
 html[data-theme="dark"] [style*="background:#fff9e8"], html[data-theme="dark"] [style*="background:#fffbe6"] { background: rgba(241,196,15,.12) !important; }
 html[data-theme="dark"] [style*="background:#fff;"] { background: #1d232b !important; color: #e5e7eb; }
 html[data-theme="dark"] [style*="background:#fff4e0"] { background: rgba(224,161,0,.16) !important; }
+/* ---------- 個人工作區 ---------- */
+html[data-theme="dark"] .share-pick { border-color: #323b48; background: #1b2027; }
+html[data-theme="dark"] .ws-seg { border-color: #3a4452; }
+html[data-theme="dark"] .ws-seg button { background: #1d232b; color: #e5e7eb; }
+html[data-theme="dark"] .ws-seg button.on { background: #2c5aa0; color: #fff; }
+html[data-theme="dark"] .ws-badge { background: #2a3340; color: #b8c2d0; }
+html[data-theme="dark"] .ws-badge.follow { background: rgba(230,126,34,.2); color: #f5b573; }
+html[data-theme="dark"] .ws-badge.shared { background: rgba(44,90,160,.3); color: #8db8f5; }
+html[data-theme="dark"] .ws-evrow, html[data-theme="dark"] .todo-row { border-bottom-color: #2b333e; }
+html[data-theme="dark"] .ws-evrow .ws-evdate, html[data-theme="dark"] .ws-evrow .ws-evtime { color: #8db8f5; }
+html[data-theme="dark"] .ws-month { border-color: #323b48; }
+html[data-theme="dark"] .ws-dow { background: #252c36; border-color: #323b48; }
+html[data-theme="dark"] .ws-day { background: #1d232b; border-color: #323b48; }
+html[data-theme="dark"] .ws-day:hover { background: #252c36; }
+html[data-theme="dark"] .ws-day.other { background: #171c22; color: #66707f; }
+html[data-theme="dark"] .ws-chip { background: rgba(44,90,160,.35); color: #bcd5fb; }
+html[data-theme="dark"] .ws-chip.follow { background: rgba(230,126,34,.25); color: #f5b573; }
+html[data-theme="dark"] .ws-chip.shared { background: rgba(39,174,96,.25); color: #8fe0ad; }
+html[data-theme="dark"] .ws-more, html[data-theme="dark"] .todo-row .todo-meta { color: #9aa5b4; }
+html[data-theme="dark"] .todo-row.done .todo-title { color: #66707f; }
+html[data-theme="dark"] .u-group-row { border-bottom-color: #2b333e; }
 }
 
 /* 列印：一律淺色，不印出切換按鈕 */
-@media print { .theme-btn { display: none !important; } }
+@media print { .theme-btn { display: none !important; } 
+}

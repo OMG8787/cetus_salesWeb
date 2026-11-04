@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261104i"></script>
+<script src="theme.js?v=20261104j"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>帳號管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261104i" />
-<link rel="stylesheet" href="dark.css?v=20261104i" />
+<link rel="stylesheet" href="style.css?v=20261104j" />
+<link rel="stylesheet" href="dark.css?v=20261104j" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -37,6 +37,7 @@
       <button class="tab-btn" data-block="cases" onclick="location.href='cases.html'">案件管理</button>
       <button class="tab-btn" data-block="customers" onclick="location.href='customers.html'">客戶管理</button>
       <button class="tab-btn" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
+      <button class="tab-btn" onclick="location.href='todos.html'">工作清單</button>
     </div>
   </div>
   <div class="nav-group">
@@ -104,12 +105,38 @@
     <tbody></tbody>
   </table>
 
+  <h3 style="margin-top:28px;">群組與行事曆</h3>
+  <div class="panel">
+    <div class="calc-hint">每個帳號都有自己的行事曆、工作清單、備忘錄。大家把資料分享給別人時，可以選「自己 / 指定的人 / 群組 / 全部同事」，被分享的人<b>只能查看</b>。群組由這裡建立，例如「業務組」「FAE 組」。刪除群組不會刪掉資料，但分享給該群組的資料就沒有人看得到了（改分享對象即可恢復）。</div>
+    <div class="u-group-add">
+      <input id="grp-name" maxlength="40" placeholder="群組名稱，例如：業務組" />
+      <button type="button" onclick="newGroup()">＋ 建立群組</button>
+    </div>
+    <div id="grp-list"></div>
+    <hr style="margin:14px 0;border:none;border-top:1px solid #e3e7ee;" />
+    <label class="inline-check"><input type="checkbox" id="ws-gcal" onchange="saveWsSettings()" /> 同時把客戶的「下次追蹤」同步到 Google 日曆（選用；預設關閉）</label>
+    <div class="calc-hint">客戶的下次追蹤一定會自動加到<b>負責人（操作者）自己的內建行事曆</b>。勾選這項後，才會另外寫進部署 Apps Script 那個 Google 帳號的預設日曆（需要日曆授權）。</div>
+    <div id="ws-msg" class="calc-hint"></div>
+  </div>
+
   <div id="perm-modal" class="modal-overlay" style="display:none;">
     <div class="modal-box" style="max-width:560px;">
       <div class="modal-header"><h3 style="margin:0;">功能權限：<span id="perm-modal-user"></span></h3><button type="button" onclick="closePermModal()">關閉</button></div>
       <div class="calc-hint" style="margin-bottom:8px;">「特定」角色只開放勾選的功能，每項各自選「查看」或「編輯」（不能刪除）。</div>
       <div id="perm-modal-box"></div>
       <div style="margin-top:12px;"><button type="button" onclick="savePermModal()">儲存</button></div>
+    </div>
+  </div>
+
+  <div id="grp-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header"><h3 style="margin:0;">群組設定</h3><button type="button" class="btn-secondary" onclick="document.getElementById('grp-modal').style.display='none'">關閉</button></div>
+      <input type="hidden" id="grp-edit-id" />
+      <label>群組名稱</label>
+      <input id="grp-edit-name" maxlength="40" />
+      <label>成員</label>
+      <div id="grp-edit-members" class="share-pick" style="max-height:260px;"></div>
+      <div style="margin-top:10px;"><button type="button" onclick="saveGroupEdit()">儲存</button></div>
     </div>
   </div>
 
@@ -134,11 +161,11 @@
   </details>
 </section>
 
-<script src="config.js?v=20261104i"></script>
-<script src="demo.js?v=20261104i"></script>
-<script src="common.js?v=20261104i"></script>
-<script src="assistant.js?v=20261104i"></script>
-<script src="users.js?v=20261104i"></script>
-<script src="dbadmin.js?v=20261104i"></script>
+<script src="config.js?v=20261104j"></script>
+<script src="demo.js?v=20261104j"></script>
+<script src="common.js?v=20261104j"></script>
+<script src="assistant.js?v=20261104j"></script>
+<script src="users.js?v=20261104j"></script>
+<script src="dbadmin.js?v=20261104j"></script>
 </body>
 </html>

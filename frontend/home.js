@@ -135,10 +135,14 @@ async function saveSites() {
 // 行事曆
 // ------------------------------------------------------------
 async function loadEvents() {
-  const days = document.getElementById('cal-days').value;
+  const days = Number(document.getElementById('cal-days').value);
   const box = document.getElementById('event-list');
   box.innerHTML = '<span class="calc-hint">讀取中...</span>';
-  const result = await callApi('getCalendarEvents', { days: Number(days) });
+  const from = localTodayStr();
+  const d = new Date(from + 'T12:00:00');
+  d.setDate(d.getDate() + days - 1);
+  const to = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const result = await callApi('calGetEvents', { from, to, scope: 'all' });
   if (!result.success) {
     box.innerHTML = `<span class="calc-hint">${esc(result.message)}</span>`;
     return;
@@ -149,10 +153,11 @@ async function loadEvents() {
   }
   box.innerHTML = '';
   result.events.forEach((ev) => {
-    const time = ev.AllDay ? `${ev.Start}（全天）` : ev.Start.replace('T', ' ');
+    const time = `${ev.startDate.slice(5)} ${ev.allDay ? '全天' : ev.startTime}`;
     const row = document.createElement('div');
     row.className = 'event-row';
-    row.innerHTML = `<span class="event-time">${esc(time)}</span><span style="flex:1">${esc(ev.Title)}${ev.Location ? ' <span class="calc-hint">@' + esc(ev.Location) + '</span>' : ''}</span>`;
+    const badge = ev.source === 'followup' ? '<span class="ws-badge follow">客戶追蹤</span>' : !ev.isMine ? `<span class="ws-badge shared">${esc(ev.ownerName)} 分享</span>` : '';
+    row.innerHTML = `<span class="event-time">${esc(time)}</span><span style="flex:1">${esc(ev.title)}${ev.location ? ' <span class="calc-hint">@' + esc(ev.location) + '</span>' : ''}${badge}</span>`;
     const btn = document.createElement('button');
     btn.className = 'btn-secondary';
     btn.textContent = '存成備忘';
@@ -163,9 +168,51 @@ async function loadEvents() {
 }
 
 async function saveEventAsMemo(ev, time) {
-  const result = await callApi('addMemo', { title: ev.Title, content: `行程時間：${time}${ev.Location ? '\n地點：' + ev.Location : ''}`, shared: false });
+  const result = await callApi('addMemo', { title: ev.title, content: `行程時間：${time}${ev.location ? '\n地點：' + ev.location : ''}`, shareMode: 'self' });
   if (!result.success) return alert(result.message);
   loadMemos();
+}
+
+// ------------------------------------------------------------
+// 工作清單（首頁小卡：未完成的前 8 項，可勾選完成；完整功能在「工作清單」頁）
+// ------------------------------------------------------------
+async function loadTodos() {
+  const box = document.getElementById('todo-list');
+  const r = await callApi('todoGet', { scope: 'all', status: 'open' }, { silent: true });
+  if (!r.success) {
+    box.innerHTML = `<span class="calc-hint">${esc(r.message || '')}</span>`;
+    return;
+  }
+  const today = r.today || localTodayStr();
+  if (!r.todos.length) {
+    box.innerHTML = '<span class="calc-hint">沒有未完成的工作 🎉</span>';
+    return;
+  }
+  box.innerHTML = r.todos
+    .slice(0, 8)
+    .map((t) => {
+      const late = t.dueDate && t.dueDate < today;
+      return `<div class="todo-row"><input type="checkbox" ${t.canEdit ? '' : 'disabled'} onchange="homeTodoDone(${t.id}, this.checked)" />
+        <div class="todo-main"><div class="todo-title">${esc(t.title)} <span class="todo-pri p-${esc(t.priority)}">${esc(t.priority)}</span>${t.isMine ? '' : `<span class="ws-badge shared">${esc(t.ownerName)} 分享</span>`}</div>
+        ${t.dueDate ? `<div class="todo-meta"><span class="${late ? 'late' : ''}">${late ? '已逾期 ' : '期限 '}${esc(t.dueDate.slice(5))}</span></div>` : ''}</div></div>`;
+    })
+    .join('') + (r.todos.length > 8 ? `<div class="calc-hint">還有 ${r.todos.length - 8} 項，到「工作清單」查看。</div>` : '');
+}
+
+async function homeTodoDone(id, done) {
+  const r = await callApi('todoSetStatus', { id, status: done ? 'done' : 'todo' }, { silent: true });
+  if (!r.success) alert(r.message);
+  loadTodos();
+}
+
+async function quickAddTodo() {
+  const input = document.getElementById('todo-quick');
+  const title = input.value.trim();
+  if (!title) return;
+  const r = await callApi('todoSave', { title });
+  if (!r.success) return alert(r.message);
+  input.value = '';
+  loadTodos();
 }
 
 // ------------------------------------------------------------
@@ -189,7 +236,7 @@ async function loadFavorites() {
 }
 
 // ------------------------------------------------------------
-// 備忘錄（預設只有自己看，勾「分享」全站都看得到；只有建立者能改/刪）
+// 備忘錄（預設只有自己看，可分享給指定的人 / 群組 / 全部；被分享的人只能看，只有建立者能改/刪）
 // ------------------------------------------------------------
 async function loadMemos() {
   const result = await callApi('getMemos', {});
@@ -209,8 +256,8 @@ function renderMemos() {
   }
   list.forEach((m) => {
     const div = document.createElement('div');
-    div.className = 'memo-item' + (m.Shared ? ' shared' : '');
-    const tag = m.IsMine ? (m.Shared ? '我的・已分享' : '我的・僅自己') : `${esc(m.OwnerName)} 分享`;
+    div.className = 'memo-item' + (m.ShareMode && m.ShareMode !== 'self' ? ' shared' : '');
+    const tag = m.IsMine ? (m.ShareMode && m.ShareMode !== 'self' ? '我的・已分享：' + esc(m.ShareLabel) : '我的・僅自己') : `${esc(m.OwnerName)} 分享（只能看）`;
     div.innerHTML = `
       <div class="memo-head"><span><strong>${esc(m.Title || '（無標題）')}</strong> <span class="memo-tag">${tag}</span></span><span>${esc(m.LastUpdated || '')}</span></div>
       <div class="memo-body">${esc(m.Content)}</div>`;
@@ -219,7 +266,7 @@ function renderMemos() {
       actions.className = 'toolbar';
       actions.innerHTML = `
         <button class="btn-secondary" onclick="editMemo(${m.RowIndex})">編輯</button>
-        <button class="btn-secondary" onclick="toggleMemoShared(${m.RowIndex}, ${!m.Shared})">${m.Shared ? '改為僅自己看' : '分享給所有人'}</button>
+        <button class="btn-secondary" onclick="editMemoShare(${m.RowIndex})">分享對象</button>
         <button class="btn-secondary" onclick="deleteMemo(${m.RowIndex})">刪除</button>`;
       div.appendChild(actions);
     }
@@ -231,10 +278,11 @@ async function addMemo() {
   const title = document.getElementById('memo-title').value.trim();
   const content = document.getElementById('memo-content').value.trim();
   if (!title && !content) return alert('標題或內容至少要填一個');
-  const result = await callApi('addMemo', { title, content, shared: document.getElementById('memo-shared').checked });
+  const share = ShareUI.get('memo-share');
+  const result = await callApi('addMemo', { title, content, shareMode: share.shareMode, shareWith: share.shareWith });
   if (!result.success) return alert(result.message);
   ['memo-title', 'memo-content'].forEach((id) => (document.getElementById(id).value = ''));
-  document.getElementById('memo-shared').checked = false;
+  ShareUI.set('memo-share', 'self', []);
   loadMemos();
 }
 
@@ -250,10 +298,22 @@ async function editMemo(rowIndex) {
   loadMemos();
 }
 
-async function toggleMemoShared(rowIndex, shared) {
-  if (shared && !confirm('分享後，系統裡所有登入的人都看得到這則備忘錄，確定嗎？')) return;
-  const result = await callApi('updateMemo', { rowIndex, fields: { Shared: shared } });
+/** 改備忘錄的分享對象（跳出小視窗）。 */
+async function editMemoShare(rowIndex) {
+  const m = memos.find((x) => x.RowIndex === rowIndex);
+  if (!m) return;
+  await ShareUI.mount('memo-share-edit');
+  ShareUI.set('memo-share-edit', m.ShareMode, m.ShareWith);
+  document.getElementById('memo-share-row').value = rowIndex;
+  document.getElementById('memo-share-modal').style.display = 'flex';
+}
+
+async function saveMemoShare() {
+  const rowIndex = Number(document.getElementById('memo-share-row').value);
+  const share = ShareUI.get('memo-share-edit');
+  const result = await callApi('updateMemo', { rowIndex, fields: { ShareMode: share.shareMode, ShareWith: share.shareWith } });
   if (!result.success) return alert(result.message);
+  document.getElementById('memo-share-modal').style.display = 'none';
   loadMemos();
 }
 
@@ -271,7 +331,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   const h = new Date().getHours();
   document.getElementById('home-greeting').textContent = `${h < 12 ? '早安' : h < 18 ? '午安' : '晚安'}，${currentUsername || ''}`;
   loadSites();
+  ShareUI.mount('memo-share');
   loadEvents();
+  loadTodos();
+  document.getElementById('todo-quick').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') quickAddTodo();
+  });
   loadFavorites();
   loadMemos();
 });

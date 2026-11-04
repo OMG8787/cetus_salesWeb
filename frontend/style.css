@@ -595,3 +595,55 @@ header, .tabs { position: relative; z-index: 300; }
 .cp-dl dd { margin: 0; word-break: break-word; }
 .cp-var { border-top: 1px solid #dde5f0; padding: 10px 0; }
 .bot-grid select, .bot-grid input[type="date"] { width: 100%; }
+
+/* ===== 個人工作區：行事曆 / 工作清單 / 分享對象 ===== */
+.share-box { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
+.share-pick { max-height: 150px; overflow: auto; border: 1px solid #d8dde6; border-radius: 6px; padding: 6px 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.share-pick label { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; margin: 0; }
+.ws-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.ws-bar select, .ws-bar button { margin: 0; }
+.ws-seg { display: inline-flex; border: 1px solid #c9d1de; border-radius: 6px; overflow: hidden; }
+.ws-seg button { border: none; border-radius: 0; background: #fff; color: #334; padding: 5px 12px; font-size: 13px; }
+.ws-seg button.on { background: #2c5aa0; color: #fff; }
+.ws-badge { font-size: 12px; padding: 1px 7px; border-radius: 10px; background: #eef2f7; color: #456; margin-left: 6px; white-space: nowrap; }
+.ws-badge.follow { background: #fff3e0; color: #b45309; }
+.ws-badge.shared { background: #e8f1ff; color: #2c5aa0; }
+.ws-evrow { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #eef0f4; align-items: flex-start; font-size: 14px; flex-wrap: wrap; }
+.ws-evrow .ws-evdate { min-width: 92px; color: #2c5aa0; font-variant-numeric: tabular-nums; }
+.ws-evrow .ws-evtime { min-width: 92px; color: #2c5aa0; font-variant-numeric: tabular-nums; }
+.ws-evrow .ws-evmain { flex: 1; min-width: 160px; }
+.ws-evrow .ws-evact { display: flex; gap: 6px; }
+.ws-evrow .ws-evact button { margin: 0; padding: 3px 9px; font-size: 12px; }
+.ws-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-left: 1px solid #e3e7ee; border-top: 1px solid #e3e7ee; }
+.ws-dow { background: #eef2f7; padding: 4px; text-align: center; font-size: 13px; border-right: 1px solid #e3e7ee; border-bottom: 1px solid #e3e7ee; }
+.ws-day { min-height: 88px; padding: 3px 4px; border-right: 1px solid #e3e7ee; border-bottom: 1px solid #e3e7ee; cursor: pointer; font-size: 12px; overflow: hidden; background: #fff; }
+.ws-day:hover { background: #f4f8ff; }
+.ws-day.other { background: #f8f9fb; color: #9aa3b2; }
+.ws-day.today .ws-dnum { background: #2c5aa0; color: #fff; border-radius: 10px; padding: 0 6px; }
+.ws-chip { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 3px; padding: 0 4px; margin-top: 2px; background: #e8f1ff; color: #1f3d70; cursor: pointer; }
+.ws-chip.follow { background: #fff3e0; color: #92400e; }
+.ws-chip.shared { background: #e6f6ec; color: #14532d; }
+.ws-more { color: #667; font-size: 11px; margin-top: 2px; }
+.ws-title { font-weight: bold; font-size: 15px; min-width: 120px; text-align: center; }
+.ws-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ws-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.todo-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 4px; border-bottom: 1px solid #eef0f4; font-size: 14px; }
+.todo-row input[type=checkbox] { margin-top: 4px; width: 17px; height: 17px; flex: none; }
+.todo-row .todo-main { flex: 1; min-width: 0; }
+.todo-row .todo-title { word-break: break-word; }
+.todo-row.done .todo-title { text-decoration: line-through; color: #8a93a3; }
+.todo-row .todo-meta { font-size: 12px; color: #6b7686; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+.todo-row .todo-meta .late { color: #c0392b; font-weight: bold; }
+.todo-row .todo-act button { margin: 0 0 0 4px; padding: 3px 9px; font-size: 12px; }
+.todo-pri { font-size: 12px; padding: 0 7px; border-radius: 10px; color: #fff; }
+.todo-pri.p-高 { background: #c0392b; }
+.todo-pri.p-中 { background: #e67e22; }
+.todo-pri.p-低 { background: #7f8c8d; }
+@media (max-width: 640px) {
+  .ws-day { min-height: 62px; }
+  .ws-grid2, .ws-grid3 { grid-template-columns: 1fr; }
+}
+.u-group-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.u-group-add input { flex: 1; min-width: 180px; }
+.u-group-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #eef0f4; }
+.u-group-row button { margin: 0; padding: 3px 10px; font-size: 12px; }

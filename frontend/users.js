@@ -220,10 +220,89 @@ async function deleteUserRow(rowIndex, username) {
   loadUsers();
 }
 
+// ---------- 群組與行事曆設定 ----------
+let groupData = [];
+let groupUsers = [];
+
+async function loadGroups() {
+  const r = await callApi('groupGetAll', {}, { silent: true });
+  const box = document.getElementById('grp-list');
+  if (!r.success) {
+    box.innerHTML = `<span class="calc-hint">${htmlEsc(r.message || '')}</span>`;
+    return;
+  }
+  groupData = r.groups || [];
+  groupUsers = r.users || [];
+  if (!groupData.length) {
+    box.innerHTML = '<div class="calc-hint">還沒有群組。</div>';
+    return;
+  }
+  box.innerHTML = groupData
+    .map((g) => {
+      const names = g.members.map((u) => (groupUsers.find((x) => x.username === u) || { name: u }).name);
+      return `<div class="u-group-row"><b>${htmlEsc(g.name)}</b> <span class="calc-hint">${g.members.length} 人${names.length ? '：' + htmlEsc(names.slice(0, 8).join('、')) + (names.length > 8 ? '…' : '') : ''}</span>
+        <button type="button" class="btn-secondary" onclick="editGroup(${g.id})">設定成員 / 改名</button>
+        <button type="button" class="btn-secondary" onclick="deleteGroup(${g.id})">刪除</button></div>`;
+    })
+    .join('');
+}
+
+async function newGroup() {
+  const name = document.getElementById('grp-name').value.trim();
+  if (!name) return alert('請輸入群組名稱');
+  const r = await callApi('groupSave', { name, members: [] });
+  if (!r.success) return alert(r.message);
+  document.getElementById('grp-name').value = '';
+  await loadGroups();
+  editGroup(r.id);
+}
+
+function editGroup(id) {
+  const g = groupData.find((x) => x.id === id);
+  if (!g) return;
+  const modal = document.getElementById('grp-modal');
+  document.getElementById('grp-edit-id').value = id;
+  document.getElementById('grp-edit-name').value = g.name;
+  document.getElementById('grp-edit-members').innerHTML = groupUsers
+    .map((u) => `<label><input type="checkbox" value="${htmlEsc(u.username)}" ${g.members.includes(u.username) ? 'checked' : ''} /> ${htmlEsc(u.name)} <span class="calc-hint">${htmlEsc(u.username)}</span></label>`)
+    .join('');
+  modal.style.display = 'flex';
+}
+
+async function saveGroupEdit() {
+  const id = Number(document.getElementById('grp-edit-id').value);
+  const members = [...document.querySelectorAll('#grp-edit-members input:checked')].map((c) => c.value);
+  const r = await callApi('groupSave', { id, name: document.getElementById('grp-edit-name').value.trim(), members });
+  if (!r.success) return alert(r.message);
+  document.getElementById('grp-modal').style.display = 'none';
+  loadGroups();
+}
+
+async function deleteGroup(id) {
+  const g = groupData.find((x) => x.id === id);
+  if (!g || !confirm(`確定要刪除群組「${g.name}」嗎？\n分享給這個群組的行事曆 / 工作 / 備忘錄不會被刪除，但會沒有人看得到（改分享對象即可恢復）。`)) return;
+  const r = await callApi('groupDelete', { id });
+  if (!r.success) return alert(r.message);
+  loadGroups();
+}
+
+async function loadWsSettings() {
+  const r = await callApi('wsGetSettings', {}, { silent: true });
+  if (r.success) document.getElementById('ws-gcal').checked = !!r.googleCalSync;
+}
+
+async function saveWsSettings() {
+  const on = document.getElementById('ws-gcal').checked;
+  const r = await callApi('wsSaveSettings', { googleCalSync: on });
+  document.getElementById('ws-msg').textContent = r.success ? (on ? '已開啟：之後客戶追蹤也會同步到 Google 日曆。' : '已關閉。') : r.message;
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   if (!(await ensureAuth())) return;
   renderHeaderUser();
   applyAdminOnlyVisibility();
+  loadGroups();
+  loadWsSettings();
   await loadUsers();
   bindEnterSubmit('#user-add-panel', addUser);
 });

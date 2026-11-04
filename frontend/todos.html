@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<script src="theme.js?v=20261104j"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>工作清單 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css?v=20261104j" />
+<link rel="stylesheet" href="dark.css?v=20261104j" />
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
+<link rel="apple-touch-icon" href="img/icon-192.png" />
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs tabs-grouped">
+  <button class="tab-btn nav-single" onclick="location.href='home.html'">首頁</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="products" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="cases" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" data-block="customers" onclick="location.href='customers.html'">客戶管理</button>
+      <button class="tab-btn" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
+      <button class="tab-btn active" onclick="location.href='todos.html'">工作清單</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='evalreport.html'">檔案製作 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="files" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
+      <button class="tab-btn" data-block="files" onclick="location.href='marketing.html'">行銷宣傳製作</button>
+      <button class="tab-btn" data-block="copy" onclick="location.href='copy.html'">文案製作</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" data-block="bot" onclick="location.href='bot.html'">BOT 設定 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="bot" onclick="location.href='bot.html'">客服機器人</button>
+      <button class="tab-btn" data-block="bot" onclick="location.href='bot.html#staff'">員工助理</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">登入紀錄</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
+</nav>
+
+<section class="tab-content">
+  <div class="calc-toolbar">
+    <h2 style="margin:0;">工作清單</h2>
+    <span class="calc-hint">每個帳號各自的工作清單。勾選就是完成；可以分享給指定的人 / 群組 / 全部同事，被分享的人只能查看，不能修改。</span>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0;">新增工作</h3>
+    <div class="ws-grid3">
+      <div><label>工作內容</label><input id="td-title" maxlength="200" placeholder="例如：寄樣品給甲公司" /></div>
+      <div><label>期限（選填）</label><input type="date" id="td-due" /></div>
+      <div><label>優先度</label><select id="td-pri"><option value="高">高</option><option value="中" selected>中</option><option value="低">低</option></select></div>
+    </div>
+    <label>備註（選填）</label>
+    <input id="td-notes" maxlength="2000" />
+    <label>誰看得到</label>
+    <div id="td-share"></div>
+    <div class="toolbar" style="margin-top:8px;"><button type="button" onclick="addTodo()">新增</button></div>
+  </div>
+
+  <div class="panel">
+    <div class="ws-bar">
+      <div class="ws-seg"><button type="button" id="td-s-open" class="on" onclick="tdSetStatus('open')">未完成</button><button type="button" id="td-s-done" onclick="tdSetStatus('done')">已完成</button><button type="button" id="td-s-all" onclick="tdSetStatus('all')">全部</button></div>
+      <select id="td-scope" onchange="loadTodos()">
+        <option value="all">我的 + 別人分享給我的</option>
+        <option value="mine">只看我的</option>
+        <option value="shared">只看別人分享給我的</option>
+      </select>
+      <span id="td-count" class="calc-hint"></span>
+    </div>
+    <div id="td-list"></div>
+  </div>
+</section>
+
+<div id="todo-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:520px;">
+    <div class="modal-header"><h3 style="margin:0;" id="tdm-heading">編輯工作</h3><button type="button" class="btn-secondary" onclick="closeTodoModal()">關閉</button></div>
+    <input type="hidden" id="tdm-id" />
+    <label>工作內容</label>
+    <input id="tdm-title" maxlength="200" />
+    <div class="ws-grid2">
+      <div><label>期限</label><input type="date" id="tdm-due" /></div>
+      <div><label>優先度</label><select id="tdm-pri"><option value="高">高</option><option value="中">中</option><option value="低">低</option></select></div>
+    </div>
+    <label>備註</label>
+    <textarea id="tdm-notes" rows="3" maxlength="2000"></textarea>
+    <label>誰看得到</label>
+    <div id="tdm-share"></div>
+    <div id="tdm-readonly" class="calc-hint" style="display:none;"></div>
+    <div class="toolbar" style="margin-top:10px;">
+      <button type="button" id="tdm-save" onclick="saveTodoEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js?v=20261104j"></script>
+<script src="demo.js?v=20261104j"></script>
+<script src="common.js?v=20261104j"></script>
+<script src="share.js?v=20261104j"></script>
+<script src="assistant.js?v=20261104j"></script>
+<script src="todos.js?v=20261104j"></script>
+</body>
+</html>

@@ -42,6 +42,42 @@ function loadDemoDB() {
   return initial;
 }
 
+function demoUsers() {
+  return [{ username: 'demo', name: '示範使用者' }, { username: 'amy', name: '艾咪' }, { username: 'bob', name: '鮑勃' }, { username: 'cat', name: '凱特' }];
+}
+
+function demoShareLabel(db, mode, list) {
+  if (mode === 'all') return '全部同事（只能看）';
+  if (mode === 'users') return '指定 ' + (list || []).length + ' 人';
+  if (mode === 'groups') return '群組：' + (list || []).map((id) => ((db.groups || []).find((g) => g.id === Number(id)) || { name: '（已刪除）' }).name).join('、');
+  return '只有自己';
+}
+
+/** 第一次用時放幾筆示範資料（自己的 + 艾咪分享的），之後的新增 / 修改都存在瀏覽器。 */
+function demoWsSeed(db) {
+  if (db.cal && db.todos) return;
+  const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  db.cal = [
+    { id: 1, title: '（示範）拜訪客戶', startDate: day(0), startTime: '14:00', endDate: day(0), endTime: '15:00', allDay: false, location: '新竹', notes: '', shareMode: 'self', shareWith: [], source: 'manual', refKey: '', owner: 'demo' },
+    { id: 2, title: '（示範）艾咪分享：展覽布展', startDate: day(1), startTime: '', endDate: day(2), endTime: '', allDay: true, location: '', notes: '被分享的人只能查看', shareMode: 'all', shareWith: [], source: 'manual', refKey: '', owner: 'amy' },
+  ];
+  db.todos = [
+    { id: 1, title: '（示範）寄樣品給甲公司', notes: '', dueDate: day(1), priority: '高', status: 'todo', shareMode: 'self', shareWith: [], owner: 'demo', createdAt: day(0), doneAt: '' },
+    { id: 2, title: '（示範）艾咪分享：整理報價單', notes: '', dueDate: day(3), priority: '中', status: 'todo', shareMode: 'all', shareWith: [], owner: 'amy', createdAt: day(0), doneAt: '' },
+  ];
+  db.groups = db.groups || [];
+}
+
+function demoEventOut(db, e) {
+  const mine = e.owner === 'demo';
+  return Object.assign({}, e, { endDate: e.endDate || e.startDate, shareLabel: demoShareLabel(db, e.shareMode, e.shareWith), ownerName: mine ? '我' : demoUsers().find((u) => u.username === e.owner).name, isMine: mine, canEdit: mine });
+}
+
+function demoTodoOut(db, t) {
+  const mine = t.owner === 'demo';
+  return Object.assign({}, t, { shareLabel: demoShareLabel(db, t.shareMode, t.shareWith), ownerName: mine ? '我' : demoUsers().find((u) => u.username === t.owner).name, isMine: mine, canEdit: mine });
+}
+
 function saveDemoDB(db) {
   localStorage.setItem(DEMO_DB_KEY, JSON.stringify(db));
 }
@@ -299,7 +335,7 @@ function demoStaffState(db) {
   const b = demoBotState(db);
   if (!b.staff) {
     b.staff = {
-      config: { enabled: false, welcome: '', pendingText: '', prompt: '', webEnabled: true, hidePrice: false, ceiling: { products: 'edit', cases: 'edit', customers: 'edit' }, writes: ['addMemo', 'logFollowUp', 'updateCustomer', 'addCustomer', 'createCase', 'updateCaseStatus', 'updateCase', 'addContact', 'addPriceRecord', 'addProduct', 'updateProduct', 'createInquiryDraft', 'saveCopyPost', 'remember'], push: { enabled: false, hour: 8, last: '' }, memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, auto: false, autoEvery: 6 } },
+      config: { enabled: false, welcome: '', pendingText: '', prompt: '', webEnabled: true, hidePrice: false, ceiling: { products: 'edit', cases: 'edit', customers: 'edit' }, writes: ['addMemo', 'logFollowUp', 'updateCustomer', 'addCustomer', 'createCase', 'updateCaseStatus', 'updateCase', 'addContact', 'addPriceRecord', 'addProduct', 'updateProduct', 'createInquiryDraft', 'saveCopyPost', 'addEvent', 'addTodo', 'completeTodo', 'remember'], push: { enabled: false, hour: 8, last: '' }, memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, auto: false, autoEvery: 6 } },
       members: [
         { LineUserId: 'U' + 'a'.repeat(32), DisplayName: '王小明', PictureUrl: '', Status: '待開通', Role: 'viewer', PermsObj: {}, LinkedUsername: '', LinkedName: '', Note: '', PushDaily: false, IsFollowing: true, FollowedAt: '2026-11-04 09:00:00', LastSeenAt: '2026-11-04 09:00:00', ApprovedBy: '' },
         { LineUserId: 'U' + 'b'.repeat(32), DisplayName: '李小華', PictureUrl: '', Status: '已開通', Role: 'limited', PermsObj: { cases: 'edit', customers: 'view' }, LinkedUsername: 'a', LinkedName: 'A', Note: 'FAE', PushDaily: true, IsFollowing: true, FollowedAt: '2026-10-20 10:00:00', LastSeenAt: '2026-11-03 17:20:00', ApprovedBy: 'Admin' },
@@ -319,7 +355,7 @@ function demoStaffApi(action, params, db) {
       return {
         success: true, config: st.config, members: st.members, accounts: (db.users || []).map((u) => ({ username: u.Username, name: u.DisplayName || u.Username })),
         me: '0000', canLinkOthers: true, memory: st.memory, memoryCategories: DEMO_STAFF_CATS, blocks: DEMO_BLOCKS,
-        writes: [{ key: 'addMemo', label: '新增備忘錄' }, { key: 'logFollowUp', label: '記錄追蹤 / 改下次追蹤' }, { key: 'updateCustomer', label: '修改客戶資料' }, { key: 'addCustomer', label: '新增客戶' }, { key: 'createCase', label: '建立案件' }, { key: 'updateCaseStatus', label: '修改案件狀態 / 緊急程度' }, { key: 'updateCase', label: '修改案件內容（聯絡人 / 需求說明 / 評估結果…）' }, { key: 'addContact', label: '新增客戶聯絡窗口' }, { key: 'addPriceRecord', label: '記錄報價（價格紀錄）' }, { key: 'addProduct', label: '新增產品' }, { key: 'updateProduct', label: '修改產品資料' }, { key: 'createInquiryDraft', label: '建立詢價信 Gmail 草稿（不會寄出）' }, { key: 'saveCopyPost', label: '儲存文案草稿' }, { key: 'remember', label: '記住（長期記憶）' }],
+        writes: [{ key: 'addMemo', label: '新增備忘錄' }, { key: 'logFollowUp', label: '記錄追蹤 / 改下次追蹤' }, { key: 'updateCustomer', label: '修改客戶資料' }, { key: 'addCustomer', label: '新增客戶' }, { key: 'createCase', label: '建立案件' }, { key: 'updateCaseStatus', label: '修改案件狀態 / 緊急程度' }, { key: 'updateCase', label: '修改案件內容（聯絡人 / 需求說明 / 評估結果…）' }, { key: 'addContact', label: '新增客戶聯絡窗口' }, { key: 'addPriceRecord', label: '記錄報價（價格紀錄）' }, { key: 'addProduct', label: '新增產品' }, { key: 'updateProduct', label: '修改產品資料' }, { key: 'createInquiryDraft', label: '建立詢價信 Gmail 草稿（不會寄出）' }, { key: 'saveCopyPost', label: '儲存文案草稿' }, { key: 'addEvent', label: '新增行事曆行程（自己的）' }, { key: 'addTodo', label: '新增工作清單項目（自己的）' }, { key: 'completeTodo', label: '完成 / 重開工作清單項目（自己的）' }, { key: 'remember', label: '記住（長期記憶）' }],
       };
     case 'botSaveStaff': {
       const c = params.config || {};
@@ -650,13 +686,20 @@ function handleDemoApi(action, params) {
       return { success: true, count: db.shortcuts.length };
     }
 
-    case 'getMemos':
-      return { success: true, memos: (db.memos || []).map((m, i) => Object.assign({ RowIndex: i, IsMine: true, OwnerName: '我' }, m)) };
+    case 'getMemos': {
+      const mine = (db.memos || []).map((m, i) => {
+        const mode = m.ShareMode || (m.Shared ? 'all' : 'self');
+        return Object.assign({ RowIndex: i, IsMine: true, CanManage: true, OwnerName: '我' }, m, { Shared: mode === 'all', ShareMode: mode, ShareWith: m.ShareWith || [], ShareLabel: demoShareLabel(db, mode, m.ShareWith) });
+      });
+      const others = [{ RowIndex: 9001, Title: '（示範）艾咪分享的備忘', Content: '被分享的人只能查看，不能修改。', Shared: false, ShareMode: 'users', ShareWith: [], ShareLabel: '指定的人', IsMine: false, CanManage: false, OwnerName: '艾咪', LastUpdated: new Date().toISOString().slice(0, 10) }];
+      return { success: true, memos: mine.concat(others) };
+    }
 
     case 'addMemo': {
       db.memos = db.memos || [];
       const t = new Date().toISOString().slice(0, 10);
-      db.memos.push({ Title: params.title || '', Content: params.content || '', Shared: !!params.shared, CreatedDate: t, LastUpdated: t });
+      const mode = params.shareMode !== undefined ? params.shareMode : params.shared ? 'all' : 'self';
+      db.memos.push({ Title: params.title || '', Content: params.content || '', Shared: mode === 'all', ShareMode: mode, ShareWith: params.shareWith || [], CreatedDate: t, LastUpdated: t });
       saveDemoDB(db);
       return { success: true };
     }
@@ -664,7 +707,10 @@ function handleDemoApi(action, params) {
     case 'updateMemo': {
       const m = (db.memos || [])[params.rowIndex];
       if (!m) return { success: false, message: '查無此備忘錄' };
-      Object.assign(m, params.fields || {}, { LastUpdated: new Date().toISOString().slice(0, 10) });
+      const f = Object.assign({}, params.fields || {});
+      if (f.Shared !== undefined && f.ShareMode === undefined) f.ShareMode = f.Shared ? 'all' : 'self';
+      if (f.ShareMode !== undefined) f.Shared = f.ShareMode === 'all';
+      Object.assign(m, f, { LastUpdated: new Date().toISOString().slice(0, 10) });
       saveDemoDB(db);
       return { success: true };
     }
@@ -676,6 +722,146 @@ function handleDemoApi(action, params) {
 
     case 'getCalendarEvents':
       return { success: true, events: [{ Id: 'demo1', Title: '（示範）拜訪客戶', Start: new Date().toISOString().slice(0, 10) + 'T14:00', End: '', AllDay: false, Location: '' }] };
+
+    // ---------------- 個人工作區：行事曆 / 工作清單 / 群組 ----------------
+    case 'getShareTargets':
+      return { success: true, me: 'demo', users: demoUsers(), groups: (db.groups || []).map((g) => ({ id: g.id, name: g.name, count: g.members.length, isMember: g.members.includes('demo'), members: g.members })) };
+
+    case 'calGetEvents': {
+      demoWsSeed(db);
+      const from = params.from || '0000-00-00';
+      const to = params.to || '9999-99-99';
+      const scope = params.scope || 'all';
+      const out = db.cal
+        .filter((e) => (scope === 'mine' ? e.owner === 'demo' : scope === 'shared' ? e.owner !== 'demo' : true))
+        .filter((e) => e.startDate <= to && (e.endDate || e.startDate) >= from)
+        .map((e) => demoEventOut(db, e))
+        .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.startTime.localeCompare(b.startTime));
+      return { success: true, from, to, today: new Date().toISOString().slice(0, 10), events: out };
+    }
+
+    case 'calSaveEvent': {
+      demoWsSeed(db);
+      if (!String(params.title || '').trim()) return { success: false, message: '行程標題不能空白' };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(params.startDate || '')) return { success: false, message: '日期要是 YYYY-MM-DD' };
+      const allDay = !!params.allDay || !params.startTime;
+      const ev = {
+        title: String(params.title).trim(), startDate: params.startDate, startTime: allDay ? '' : params.startTime, endDate: params.endDate || params.startDate,
+        endTime: allDay ? '' : params.endTime || params.startTime, allDay, location: params.location || '', notes: params.notes || '',
+        shareMode: params.shareMode || 'self', shareWith: params.shareWith || [], source: 'manual', refKey: '', owner: 'demo',
+      };
+      if (params.id) {
+        const old = db.cal.find((x) => x.id === Number(params.id));
+        if (!old) return { success: false, message: '找不到這個行程（可能已被刪除）' };
+        if (old.owner !== 'demo') return { success: false, message: '這是別人的行程，只有擁有者可以修改' };
+        Object.assign(old, ev);
+      } else {
+        ev.id = Math.max(0, ...db.cal.map((x) => x.id)) + 1;
+        db.cal.push(ev);
+      }
+      saveDemoDB(db);
+      return { success: true, id: params.id || ev.id };
+    }
+
+    case 'calDeleteEvent': {
+      demoWsSeed(db);
+      const i = db.cal.findIndex((x) => x.id === Number(params.id));
+      if (i < 0) return { success: false, message: '找不到這個行程（可能已被刪除）' };
+      if (db.cal[i].owner !== 'demo') return { success: false, message: '這是別人的行程，只有擁有者可以刪除' };
+      db.cal.splice(i, 1);
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'todoGet': {
+      demoWsSeed(db);
+      const scope = params.scope || 'all';
+      const status = params.status || 'open';
+      const rank = { 高: 0, 中: 1, 低: 2 };
+      const out = db.todos
+        .filter((t) => (scope === 'mine' ? t.owner === 'demo' : scope === 'shared' ? t.owner !== 'demo' : true))
+        .filter((t) => (status === 'open' ? t.status !== 'done' : status === 'done' ? t.status === 'done' : true))
+        .map((t) => demoTodoOut(db, t))
+        .sort((a, b) => (a.status === 'done') - (b.status === 'done') || (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || rank[a.priority] - rank[b.priority] || a.id - b.id);
+      return { success: true, today: new Date().toISOString().slice(0, 10), todos: out };
+    }
+
+    case 'todoSave': {
+      demoWsSeed(db);
+      if (!String(params.title || '').trim()) return { success: false, message: '工作標題不能空白' };
+      const t = { title: String(params.title).trim(), notes: params.notes || '', dueDate: params.dueDate || '', priority: ['高', '中', '低'].includes(params.priority) ? params.priority : '中', shareMode: params.shareMode || 'self', shareWith: params.shareWith || [] };
+      if (params.id) {
+        const old = db.todos.find((x) => x.id === Number(params.id));
+        if (!old) return { success: false, message: '找不到這個工作（可能已被刪除）' };
+        if (old.owner !== 'demo') return { success: false, message: '這是別人的工作，只有擁有者可以修改' };
+        Object.assign(old, t);
+      } else {
+        t.id = Math.max(0, ...db.todos.map((x) => x.id)) + 1;
+        t.owner = 'demo';
+        t.status = 'todo';
+        t.createdAt = new Date().toISOString().slice(0, 10);
+        db.todos.push(t);
+      }
+      saveDemoDB(db);
+      return { success: true, id: params.id || t.id };
+    }
+
+    case 'todoSetStatus': {
+      demoWsSeed(db);
+      const t = db.todos.find((x) => x.id === Number(params.id));
+      if (!t) return { success: false, message: '找不到這個工作（可能已被刪除）' };
+      if (t.owner !== 'demo') return { success: false, message: '這是別人的工作，只有擁有者可以更改狀態' };
+      t.status = params.status;
+      t.doneAt = params.status === 'done' ? new Date().toISOString().slice(0, 10) : '';
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'todoDelete': {
+      demoWsSeed(db);
+      const i = db.todos.findIndex((x) => x.id === Number(params.id));
+      if (i < 0) return { success: false, message: '找不到這個工作（可能已被刪除）' };
+      if (db.todos[i].owner !== 'demo') return { success: false, message: '這是別人的工作，只有擁有者可以刪除' };
+      db.todos.splice(i, 1);
+      saveDemoDB(db);
+      return { success: true };
+    }
+
+    case 'groupGetAll':
+      return { success: true, groups: (db.groups || []).map((g) => ({ id: g.id, name: g.name, members: g.members })), users: demoUsers() };
+
+    case 'groupSave': {
+      db.groups = db.groups || [];
+      const name = String(params.name || '').trim();
+      if (!name) return { success: false, message: '群組名稱不能空白' };
+      if (db.groups.some((g) => g.id !== Number(params.id) && g.name.toLowerCase() === name.toLowerCase())) return { success: false, message: '已經有叫「' + name + '」的群組了' };
+      const have = demoUsers().map((u) => u.username);
+      const members = [...new Set((params.members || []).filter((u) => have.includes(u)))];
+      if (params.id) {
+        const g = db.groups.find((x) => x.id === Number(params.id));
+        if (!g) return { success: false, message: '找不到這個群組' };
+        Object.assign(g, { name, members });
+        saveDemoDB(db);
+        return { success: true, id: g.id };
+      }
+      const ng = { id: Math.max(0, ...db.groups.map((x) => x.id)) + 1, name, members };
+      db.groups.push(ng);
+      saveDemoDB(db);
+      return { success: true, id: ng.id };
+    }
+
+    case 'groupDelete':
+      db.groups = (db.groups || []).filter((g) => g.id !== Number(params.id));
+      saveDemoDB(db);
+      return { success: true };
+
+    case 'wsGetSettings':
+      return { success: true, googleCalSync: !!db.googleCalSync };
+
+    case 'wsSaveSettings':
+      db.googleCalSync = !!params.googleCalSync;
+      saveDemoDB(db);
+      return { success: true, googleCalSync: db.googleCalSync };
 
     case 'getCalcCatalog':
       return { success: true, catalog: {} };

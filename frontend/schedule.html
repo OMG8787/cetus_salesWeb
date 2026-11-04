@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261104i"></script>
+<script src="theme.js?v=20261104j"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>業務行事曆 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261104i" />
-<link rel="stylesheet" href="dark.css?v=20261104i" />
+<link rel="stylesheet" href="style.css?v=20261104j" />
+<link rel="stylesheet" href="dark.css?v=20261104j" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -37,6 +37,7 @@
       <button class="tab-btn" data-block="cases" onclick="location.href='cases.html'">案件管理</button>
       <button class="tab-btn" data-block="customers" onclick="location.href='customers.html'">客戶管理</button>
       <button class="tab-btn active" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
+      <button class="tab-btn" onclick="location.href='todos.html'">工作清單</button>
     </div>
   </div>
   <div class="nav-group">
@@ -96,15 +97,30 @@
   <div id="sch-summary" class="sch-summary"></div>
 
   <div class="panel">
-    <h3 style="margin-top:0;">① 行事曆
-      <span class="card-actions">
-        <select id="sch-days">
-          <option value="1">今天</option>
-          <option value="7" selected>未來 7 天</option>
-          <option value="30">未來 30 天</option>
-        </select>
-      </span>
+    <h3 style="margin-top:0;">① 我的行事曆
+      <span class="calc-hint" style="font-weight:normal;">每個帳號各自的行事曆；客戶的「下次追蹤」會自動加進你的行事曆。</span>
     </h3>
+    <div class="ws-bar">
+      <div class="ws-seg"><button type="button" id="cal-v-list" class="on" onclick="calSetView('list')">清單</button><button type="button" id="cal-v-month" onclick="calSetView('month')">月曆</button></div>
+      <select id="cal-scope" onchange="loadScheduleEvents()">
+        <option value="all">我的 + 別人分享給我的</option>
+        <option value="mine">只看我的</option>
+        <option value="shared">只看別人分享給我的</option>
+      </select>
+      <select id="sch-days" onchange="loadScheduleEvents()">
+        <option value="1">今天</option>
+        <option value="7" selected>未來 7 天</option>
+        <option value="30">未來 30 天</option>
+        <option value="90">未來 90 天</option>
+      </select>
+      <span id="cal-month-nav" style="display:none;align-items:center;gap:6px;">
+        <button type="button" class="btn-secondary" onclick="calShiftMonth(-1)">◀</button>
+        <span class="ws-title" id="cal-month-title"></span>
+        <button type="button" class="btn-secondary" onclick="calShiftMonth(1)">▶</button>
+        <button type="button" class="btn-secondary" onclick="calToday()">今天</button>
+      </span>
+      <button type="button" onclick="openEventModal()">＋ 新增行程</button>
+    </div>
     <div id="sch-events"></div>
   </div>
 
@@ -140,10 +156,40 @@
   </div>
 </section>
 
-<script src="config.js?v=20261104i"></script>
-<script src="demo.js?v=20261104i"></script>
-<script src="common.js?v=20261104i"></script>
-<script src="assistant.js?v=20261104i"></script>
-<script src="schedule.js?v=20261104i"></script>
+<div id="event-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:560px;">
+    <div class="modal-header"><h3 style="margin:0;" id="ev-heading">新增行程</h3><button type="button" class="btn-secondary" onclick="closeEventModal()">關閉</button></div>
+    <input type="hidden" id="ev-id" />
+    <label>標題</label>
+    <input id="ev-title" maxlength="200" />
+    <label class="inline-check"><input type="checkbox" id="ev-allday" onchange="evSyncAllDay()" /> 全天</label>
+    <div class="ws-grid2">
+      <div><label>開始日期</label><input type="date" id="ev-date" /></div>
+      <div><label>結束日期（跨天才需要改）</label><input type="date" id="ev-enddate" /></div>
+    </div>
+    <div class="ws-grid2" id="ev-times">
+      <div><label>開始時間</label><input type="time" id="ev-start" /></div>
+      <div><label>結束時間（沒填 = 一小時）</label><input type="time" id="ev-end" /></div>
+    </div>
+    <label>地點</label>
+    <input id="ev-loc" maxlength="200" />
+    <label>備註</label>
+    <textarea id="ev-notes" rows="3" maxlength="2000"></textarea>
+    <label>誰看得到這個行程</label>
+    <div id="ev-share"></div>
+    <div id="ev-readonly" class="calc-hint" style="display:none;"></div>
+    <div class="toolbar" style="margin-top:10px;">
+      <button type="button" id="ev-save" onclick="saveEvent()">儲存</button>
+      <button type="button" id="ev-del" class="btn-secondary" style="display:none;" onclick="deleteEvent()">刪除</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js?v=20261104j"></script>
+<script src="demo.js?v=20261104j"></script>
+<script src="common.js?v=20261104j"></script>
+<script src="share.js?v=20261104j"></script>
+<script src="assistant.js?v=20261104j"></script>
+<script src="schedule.js?v=20261104j"></script>
 </body>
 </html>
