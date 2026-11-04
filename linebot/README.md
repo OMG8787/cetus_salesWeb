@@ -16,7 +16,7 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 網站訪客 ──► widget.js ──► /api/widget/chat ────┤──► 檢索知識庫 + AI ──► 回覆
 後台測試聊天 ──► /api/test ──────────────────────┘        │
                                                         ▼
-                                       管理系統 Code.gs + Bot.gs（Google 試算表）
+                                       管理系統 Code.gs（Google 試算表）
                                        設定、知識庫、AI 金鑰、對話紀錄、轉真人通知
 ```
 
@@ -30,7 +30,7 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 
 ## 部署
 
-1. **管理系統**：把最新的 `apps-script/Code.gs`、`Bot.gs`（要員工助理再加 `BotStaff.gs`）貼到 Apps Script，執行一次 `setup`，部署 → 管理部署作業 → 編輯 → 新版本。
+1. **管理系統**：把最新的 `apps-script/Code.gs` 整份貼到 Apps Script（專案裡只留這一個檔案），執行一次 `setup`，部署 → 管理部署作業 → 編輯 → 新版本。
 2. **網站 → BOT 設定 → 連線與設定**：分別按「客服機器人金鑰」與「員工助理金鑰」的「🔑 產生」，複製「系統網址」與兩把金鑰。
 3. **Vercel**（https://vercel.com/new）：匯入這個 GitHub 專案，**Root Directory 選 `linebot`**，Environment Variables 填：
 

@@ -1,6 +1,6 @@
 /**
  * bot.js - BOT 設定頁（客服機器人）：設定、知識庫、網站客服視窗、對話與小編接手、測試聊天、AI 模型、連線
- * 資料都存在試算表（Bot.gs），機器人伺服器是 linebot/（Vercel）。需要「BOT 設定」權限，只有「查看」時唯讀。
+ * 資料都存在試算表（Code.gs 的 BOT 設定章節），機器人伺服器是 linebot/（Vercel）。需要「BOT 設定」權限，只有「查看」時唯讀。
  */
 let botData = null; // botGetSettings 的回傳
 let kbItems = null;
@@ -61,7 +61,7 @@ function applyReadOnly() {
 async function loadAll(silent) {
   const r = await callApi('botGetSettings', {}, { silent: !!silent });
   if (!r.success) {
-    $('ov-steps').innerHTML = `<div class="calc-hint" style="color:#c0392b;">讀取失敗：${htmlEsc(r.message || '')}<br>（要先把最新的 Code.gs 與 Bot.gs 貼到 Apps Script、執行 setup 並重新部署）</div>`;
+    $('ov-steps').innerHTML = `<div class="calc-hint" style="color:#c0392b;">讀取失敗：${htmlEsc(r.message || '')}<br>（要先請把最新的 Code.gs 整份貼到 Apps Script（專案裡只留這一個檔案）、執行 setup 並重新部署新版本）</div>`;
     return false;
   }
   botData = r;

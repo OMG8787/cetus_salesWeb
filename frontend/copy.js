@@ -1,6 +1,6 @@
 /**
  * copy.js - 文案製作頁：文案編輯、我的文案、素材庫（含 AI 學習風格與匯入）、文案專用 AI 模型
- * 後端 Copy.gs（需要「文案製作」權限，只有「查看」時唯讀）；提示詞在這裡組好、讓使用者確認後才送出。
+ * 後端 Code.gs 的文案製作章節（需要「文案製作」權限，只有「查看」時唯讀）；提示詞在這裡組好、讓使用者確認後才送出。
  */
 const CP = window.CopyPrompts;
 let D = null; // copyGetData 的回傳
@@ -36,7 +36,7 @@ function closeModal(id) {
 async function loadData(silent) {
   const r = await callApi('copyGetData', {}, { silent: !!silent });
   if (!r.success) {
-    notify('讀取失敗：' + (r.message || '') + '（要先把最新的 Code.gs、Bot.gs 與 Copy.gs 貼到 Apps Script、執行 setup 並重新部署）', true);
+    notify('讀取失敗：' + (r.message || '') + '（要先請把最新的 Code.gs 整份貼到 Apps Script（專案裡只留這一個檔案）、執行 setup 並重新部署新版本）', true);
     return false;
   }
   D = r;
@@ -585,7 +585,7 @@ function fillAi() {
     ? '目前沒有文案專用模型，沿用「BOT 設定 → AI 模型」。'
     : D.botAvailable
     ? '還沒有任何 AI 模型：請在下面新增，或到「BOT 設定 → AI 模型」設定。'
-    : '還沒有任何 AI 模型（需要同時貼上 Bot.gs）。';
+    : '還沒有任何 AI 模型（Code.gs 版本太舊，請更新）。';
   renderAi();
 }
 

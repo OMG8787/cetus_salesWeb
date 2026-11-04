@@ -1,5 +1,5 @@
 /**
- * botstaff.js - BOT 設定頁的「員工助理」分頁：設定、成員開通與權限、長期記憶（後端：BotStaff.gs）
+ * botstaff.js - BOT 設定頁的「員工助理」分頁：設定、成員開通與權限、長期記憶（後端：Code.gs 的員工助理章節）
  * 依附 bot.js（共用 $、val、setVal、readOnly、closeModal、TAB_LOADERS）。
  */
 let staffData = null;
@@ -17,7 +17,7 @@ TAB_LOADERS.staff = () => loadStaff();
 async function loadStaff(silent) {
   const r = await callApi('botGetStaff', {}, { silent: !!silent });
   if (!r.success) {
-    $('st-members').innerHTML = `<div class="calc-hint" style="color:#c0392b;">讀取失敗：${htmlEsc(r.message || '')}<br>（要先把最新的 Code.gs、Bot.gs 與 <b>BotStaff.gs</b> 貼到 Apps Script、執行 setup 並重新部署）</div>`;
+    $('st-members').innerHTML = `<div class="calc-hint" style="color:#c0392b;">讀取失敗：${htmlEsc(r.message || '')}<br>（要先請把最新的 Code.gs 整份貼到 Apps Script（專案裡只留這一個檔案）、執行 setup 並重新部署新版本）</div>`;
     return;
   }
   staffData = r;

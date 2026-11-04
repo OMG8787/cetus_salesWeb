@@ -1,5 +1,5 @@
 /**
- * assistant.js - 網站右下角的「智能助理」（員工私人助理，後端 BotStaff.gs → linebot /api/web）
+ * assistant.js - 網站右下角的「智能助理」（員工私人助理，後端 Code.gs（員工助理章節）→ linebot /api/web）
  * 每個頁面都載入；沒登入或管理員沒開放時不顯示。權限 = 登入帳號本人的權限；
  * 新增 / 修改只有 AI「提出」，要按「確認寫入」才會真的寫入，助理不能刪除任何資料。
  */
@@ -28,7 +28,7 @@
     const r = await callApi('botAssistInfo', {}, { silent: true });
     let result;
     if (r && r.success) result = { enabled: !!r.enabled, reason: r.reason || '' };
-    else if (r && r.message) result = { enabled: false, reason: '管理系統回報錯誤「' + r.message + '」。通常是 Apps Script 的 Code.gs、Bot.gs、BotStaff.gs 版本不一致：請三個檔案都貼成最新版，執行 setup 並重新部署新版本' };
+    else if (r && r.message) result = { enabled: false, reason: '管理系統回報錯誤「' + r.message + '」。通常是 Apps Script 的程式不是最新版：請把最新的 Code.gs 整份貼到 Apps Script（專案裡只留這一個檔案）、執行 setup 並重新部署新版本' };
     else result = { enabled: false, reason: '連不上管理系統，請檢查網路後再試' };
     store(INFO_KEY, { at: Date.now(), info: result });
     return result;
