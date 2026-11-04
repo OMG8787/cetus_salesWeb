@@ -7,7 +7,8 @@ AOI 業務系統的機器人伺服器，部署在 Vercel。設定、知識庫、
 | `/api/cs` | **客服機器人**的 LINE Webhook（對外官方帳號）：客人問產品、規格、公司資訊，機器人用知識庫回答；報價、訂購、客訴、找人 → 轉真人 |
 | `/widget.js` + `/api/widget/*` | **網站客服視窗**：貼一行 `<script>` 到任何網站，右下角出現客服視窗，跟 LINE 客服同一套知識庫與規則 |
 | `/api/test` | 網站「BOT 設定 → 測試聊天」用（用管理系統簽的權杖，不通知同仁、不留對話紀錄） |
-| `/api/line` | **員工助理**的 LINE Webhook（員工專用官方帳號）：員工查客戶 / 案件 / 行程、記錄追蹤；修改要本人確認才寫入 |
+| `/api/line` | **員工助理**的 LINE Webhook（員工專用官方帳號）：員工查客戶 / 案件 / 產品與報價 / 行事曆與工作清單、記錄追蹤、選型計算、寫詢價信與文案草稿；所有修改要本人確認才寫入，不能刪除 |
+| `/api/search` | 網站「BOT 設定 → 知識庫 → 搜尋測試」用（管理系統簽的權杖）：顯示各種檢索模式找到的段落與分數 |
 | `/api/web` | 網站右下角「智能助理」：只給管理系統（Apps Script）用 Bot 金鑰呼叫 |
 | `/api/push` | 每日早報：管理系統每小時檢查，到時間呼叫（header `x-bot-secret`） |
 
@@ -22,7 +23,8 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 
 ## 客服機器人怎麼回答
 
-- 每則客人訊息先從**知識庫**（常見問答、文件、產品型號與規格、公司簡介）找出最相關的幾段（中文兩字一組的 BM25 排序），連同「公司規則」交給 AI，**只根據這些內容回答**；資料裡沒有的就請客人輸入「真人」。
+- 每則客人訊息先從**知識庫**（常見問答、文件、產品型號與規格、公司簡介）找出最相關的幾段，連同「公司規則」交給 AI，**只根據這些內容回答**；資料裡沒有的就請客人輸入「真人」。檢索流程在 BOT 設定 → 知識庫 →「搜尋流程與向量」選擇：**直接向量（預設）／先用大分類、主題、備註縮小範圍再向量／只用中繼資料（BM25，不用向量）／兩種都做、結果一致才回答**；向量的餘弦相似度低於**分數閥值**（預設 0.6）的段落不採用，全部低於就請客人換個說法或轉真人。向量由管理系統用 embedding 模型算好存在試算表（`BotVectors`），機器人伺服器分頁取回後快取 5 分鐘；沒有可用的 embedding 或呼叫失敗時自動退回關鍵字檢索。
+- **計算問題**（選型計算）：AI 不心算，一定呼叫 `calc_selection` 工具（`src/calc.ts`，公式與網站選型計算相同）。固定先「重述需求」→「列出自己補的假設」→「計算結果與算式」→「建議型號」；缺必要資料就先反問。相機 / 鏡頭型錄來自管理系統（客服版受產品來源與類別限制，**不含任何價格**）。
 - **產品底價、供應商資料永遠不會進知識庫**；機器人不報價，價格、交期、下訂都轉給真人。
 - 客人說「真人」「小編」「業務」…，或問到你勾選「交給真人回答」的問題（價格 / 報價、訂購、樣品測試、運費 / 交期、客訴…）→ 回覆轉真人的文字（可附上請客人先留下的資料）、在網站首頁備忘錄通知有「BOT 設定」權限的同事（附上之前的對話），並暫停機器人 N 分鐘讓同事接手。處理完把備忘錄刪除，機器人就恢復回覆這位客人；客人說「重新開始」也能叫回。
 - 可設定「只在專人服務時間以外回覆」、語氣、稱呼、emoji、每則最多幾行、歡迎詞與常用按鈕；問題模稜兩可時 AI 會用 `offer_choices` 反問並附上選項按鈕。
@@ -67,10 +69,22 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 - LINE：回覆訊息不限則數（客服機器人都用回覆）；只有處理超過時限時才會改用推播（免費方案每月 200 則）。
 - AI：依你選的服務計費；Gemini 有免費額度。
 
+## 員工助理的工具
+
+| 類型 | 工具 |
+|---|---|
+| 查詢 | `overview`、`list_memos`、`list_calendar`、`list_todos`、`search_customers`、`get_customer`、`followups_due`、`contact_logs`、`search_cases`、`get_case`、`search_products`、`get_product`、`price_history`、`inquiry_draft`、`calc_selection`、`copy_posts`、`copy_style` |
+| 提出修改（暫存 15 分鐘，本人確認才寫入） | `add_memo`、`log_followup`、`update_customer`、`add_customer`、`add_contact`、`create_case`、`update_case`、`update_case_info`、`add_price_record`、`add_product`、`update_product`、`create_inquiry_draft`、`save_copy_post`、`add_event`、`add_todo`、`complete_todo`、`remember` |
+
+工具依這個人的權限與管理員設定的上限出現；**沒有任何刪除工具**。
+
 ## 開發
 
 ```bash
 npm install
 npm run typecheck
-npm test
+npm test          # 61 組：檢索 / 向量、選型計算、客服與員工助理、金鑰分流…
+npx tsx test/calc-compare.ts <cases.json> <網站算出的結果.json>   # 選用：與網站 calc.js 逐項比對
 ```
+
+後端（`apps-script/Code.gs`）的檢查在上一層：`node apps-script/tests/run-all.js`。
