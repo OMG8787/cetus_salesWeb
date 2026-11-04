@@ -1,0 +1,200 @@
+/* =========================================================
+   深色（夜間）模式：<html data-theme="dark">，由 theme.js 切換
+   顏色對照：頁面底 #14181d、卡片 #1d232b、凹陷 / 懸停 #252c36、框線 #323b48、文字 #e5e7eb、次要文字 #9aa5b4
+   淺色底的提示色塊（綠 / 紅 / 橘 / 黃）改成半透明疊色；藍色文字改亮藍 #8db8f5
+   只在螢幕上套用（列印與匯出的文件維持原本的淺色）
+   ========================================================= */
+
+/* 切換按鈕（兩種模式都要有，所以放在 media 外面） */
+.theme-btn { margin-left: 12px; padding: 6px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 15px; line-height: 1; background: rgba(255,255,255,.9); }
+.theme-btn-float { position: fixed; top: 12px; right: 14px; z-index: 500; margin: 0; box-shadow: 0 1px 6px rgba(0,0,0,.25); }
+
+@media screen {
+html[data-theme="dark"] body { background: #14181d; color: #e5e7eb; }
+html[data-theme="dark"] a { color: #8db8f5; }
+html[data-theme="dark"] a.site-chip, html[data-theme="dark"] .er-back { color: #8db8f5; }
+
+/* ---------- 頁首、導覽 ---------- */
+html[data-theme="dark"] header { background: #1f3a66; }
+html[data-theme="dark"] .theme-btn { background: #2a3340; color: #fff; }
+html[data-theme="dark"] .tabs { background: #1b2027; border-bottom-color: #323b48; }
+html[data-theme="dark"] .tab-btn, html[data-theme="dark"] .nav-group-btn { color: #e5e7eb; }
+html[data-theme="dark"] .tab-btn.active, html[data-theme="dark"] .nav-group.active-group > .nav-group-btn { color: #8db8f5; border-bottom-color: #8db8f5; }
+html[data-theme="dark"] .nav-dropdown { background: #1d232b; border-color: #323b48; box-shadow: 0 6px 14px rgba(0,0,0,.5); }
+html[data-theme="dark"] .nav-dropdown .tab-btn:hover, html[data-theme="dark"] .nav-dropdown .tab-btn.active { background: #2a3340; }
+html[data-theme="dark"] .nav-refresh { color: #8db8f5; }
+html[data-theme="dark"] .nav-clear-cache { color: #9aa5b4; }
+
+/* ---------- 版面、卡片 ---------- */
+html[data-theme="dark"] .login-box,
+html[data-theme="dark"] .modal-box,
+html[data-theme="dark"] .home-card,
+html[data-theme="dark"] .calc-out,
+html[data-theme="dark"] .lens-card,
+html[data-theme="dark"] .er-block,
+html[data-theme="dark"] .er-thumb,
+html[data-theme="dark"] .er-preview-bar,
+html[data-theme="dark"] .bot-topic,
+html[data-theme="dark"] .bot-step,
+html[data-theme="dark"] .bot-doc,
+html[data-theme="dark"] .fu-hist,
+html[data-theme="dark"] .as-panel,
+html[data-theme="dark"] .suggestions-box,
+html[data-theme="dark"] .pd-grid,
+html[data-theme="dark"] .preview-item { background: #1d232b; border-color: #323b48; color: #e5e7eb; }
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] #product-detail,
+html[data-theme="dark"] #case-detail,
+html[data-theme="dark"] .er-editor,
+html[data-theme="dark"] .er-tabs,
+html[data-theme="dark"] .u-perms,
+html[data-theme="dark"] .q-spec-box,
+html[data-theme="dark"] .fu-info { background: #1a2028; border-color: #323b48; }
+html[data-theme="dark"] .result-box,
+html[data-theme="dark"] .preview-content pre,
+html[data-theme="dark"] .bot-pre,
+html[data-theme="dark"] .er-drop { background: #161b22; border-color: #323b48; color: #e5e7eb; }
+html[data-theme="dark"] .er-drop:hover, html[data-theme="dark"] .er-drop:focus, html[data-theme="dark"] .er-drop.over { background: rgba(44,90,160,.25); border-color: #6aa0f0; }
+html[data-theme="dark"] .modal-overlay { background: rgba(0,0,0,.65); }
+html[data-theme="dark"] .loading-overlay { background: rgba(20,24,29,.72); }
+html[data-theme="dark"] .loading-box { color: #8db8f5; }
+html[data-theme="dark"] .spinner { border-color: #323b48; border-top-color: #8db8f5; }
+html[data-theme="dark"] .cp-pending { background: rgba(44,90,160,.14); border-color: #4a78c0; }
+html[data-theme="dark"] .er-preview, html[data-theme="dark"] #er-preview-frame, html[data-theme="dark"] .mk-frame-wrap { background: #12161b; }
+
+/* ---------- 表格 ---------- */
+html[data-theme="dark"] table { background: #1d232b; }
+html[data-theme="dark"] th, html[data-theme="dark"] td { border-bottom-color: #2b333e; }
+html[data-theme="dark"] th { background: #262e39; color: #e5e7eb; }
+html[data-theme="dark"] th.sortable:hover { background: #303a47; }
+html[data-theme="dark"] th.sortable::after { color: #7b8797; }
+html[data-theme="dark"] th.sortable.asc::after, html[data-theme="dark"] th.sortable.desc::after { color: #8db8f5; }
+html[data-theme="dark"] .q-table tr.q-spec-row td { background: #1a2028; }
+html[data-theme="dark"] .er-quote-table th, html[data-theme="dark"] .er-quote-table td { border-color: #323b48; }
+html[data-theme="dark"] .pd-grid > div { border-bottom-color: #2b333e; }
+html[data-theme="dark"] .pd-grid > div > span:last-child { color: #e5e7eb; }
+html[data-theme="dark"] .pd-grid .pd-empty { color: #5d6877; }
+html[data-theme="dark"] .suggestion-item { border-bottom-color: #2b333e; }
+html[data-theme="dark"] .suggestion-item:hover { background: #2a3340; }
+html[data-theme="dark"] .tab-content .pager button:disabled, html[data-theme="dark"] #followup-dialog button:disabled { background: #3a4452; color: #8a94a3; }
+
+/* ---------- 表單 ---------- */
+html[data-theme="dark"] .tab-content input, html[data-theme="dark"] .tab-content textarea, html[data-theme="dark"] .tab-content select,
+html[data-theme="dark"] .login-box input, html[data-theme="dark"] select, html[data-theme="dark"] .calc-fields select, html[data-theme="dark"] .er-field select,
+html[data-theme="dark"] #followup-dialog input:not([type="checkbox"]), html[data-theme="dark"] #followup-dialog select, html[data-theme="dark"] #followup-dialog textarea,
+html[data-theme="dark"] .as-form input, html[data-theme="dark"] .modal-box input, html[data-theme="dark"] .modal-box textarea, html[data-theme="dark"] .modal-box select {
+  background: #151a20; color: #e5e7eb; border-color: #3a4452;
+}
+html[data-theme="dark"] input::placeholder, html[data-theme="dark"] textarea::placeholder { color: #6f7b8b; }
+html[data-theme="dark"] .rich-editor, html[data-theme="dark"] .er-rich-wrap, html[data-theme="dark"] .er-rich { background: #151a20; border-color: #3a4452; color: #e5e7eb; }
+html[data-theme="dark"] .rich-editor:focus { outline-color: #6aa0f0; }
+html[data-theme="dark"] .er-rich-toolbar { background: #1d232b; border-bottom-color: #323b48; }
+html[data-theme="dark"] .tab-content .er-rich-toolbar button, html[data-theme="dark"] .er-color { background: #262e39; color: #e5e7eb; border-color: #3a4452; }
+html[data-theme="dark"] .tab-content .er-rich-toolbar button:hover { background: #303a47; }
+html[data-theme="dark"] .er-rich:empty::before { color: #6f7b8b; }
+html[data-theme="dark"] .tab-content input.field-error, html[data-theme="dark"] .calc-page select.field-error { background: rgba(220,53,69,.18); border-color: #e0584a; }
+html[data-theme="dark"] .tab-content input.field-warn, html[data-theme="dark"] .calc-page select.field-warn { background: rgba(224,161,0,.16); border-color: #d6a21e; }
+html[data-theme="dark"] .er-model-input.er-model-known { background: rgba(30,142,62,.18); border-color: #3fae65; }
+html[data-theme="dark"] .er-logo-row img, html[data-theme="dark"] .er-thumb img { background: #262e39; border-color: #323b48; }
+
+/* ---------- 按鈕（藍色按鈕維持；淺底的次要按鈕改暗） ---------- */
+html[data-theme="dark"] .tab-content button.er-tab { background: #262e39; color: #e5e7eb; }
+html[data-theme="dark"] .tab-content button.er-tab.active { background: #2c5aa0; color: #fff; }
+html[data-theme="dark"] .tab-content .er-block-head button { background: #303a47; color: #e5e7eb; }
+html[data-theme="dark"] .er-block-head { background: #222a34; }
+html[data-theme="dark"] .er-block.active { border-color: #6aa0f0; box-shadow: 0 0 0 2px rgba(106,160,240,.2); }
+html[data-theme="dark"] .tab-content .q-table button.q-toggle { background: #262e39; color: #8db8f5; border-color: #3a4452; }
+html[data-theme="dark"] .tab-content button.btn-outline-danger { background: transparent; color: #ff8a80; border-color: #e0584a; }
+html[data-theme="dark"] #followup-dialog .fu-chip { background: #262e39; color: #8db8f5; border-color: #3a4452; }
+html[data-theme="dark"] #followup-dialog .fu-chip:hover { background: #303a47; }
+html[data-theme="dark"] .tab-content .bot-tab { color: #b6c0cd; }
+html[data-theme="dark"] .tab-content .bot-tab:hover { background: #262e39; }
+html[data-theme="dark"] .tab-content .bot-tab.active { color: #8db8f5; border-bottom-color: #8db8f5; }
+html[data-theme="dark"] .bot-tabs { border-bottom-color: #323b48; }
+html[data-theme="dark"] .tab-content .cp-plat { background: #1d232b; color: #cbd5e1; border-color: #3a4452; }
+html[data-theme="dark"] .tab-content .cp-plat.active { background: #2c5aa0; color: #fff; border-color: #2c5aa0; }
+html[data-theme="dark"] .fav-star.off { color: #5d6877 !important; }
+html[data-theme="dark"] .tab-content button.btn-danger { background: #c9303f; }
+
+/* ---------- 文字顏色 ---------- */
+html[data-theme="dark"] .calc-hint, html[data-theme="dark"] .calc-input-unit em, html[data-theme="dark"] .calc-out span, html[data-theme="dark"] .er-field small,
+html[data-theme="dark"] .er-kv-wide, html[data-theme="dark"] .er-block-summary, html[data-theme="dark"] .pd-grid > div > span:first-child, html[data-theme="dark"] .memo-head,
+html[data-theme="dark"] .sch-notes, html[data-theme="dark"] .sch-notes-dot, html[data-theme="dark"] .fu-hist-meta, html[data-theme="dark"] .cp-dl dt,
+html[data-theme="dark"] #product-table .pt-notes, html[data-theme="dark"] #product-table td:nth-child(9), html[data-theme="dark"] .bot-who, html[data-theme="dark"] .bot-note,
+html[data-theme="dark"] .bot-msg.note, html[data-theme="dark"] .as-typing, html[data-theme="dark"] .as-hint, html[data-theme="dark"] .calc-formula { color: #9aa5b4; }
+html[data-theme="dark"] .calc-fields label, html[data-theme="dark"] .er-field, html[data-theme="dark"] .er-form > label, html[data-theme="dark"] .er-form .er-row > label,
+html[data-theme="dark"] .bot-page label, html[data-theme="dark"] .fu-edit-grid label { color: #c3ccd8; }
+html[data-theme="dark"] .tab-content .bot-page label.bot-check, html[data-theme="dark"] .bot-page label.bot-check { color: #e5e7eb; }
+html[data-theme="dark"] .fu-note, html[data-theme="dark"] .sch-discuss { color: #e5e7eb; }
+html[data-theme="dark"] .calc-page .panel h3, html[data-theme="dark"] .pd-section-title, html[data-theme="dark"] .er-form h4, html[data-theme="dark"] .bot-h,
+html[data-theme="dark"] .cp-det summary, html[data-theme="dark"] .q-spec-box summary, html[data-theme="dark"] .event-time, html[data-theme="dark"] .lens-score,
+html[data-theme="dark"] .bot-ai-no, html[data-theme="dark"] .bot-badge, html[data-theme="dark"] .fu-hist-tag { color: #8db8f5; }
+html[data-theme="dark"] .calc-out strong, html[data-theme="dark"] .er-block-type, html[data-theme="dark"] .site-chip, html[data-theme="dark"] .memo-tag { color: #cfe0fb; }
+html[data-theme="dark"] .calc-good { color: #5fd08a; }
+html[data-theme="dark"] .calc-bad, html[data-theme="dark"] .message, html[data-theme="dark"] .er-quote-table .er-no-price, html[data-theme="dark"] .bot-badge.warn,
+html[data-theme="dark"] .bot-step.todo .bot-step-mark { color: #ff8a80; }
+html[data-theme="dark"] .calc-warn-text { color: #ffc266; }
+html[data-theme="dark"] .bot-step.ok .bot-step-mark { color: #5fd08a; }
+
+/* ---------- 提示色塊（半透明疊色） ---------- */
+html[data-theme="dark"] .calc-table tr.calc-recommend, html[data-theme="dark"] .calc-msg-ok, html[data-theme="dark"] .lens-badge.good, html[data-theme="dark"] .calc-mode-tag,
+html[data-theme="dark"] .er-auto-tag, html[data-theme="dark"] .fu-flash { background: rgba(46,160,90,.18); color: #7be0a0; border-color: rgba(46,160,90,.45); }
+html[data-theme="dark"] .calc-msg-error, html[data-theme="dark"] .lens-badge.bad, html[data-theme="dark"] .bot-badge.warn { background: rgba(220,53,69,.2); color: #ff9a8d; }
+html[data-theme="dark"] .calc-msg-warn, html[data-theme="dark"] .lens-badge.warn, html[data-theme="dark"] .calc-mode-tag.manual, html[data-theme="dark"] .badge-warn { background: rgba(224,161,0,.18); color: #ffc266; border-color: rgba(224,161,0,.4); }
+html[data-theme="dark"] .calc-msg-info { background: #262e39; color: #cbd5e1; }
+html[data-theme="dark"] .fu-note, html[data-theme="dark"] .sch-discuss, html[data-theme="dark"] .fu-hist-changes { background: rgba(241,196,15,.12); color: #e8d58a; }
+html[data-theme="dark"] .fu-edit { background: rgba(241,196,15,.08); border-color: rgba(241,196,15,.4); }
+html[data-theme="dark"] .memo-item { background: rgba(241,196,15,.07); border-color: #3a4452; }
+html[data-theme="dark"] .memo-item.shared { background: rgba(44,90,160,.2); }
+html[data-theme="dark"] .memo-tag, html[data-theme="dark"] .bot-badge, html[data-theme="dark"] .fu-hist-tag { background: rgba(44,90,160,.28); }
+html[data-theme="dark"] .fu-hist-item.is-change { background: #1a2028; color: #aab4c1; }
+html[data-theme="dark"] .fu-hist-item { border-bottom-color: #323b48; }
+html[data-theme="dark"] .fu-hist-list { border-top-color: #323b48; }
+html[data-theme="dark"] .fu-hist-case { background: rgba(142,68,173,.25); color: #d9b3ec; }
+html[data-theme="dark"] .lens-card-used { background: rgba(46,160,90,.12); border-color: #3fae65; }
+html[data-theme="dark"] .lens-card:hover { border-color: #6aa0f0; }
+html[data-theme="dark"] .lens-bar { background: #2b333e; }
+html[data-theme="dark"] .site-chip { background: #222a34; border-color: #3a4452; }
+html[data-theme="dark"] .site-chip:hover { background: #2d3743; }
+html[data-theme="dark"] .event-row { border-bottom-color: #2b333e; }
+html[data-theme="dark"] .bot-step.ok { background: rgba(46,160,90,.12); border-color: rgba(46,160,90,.45); }
+html[data-theme="dark"] .bot-step.todo { background: rgba(241,196,15,.1); border-color: rgba(241,196,15,.5); }
+html[data-theme="dark"] .bot-step.opt { background: #1a2028; }
+html[data-theme="dark"] .bot-conv { border-bottom-color: #2b333e; }
+html[data-theme="dark"] .bot-conv:hover, html[data-theme="dark"] .bot-conv.sel { background: #262e39; }
+html[data-theme="dark"] .bot-thread, html[data-theme="dark"] .as-log, html[data-theme="dark"] .as-hint { background: #161b22; border-color: #323b48; }
+html[data-theme="dark"] .bot-bub, html[data-theme="dark"] .as-bub, html[data-theme="dark"] .bot-note { background: #222a34; border-color: #323b48; color: #e5e7eb; }
+html[data-theme="dark"] .bot-msg.bot .bot-bub { background: rgba(44,90,160,.3); border-color: rgba(106,160,240,.4); }
+html[data-theme="dark"] .bot-msg.human .bot-bub { background: rgba(46,160,90,.22); border-color: rgba(46,160,90,.45); }
+html[data-theme="dark"] .as-msg.user .as-bub { background: #2c5aa0; border-color: #2c5aa0; color: #fff; }
+html[data-theme="dark"] .as-actions button { background: #1d232b; color: #8db8f5; border-color: #4a78c0; }
+html[data-theme="dark"] .as-actions button:first-child:not(.as-choice) { background: #2c5aa0; color: #fff; }
+html[data-theme="dark"] .as-actions .as-no { background: #1d232b !important; color: #ff8a80; border-color: #e0584a; }
+html[data-theme="dark"] .as-form { border-top-color: #323b48; background: #1d232b; }
+html[data-theme="dark"] .as-panel { border-color: #3a4452; }
+html[data-theme="dark"] .as-fab { background: #2c5aa0; }
+html[data-theme="dark"] .bot-table tr.off td { opacity: .45; }
+html[data-theme="dark"] .bot-ai-row, html[data-theme="dark"] .u-perm-row { border-color: #323b48; }
+html[data-theme="dark"] .cp-var { border-top-color: #323b48; }
+html[data-theme="dark"] .db-bar { background: #2b333e; }
+html[data-theme="dark"] .sch-chip { background: #1d232b; }
+html[data-theme="dark"] .sch-notes-dot[data-full]:hover::after { background: #262e39; color: #e5e7eb; border-color: #3a4452; }
+html[data-theme="dark"] .mk-blockbar, html[data-theme="dark"] .qd-blockbar { border-top-color: #3a4452; }
+html[data-theme="dark"] hr { border-color: #323b48 !important; }
+
+/* 預覽用的文件框（報價單、評估報告、行銷宣傳）是白底的「紙」：外框變暗，內容維持原樣方便對照列印結果 */
+html[data-theme="dark"] #mk-frame, html[data-theme="dark"] #qd-frame { box-shadow: 0 1px 10px rgba(0,0,0,.6); }
+
+/* ---------- 寫在標籤上的顏色（JS 組出來的 style=""）---------- */
+html[data-theme="dark"] [style*="color:#667"], html[data-theme="dark"] [style*="color: #667"], html[data-theme="dark"] [style*="color:#555"], html[data-theme="dark"] [style*="color:#666"],
+html[data-theme="dark"] [style*="color:#888"], html[data-theme="dark"] [style*="color:#889"], html[data-theme="dark"] [style*="color:#999"], html[data-theme="dark"] [style*="color:#64748b"] { color: #9aa5b4 !important; }
+html[data-theme="dark"] [style*="color:#c0392b"], html[data-theme="dark"] [style*="color: #c0392b"], html[data-theme="dark"] [style*="color:#d9534f"] { color: #ff8a80 !important; }
+html[data-theme="dark"] [style*="color:#1e8e3e"], html[data-theme="dark"] [style*="color: #1e8e3e"] { color: #5fd08a !important; }
+html[data-theme="dark"] [style*="color:#8a5300"], html[data-theme="dark"] [style*="color: #8a5300"], html[data-theme="dark"] [style*="color:#b9770e"] { color: #ffc266 !important; }
+html[data-theme="dark"] [style*="background:#fff9e8"], html[data-theme="dark"] [style*="background:#fffbe6"] { background: rgba(241,196,15,.12) !important; }
+html[data-theme="dark"] [style*="background:#fff;"] { background: #1d232b !important; color: #e5e7eb; }
+html[data-theme="dark"] [style*="background:#fff4e0"] { background: rgba(224,161,0,.16) !important; }
+}
+
+/* 列印：一律淺色，不印出切換按鈕 */
+@media print { .theme-btn { display: none !important; } }
