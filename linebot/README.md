@@ -30,14 +30,15 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 
 ## 部署
 
-1. **管理系統**：把最新的 `apps-script/Code.gs` 與 `Bot.gs` 都貼到 Apps Script（兩個檔案），執行一次 `setup`，部署 → 管理部署作業 → 編輯 → 新版本。
-2. **網站 → BOT 設定 → 連線資訊**：按「🔑 產生 Bot 金鑰」，複製「系統網址」與 Bot 金鑰。
+1. **管理系統**：把最新的 `apps-script/Code.gs`、`Bot.gs`（要員工助理再加 `BotStaff.gs`）貼到 Apps Script，執行一次 `setup`，部署 → 管理部署作業 → 編輯 → 新版本。
+2. **網站 → BOT 設定 → 連線與設定**：分別按「客服機器人金鑰」與「員工助理金鑰」的「🔑 產生」，複製「系統網址」與兩把金鑰。
 3. **Vercel**（https://vercel.com/new）：匯入這個 GitHub 專案，**Root Directory 選 `linebot`**，Environment Variables 填：
 
    | 名稱 | 內容 |
    |---|---|
    | `GAS_URL` | BOT 設定頁的「系統網址」（結尾 /exec） |
-   | `BOT_SECRET` | BOT 設定頁產生的 Bot 金鑰 |
+   | `BOT_CS_SECRET` | 客服機器人金鑰（只能呼叫客服的功能） |
+   | `BOT_STAFF_SECRET` | 員工助理金鑰（只能呼叫員工助理的功能） |
    | `CS_LINE_CHANNEL_SECRET`、`CS_LINE_CHANNEL_ACCESS_TOKEN` | 客服官方帳號的 Channel secret / access token（只用網站客服視窗可以先不填） |
    | `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`（選填） | 員工助理官方帳號（跟客服的官方帳號分開建立；Webhook 填 `/api/line`）。只用網站智能助理可以不填 |
    | `SITE_URL`（選填） | 網站網址 |
@@ -51,7 +52,15 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 
 > Vercel 免費方案（Hobby）限非商業用途，公司正式使用請改用 Pro 方案。
 >
-> 重新產生 Bot 金鑰後，要到 Vercel 更新 `BOT_SECRET` 並 Redeploy，機器人才會恢復。
+> 重新產生金鑰後，要到對應的 Vercel 專案更新 `BOT_CS_SECRET` / `BOT_STAFF_SECRET` 並 Redeploy，機器人才會恢復。
+
+## 資料隔離（客服與員工助理分流）
+
+- **兩把金鑰**：管理系統（Apps Script）每個操作只屬於一個角色。客服金鑰只能呼叫客服的操作（知識庫、對話、轉真人），員工金鑰只能呼叫員工助理的操作。客服金鑰就算外流，也查不到客戶、案件、員工助理的任何東西。
+- **建議分兩個 Vercel 專案**（同一個 repo，Root Directory 都選 `linebot`）：**客服專案**只放 `GAS_URL`、`BOT_CS_SECRET`、客服 LINE；**員工專案**只放 `GAS_URL`、`BOT_STAFF_SECRET`、員工 LINE。這樣客服那個專案的伺服器上根本沒有員工金鑰。
+- **客服只讀知識庫**：客服機器人唯一的資料來源是你在 BOT 設定勾選的知識庫（常見問答、文件、公司資訊、產品型號規格）。產品欄位是白名單，**底價、供應商、備註不在白名單，永遠不會給客服**；也可以限定只開放某些產品類別。BOT 設定 →「客服設定」有「預覽客服看得到的資料」。
+- **員工助理有上限**：BOT 設定 →「員工助理」可設定客戶 / 案件 / 產品的存取上限（不開放 / 只能查看 / 可編輯）、隱藏底價與供應商、關閉特定的寫入動作；實際權限 = 成員權限與上限取較小者。
+- 沿用舊版單一 `BOT_SECRET` 仍然可以運作（兩邊共用），但客服與員工助理會共用同一把，建議到 BOT 設定重新產生，拆成兩把。
 
 ## 費用
 

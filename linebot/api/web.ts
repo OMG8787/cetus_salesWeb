@@ -12,7 +12,7 @@ const WEB_ID = /^W[0-9a-f]{32}$/;
 const MAX_TEXT = 1500;
 
 function sameSecret(given: unknown): boolean {
-  const secret = config.gas.secret;
+  const secret = config.gas.staffSecret;
   if (!secret || typeof given !== "string") return false;
   const a = Buffer.from(given);
   const b = Buffer.from(secret);

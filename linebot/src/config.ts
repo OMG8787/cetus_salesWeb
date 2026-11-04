@@ -20,8 +20,10 @@ export const config = {
   gas: {
     /** 管理系統的 Apps Script 網址（結尾是 /exec） */
     get url() { return env("GAS_URL"); },
-    /** 網站「BOT 設定」產生的 Bot 金鑰 */
-    get secret() { return env("BOT_SECRET"); },
+    /** 客服機器人的金鑰（網站「BOT 設定 → 連線」產生；沒設定就沿用舊版共用的 BOT_SECRET）：只能呼叫客服的操作 */
+    get csSecret() { return env("BOT_CS_SECRET") || env("BOT_SECRET"); },
+    /** 員工助理的金鑰：只能呼叫員工助理的操作。客服跟員工助理建議分開部署、各自只放自己的金鑰 */
+    get staffSecret() { return env("BOT_STAFF_SECRET") || env("BOT_SECRET"); },
   },
   get timeZone() { return env("BOT_TIMEZONE", "Asia/Taipei"); },
   get siteUrl() { return env("SITE_URL"); },
@@ -34,9 +36,8 @@ export const config = {
 
 /** 缺少必要設定時回傳缺少的名稱（給健康檢查與錯誤訊息用）；客服機器人至少要 GAS_URL 與 BOT_SECRET */
 export function missingConfig(): string[] {
-  const required: [string, string][] = [
-    ["GAS_URL", config.gas.url],
-    ["BOT_SECRET", config.gas.secret],
-  ];
-  return required.filter(([, v]) => !v).map(([k]) => k);
+  const missing: string[] = [];
+  if (!config.gas.url) missing.push("GAS_URL");
+  if (!config.gas.csSecret && !config.gas.staffSecret) missing.push("BOT_CS_SECRET 或 BOT_STAFF_SECRET");
+  return missing;
 }

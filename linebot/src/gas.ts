@@ -149,8 +149,13 @@ export interface StaffWrite {
 
 const TIMEOUT_MS = 25_000;
 
+/** 員工助理的操作用員工金鑰，其餘（客服）用客服金鑰：管理系統那邊每把金鑰只能做自己那一邊的事 */
+const STAFF_OPS = new Set(["start", "call", "stage", "commit", "cancel", "remember", "forget", "unfollow", "memory", "pushTargets"]);
+
 async function post<T>(body: Record<string, unknown>, retry = true): Promise<T> {
-  if (!config.gas.url || !config.gas.secret) throw new GasError("機器人還沒設定 GAS_URL / BOT_SECRET", "CONFIG");
+  const staff = STAFF_OPS.has(String(body.op));
+  const secret = staff ? config.gas.staffSecret : config.gas.csSecret;
+  if (!config.gas.url || !secret) throw new GasError(`機器人還沒設定 GAS_URL / ${staff ? "BOT_STAFF_SECRET" : "BOT_CS_SECRET"}`, "CONFIG");
   let text = "";
   let status = 0;
   try {
@@ -158,7 +163,7 @@ async function post<T>(body: Record<string, unknown>, retry = true): Promise<T> 
     const response = await fetch(config.gas.url, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ action: "bot", secret: config.gas.secret, ...body }),
+      body: JSON.stringify({ action: "bot", secret, ...body }),
       redirect: "follow",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

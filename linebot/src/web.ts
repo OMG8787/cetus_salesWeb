@@ -97,7 +97,7 @@ export function errorResponse(error: unknown, cors: Record<string, string> = {})
 
 /** 後台測試聊天的權杖：管理系統用 Bot 金鑰簽的 HMAC-SHA256(ts)，5 分鐘內有效 */
 export function verifyTestToken(ts: string, sig: string): boolean {
-  const secret = config.gas.secret;
+  const secret = config.gas.csSecret;
   if (!secret || !/^\d{10,16}$/.test(ts) || !/^[0-9a-f]{64}$/.test(sig)) return false;
   if (Math.abs(Date.now() - Number(ts)) > 5 * 60_000) return false;
   const expected = createHmac("sha256", secret).update(ts).digest();

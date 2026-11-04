@@ -48,6 +48,15 @@ function fillStaffConfig(c) {
   setVal('st-mem-max', c.memory.maxItems);
   $('st-mem-confirm').checked = c.memory.confirm;
   $('st-mem-shared').checked = c.memory.canShared;
+  $('st-hide-price').checked = c.hidePrice;
+  ['products', 'cases', 'customers'].forEach((b) => {
+    const el = $('st-cap-' + b);
+    el.innerHTML = [['none', '不開放'], ['view', '只能查看'], ['edit', '可查看與修改']].map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+    el.value = c.ceiling[b];
+  });
+  $('st-writes').innerHTML = staffData.writes
+    .map((w) => `<label class="bot-check"><input type="checkbox" class="st-write-opt" value="${htmlEsc(w.key)}" ${c.writes.includes(w.key) ? 'checked' : ''} /> ${htmlEsc(w.label)}</label>`)
+    .join('');
 }
 
 async function saveStaff() {
@@ -58,10 +67,13 @@ async function saveStaff() {
     pendingText: val('st-pending'),
     prompt: val('st-prompt'),
     push: { enabled: $('st-push').checked, hour: Number(val('st-push-hour')) },
+    hidePrice: $('st-hide-price').checked,
+    ceiling: { products: val('st-cap-products'), cases: val('st-cap-cases'), customers: val('st-cap-customers') },
+    writes: [...document.querySelectorAll('.st-write-opt:checked')].map((e) => e.value),
     memory: { enabled: $('st-mem').checked, maxItems: Number(val('st-mem-max')), confirm: $('st-mem-confirm').checked, canShared: $('st-mem-shared').checked },
   };
   const r = await callApi('botSaveStaff', { config });
-  $('st-msg').textContent = r.success ? '已儲存 ✓' : '儲存失敗：' + (r.message || '');
+  $('st-msg').textContent = $('st-msg2').textContent = r.success ? '已儲存 ✓' : '儲存失敗：' + (r.message || '');
   if (r.success) {
     staffData.config = r.config;
     fillStaffConfig(r.config);

@@ -16,7 +16,15 @@ var SHEET_BOT_CONFIG = 'BotConfig';
 var SHEET_BOT_KB = 'BotKnowledge';
 var SHEET_BOT_MSG = 'BotMessages';
 
-var BOT_SECRET_PROP = 'BOT_SECRET';
+var BOT_SECRET_PROP = 'BOT_SECRET'; // 舊版共用金鑰（只讀，重新產生金鑰時會自動拆成下面兩把）
+var BOT_CS_SECRET_PROP = 'BOT_CS_SECRET'; // 客服機器人專用：只能呼叫客服的操作
+var BOT_STAFF_SECRET_PROP = 'BOT_STAFF_SECRET'; // 員工助理專用：只能呼叫員工助理的操作
+var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csWidget'];
+// 客服機器人（對外）能看到的產品欄位白名單：底價、供應商、備註永遠不在裡面
+var BOT_CS_PRODUCT_FIELDS = [
+  ['SupplierModel', '原廠型號'], ['Category', '類別'], ['Brand', '品牌'], ['Interface', '介面'], ['Resolution', '解析度'], ['PixelSize', '像元尺寸 µm'], ['SensorSize', '靶面'],
+  ['FPS', '影格率 fps'], ['Mount', '接口'], ['FocalLength', '焦距 mm'], ['Magnification', '放大倍率'], ['WD', '工作距離 WD'], ['DOF', '景深 DOF'], ['FocusWD', '最近對焦距離'],
+];
 var BOT_GEN_PROP = 'BOT_HIST_GEN';
 var BOT_LOG_MAX = 4000; // 對話紀錄最多留幾筆（超過會自動刪最舊的）
 
@@ -71,7 +79,7 @@ function botPerms_() {
     botGetSettings: ['bot', 'r'], botKbList: ['bot', 'r'], botConversations: ['bot', 'r'], botThread: ['bot', 'r'],
     botSaveSettings: ['bot', 'w'], botSaveAi: ['bot', 'w'], botTestAi: ['bot', 'w'], botKbSave: ['bot', 'w'], botKbImport: ['bot', 'w'],
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
-    botKbDelete: ['bot', 'd'], botClear: ['bot', 'd'],
+    botKbDelete: ['bot', 'd'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -100,6 +108,7 @@ function botRoutes_() {
     botResume: { auth: true, fn: handleBotResume },
     botTestToken: { auth: true, fn: handleBotTestToken },
     botClear: { auth: true, fn: handleBotClear },
+    botCsPreview: { auth: true, fn: handleBotCsPreview },
   };
   if (typeof botStaffRoutes_ === 'function') botMergePerms_(base, botStaffRoutes_());
   return base;
@@ -211,6 +220,12 @@ function botCfgSet_(key, value) {
 }
 
 /** 客服機器人設定：沒設定的用預設值。topics 每類 { on, words, ask, askPos }；關鍵字留空 = 預設關鍵字。 */
+function botCsFields_(list) {
+  var all = BOT_CS_PRODUCT_FIELDS.map(function (f) { return f[0]; });
+  if (!Array.isArray(list)) return all;
+  return all.filter(function (k) { return list.indexOf(k) > -1; });
+}
+
 function botCsConfig_(cs) {
   cs = cs || {};
   var src = cs.sources || {}, st = cs.style || {}, h = cs.hours || {}, tp = cs.topics || {}, web = cs.web || {};
@@ -228,6 +243,10 @@ function botCsConfig_(cs) {
       products: src.products === true,
       brand: on(src.brand),
       productLimit: botInt_(src.productLimit, 50, 3000, 1500),
+      docs: on(src.docs),
+      // 客服能看到的產品欄位（白名單；沒設定 = 全部白名單欄位）與產品類別（空白 = 全部類別）
+      productFields: botCsFields_(src.productFields),
+      productCategories: String(src.productCategories || '').slice(0, 500),
     },
     brandInfo: String(cs.brandInfo || ''),
     replyWhen: cs.replyWhen === 'offHours' ? 'offHours' : 'always',
@@ -391,20 +410,35 @@ function botGenerate_(system, messages) {
 // ------------------------------------------------------------
 // Bot 金鑰：linebot（Vercel）用來呼叫這裡
 // ------------------------------------------------------------
-function botSecret_() {
-  return PropertiesService.getScriptProperties().getProperty(BOT_SECRET_PROP) || '';
+/** 這個角色（cs 客服 / staff 員工助理）的金鑰；還沒拆開的舊版共用金鑰兩邊都先沿用。 */
+function botKey_(role) {
+  var p = PropertiesService.getScriptProperties();
+  return p.getProperty(role === 'staff' ? BOT_STAFF_SECRET_PROP : BOT_CS_SECRET_PROP) || p.getProperty(BOT_SECRET_PROP) || '';
+}
+
+/** 這個角色用的是不是舊版共用金鑰（建議重新產生，讓客服與員工助理各用各的）。 */
+function botKeyShared_(role) {
+  var p = PropertiesService.getScriptProperties();
+  return !p.getProperty(role === 'staff' ? BOT_STAFF_SECRET_PROP : BOT_CS_SECRET_PROP) && !!p.getProperty(BOT_SECRET_PROP);
 }
 
 function handleBotApi(body) {
-  var secret = botSecret_();
   var fail = function (msg, code) {
     return { success: false, message: msg, code: code };
   };
-  if (!secret) return fail('機器人尚未啟用：請到「BOT 設定」產生 Bot 金鑰', 'BOT_OFF');
+  var csKey = botKey_('cs');
+  var staffKey = botKey_('staff');
+  if (!csKey && !staffKey) return fail('機器人尚未啟用：請到「BOT 設定」產生 Bot 金鑰', 'BOT_OFF');
   // 比對雜湊值：長度固定，不會因為比對到第幾個字才不同而洩漏金鑰
-  if (sha256('bot:' + String(body.secret || '')) !== sha256('bot:' + secret)) return fail('Bot 金鑰錯誤', 'BOT_AUTH');
+  var given = sha256('bot:' + String(body.secret || ''));
+  var roles = { cs: !!csKey && given === sha256('bot:' + csKey), staff: !!staffKey && given === sha256('bot:' + staffKey) };
+  if (!roles.cs && !roles.staff) return fail('Bot 金鑰錯誤', 'BOT_AUTH');
 
   var op = String(body.op || '');
+  // 每個操作只屬於一個角色：客服金鑰只能做客服的事，員工助理金鑰只能做員工助理的事（就算金鑰外流也碰不到另一邊的資料）
+  var need = BOT_STAFF_OPS.indexOf(op) > -1 || op === 'pushTargets' ? 'staff' : BOT_CS_OPS.indexOf(op) > -1 ? 'cs' : '';
+  if (!need) return fail('未知的 Bot 操作：' + op);
+  if (!roles[need]) return fail('這把金鑰沒有「' + (need === 'cs' ? '客服機器人' : '員工助理') + '」的權限', 'BOT_AUTH');
   if (body.botUrl) botLearnUrl_(body.botUrl);
   try {
     var data;
@@ -413,15 +447,17 @@ function handleBotApi(body) {
     else if (op === 'csWidget') data = csWidgetConfig_();
     else {
       var id = String(body.lineUserId || '');
-      if (!/^[UWV][0-9a-f]{32}$/.test(id) && !/^T[0-9a-f]{32}$/.test(id)) return fail('使用者編號格式錯誤');
+      // 客服：LINE 客人（U）、網站訪客（V）、後台測試（T）；員工助理：LINE 員工（U）、網站登入帳號（W）
+      var idOk = need === 'cs' ? /^[UVT][0-9a-f]{32}$/.test(id) : /^[UW][0-9a-f]{32}$/.test(id);
+      if (!idOk) return fail('使用者編號格式錯誤');
       if (op === 'csStart') data = csStart_(id, body);
       else if (op === 'csRemember') data = csRemember_(id, body);
       else if (op === 'csForget') data = csForget_(id);
       else if (op === 'csHandoff') data = csHandoff_(id, body);
       else if (op === 'csMessages') data = csMessages_(id, body);
       else if (op === 'csThread') data = csThread_(id, body);
-      else if (BOT_STAFF_OPS.indexOf(op) > -1 && typeof botStaffOp_ === 'function') data = botStaffOp_(op, id, body);
-      else return fail('未知的 Bot 操作：' + op);
+      else if (typeof botStaffOp_ === 'function') data = botStaffOp_(op, id, body);
+      else return fail('員工助理模組沒有安裝（請貼上 BotStaff.gs）');
     }
     return { success: true, data: data };
   } catch (e) {
@@ -695,13 +731,16 @@ function botChunkText_(text, size) {
 }
 
 /** 產品放進知識庫的文字：型號、品牌、類別與選型規格（不含底價、供應商與任何內部資料）。 */
-function botProductText_(p) {
+/** 一個產品給客服看的文字：只含白名單欄位（fields 是管理員勾選的子集）；底價、供應商、備註不在白名單裡，無論如何不會出現。 */
+function botProductText_(p, fields) {
   var t = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  var use = botCsFields_(fields);
   var model = t(p['InternalModel']) || t(p['SupplierModel']);
-  var lines = ['產品型號：' + model + (t(p['SupplierModel']) && t(p['SupplierModel']) !== model ? '（原廠型號 ' + t(p['SupplierModel']) + '）' : '')];
-  [['類別', 'Category'], ['品牌', 'Brand'], ['介面', 'Interface'], ['解析度', 'Resolution'], ['像元尺寸 µm', 'PixelSize'], ['靶面', 'SensorSize'], ['影格率 fps', 'FPS'], ['接口', 'Mount'], ['焦距 mm', 'FocalLength'], ['放大倍率', 'Magnification'], ['工作距離 WD', 'WD'], ['景深 DOF', 'DOF'], ['最近對焦距離', 'FocusWD']].forEach(function (f) {
-    var v = t(p[f[1]]);
-    if (v && v.indexOf('不納入選型') < 0) lines.push(f[0] + '：' + v);
+  var lines = ['產品型號：' + model + (use.indexOf('SupplierModel') > -1 && t(p['SupplierModel']) && t(p['SupplierModel']) !== model ? '（原廠型號 ' + t(p['SupplierModel']) + '）' : '')];
+  BOT_CS_PRODUCT_FIELDS.forEach(function (f) {
+    if (f[0] === 'SupplierModel' || use.indexOf(f[0]) < 0) return;
+    var v = t(p[f[0]]);
+    if (v && v.indexOf('不納入選型') < 0) lines.push(f[1] + '：' + v);
   });
   return lines.join('\n');
 }
@@ -710,9 +749,10 @@ function csKnowledge_() {
   var cs = botSettings_();
   var out = [];
   var text = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
-  if (cs.sources.qa) {
+  if (cs.sources.qa || cs.sources.docs) {
     sheetToObjects(SHEET_BOT_KB).rows.forEach(function (k) {
       if (k['IsActive'] === false || String(k['IsActive']).toUpperCase() === 'FALSE') return;
+      if (k['Type'] === 'doc' ? !cs.sources.docs : !cs.sources.qa) return;
       out.push({
         id: 'k' + k['ID'],
         source: k['Type'] === 'doc' ? '文件' : '常見問題',
@@ -728,12 +768,14 @@ function csKnowledge_() {
   }
   if (cs.sources.products) {
     var n = 0;
+    var cats = String(cs.sources.productCategories || '').split(/[,，、\n]+/).map(function (c) { return c.trim().toLowerCase(); }).filter(Boolean);
     readProductsLite_().rows.forEach(function (p) {
       if (n >= cs.sources.productLimit) return;
+      if (cats.length && cats.indexOf(text(p['Category']).toLowerCase()) < 0) return;
       var model = text(p['InternalModel']) || text(p['SupplierModel']);
       if (!model) return;
       n++;
-      out.push({ id: 'p' + n, source: '產品', title: model, text: botProductText_(p) });
+      out.push({ id: 'p' + n, source: '產品', title: model, text: botProductText_(p, cs.sources.productFields) });
     });
   }
   return out;
@@ -759,8 +801,8 @@ function csWidgetConfig_() {
 // ------------------------------------------------------------
 // BOT 設定頁（需要「BOT 設定」權限）
 // ------------------------------------------------------------
-function botKeyHint_() {
-  var s = botSecret_();
+function botKeyHint_(role) {
+  var s = botKey_(role);
   return s ? '••••' + s.slice(-4) : '';
 }
 
@@ -791,8 +833,11 @@ function handleBotGetSettings(body) {
     ai: botMaskedAi_(),
     aiProviders: BOT_AI_PROVIDERS,
     aiUsing: ais.length ? { source: ais[0].source, name: BOT_AI_PROVIDERS[ais[0].provider].name, model: ais[0].model, count: ais.length } : null,
-    keyHint: botKeyHint_(),
-    hasKey: !!botSecret_(),
+    keys: {
+      cs: { has: !!botKey_('cs'), hint: botKeyHint_('cs'), shared: botKeyShared_('cs') },
+      staff: { has: !!botKey_('staff'), hint: botKeyHint_('staff'), shared: botKeyShared_('staff') },
+    },
+    csProductFields: BOT_CS_PRODUCT_FIELDS,
     gasUrl: url,
     kbCount: kbCount,
     pauses: csPauseList_(),
@@ -865,6 +910,26 @@ function handleBotTestAi(body) {
   } catch (e) {
     return { success: false, message: e.message };
   }
+}
+
+/** 預覽客服機器人「現在實際看得到」的資料：各來源筆數、產品範例，以及永遠看不到的內部資料。 */
+function handleBotCsPreview(body) {
+  var chunks = csKnowledge_();
+  var counts = {};
+  var products = [];
+  chunks.forEach(function (c) {
+    counts[c.source] = (counts[c.source] || 0) + 1;
+    if (c.source === '產品' && products.length < 3) products.push(c.text);
+  });
+  var cs = botSettings_();
+  return {
+    success: true,
+    total: chunks.length,
+    counts: counts,
+    sampleProducts: products,
+    productFields: cs.sources.productFields,
+    blocked: ['產品底價、供應商、產品備註', '客戶資料、聯絡窗口、聯繫紀錄與追蹤', '案件與評估、報價', '員工、帳號與權限', '員工助理的記憶與對話', '其他試算表分頁'],
+  };
 }
 
 function botKbRows_() {
@@ -965,15 +1030,24 @@ function handleBotKbDelete(body) {
   });
 }
 
+/** 產生 / 重新產生某個角色（role = cs 客服 / staff 員工助理）的金鑰；舊版共用金鑰會先拆成兩把再各自更新。 */
 function handleBotGenKey(body) {
+  var role = body.role === 'staff' ? 'staff' : 'cs';
+  var p = PropertiesService.getScriptProperties();
+  var legacy = p.getProperty(BOT_SECRET_PROP);
+  if (legacy) {
+    if (!p.getProperty(BOT_CS_SECRET_PROP)) p.setProperty(BOT_CS_SECRET_PROP, legacy);
+    if (!p.getProperty(BOT_STAFF_SECRET_PROP)) p.setProperty(BOT_STAFF_SECRET_PROP, legacy);
+    p.deleteProperty(BOT_SECRET_PROP);
+  }
   var key = botRandomKey_();
-  PropertiesService.getScriptProperties().setProperty(BOT_SECRET_PROP, key);
-  return { success: true, key: key, keyHint: botKeyHint_() };
+  p.setProperty(role === 'staff' ? BOT_STAFF_SECRET_PROP : BOT_CS_SECRET_PROP, key);
+  return { success: true, key: key, keyHint: botKeyHint_(role), role: role };
 }
 
 function handleBotRevealKey(body) {
-  var s = botSecret_();
-  if (!s) return { success: false, message: '還沒有產生 Bot 金鑰' };
+  var s = botKey_(body.role === 'staff' ? 'staff' : 'cs');
+  if (!s) return { success: false, message: '還沒有產生這把金鑰' };
   return { success: true, key: s };
 }
 
@@ -1043,8 +1117,8 @@ function handleBotResume(body) {
 
 /** 後台「測試聊天」用：簽一個 5 分鐘有效的權杖給 linebot（用 Bot 金鑰簽，瀏覽器看不到金鑰）。 */
 function handleBotTestToken(body) {
-  var secret = botSecret_();
-  if (!secret) return { success: false, message: '請先產生 Bot 金鑰' };
+  var secret = botKey_('cs');
+  if (!secret) return { success: false, message: '請先產生客服機器人的金鑰' };
   var url = botGeneral_().botUrl;
   if (!url) return { success: false, message: '請先填「機器人網址」（Vercel 專案網址）' };
   var ts = String(Date.now());

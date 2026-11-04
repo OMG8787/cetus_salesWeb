@@ -1,4 +1,5 @@
 import { waitUntil } from "@vercel/functions";
+import { config } from "../src/config.js";
 import { channels, validateSignature, type LineEvent } from "../src/line.js";
 import { processStaffEvents } from "../src/staff.js";
 
@@ -23,6 +24,8 @@ export function GET(): Response {
   const missing = [
     ["LINE_CHANNEL_SECRET", channels.staff.secret],
     ["LINE_CHANNEL_ACCESS_TOKEN", channels.staff.token],
+    ["BOT_STAFF_SECRET（或舊版 BOT_SECRET）", config.gas.staffSecret],
+    ["GAS_URL", config.gas.url],
   ]
     .filter(([, v]) => !v)
     .map(([k]) => k);

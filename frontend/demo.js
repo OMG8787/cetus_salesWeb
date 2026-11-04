@@ -143,10 +143,12 @@ const DEMO_BOT_TOPICS = [
   { key: 'complaint', name: '客訴 / 退換貨 / 維修', words: '退貨 退款 換貨 客訴 投訴 故障 維修 壞掉 保固 RMA 不良', ask: '' },
 ];
 
+const DEMO_CS_FIELDS = [['SupplierModel', '原廠型號'], ['Category', '類別'], ['Brand', '品牌'], ['Interface', '介面'], ['Resolution', '解析度'], ['PixelSize', '像元尺寸 µm'], ['SensorSize', '靶面'], ['FPS', '影格率 fps'], ['Mount', '接口'], ['FocalLength', '焦距 mm'], ['Magnification', '放大倍率'], ['WD', '工作距離 WD'], ['DOF', '景深 DOF'], ['FocusWD', '最近對焦距離']];
+
 function demoBotState(db) {
   if (!db.bot) {
     db.bot = {
-      cs: { enabled: false, welcome: '', prompt: '', handoffText: '', sources: { qa: true, products: false, brand: true, productLimit: 1500 }, brandInfo: '', replyWhen: 'always', hours: { enabled: false, days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00', offText: '' }, handoffWords: '真人 客服人員 小編 專人 人工 業務', pauseMinutes: 30, topics: {}, customWords: '', customAsk: '', customAskPos: 'after', topicText: '', unsure: 'ask', style: { tone: 'friendly', address: '您', emoji: 'some', maxLines: 5 }, buttons: '', buttonsAlways: false, web: { enabled: false, title: '線上客服', subtitle: '有任何問題都可以問我', color: '#2c5aa0', position: 'right', autoOpen: false, allowedOrigins: '' } },
+      cs: { enabled: false, welcome: '', prompt: '', handoffText: '', sources: { qa: true, docs: true, products: false, brand: true, productLimit: 1500, productCategories: '', productFields: DEMO_CS_FIELDS.map((f) => f[0]) }, brandInfo: '', replyWhen: 'always', hours: { enabled: false, days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00', offText: '' }, handoffWords: '真人 客服人員 小編 專人 人工 業務', pauseMinutes: 30, topics: {}, customWords: '', customAsk: '', customAskPos: 'after', topicText: '', unsure: 'ask', style: { tone: 'friendly', address: '您', emoji: 'some', maxLines: 5 }, buttons: '', buttonsAlways: false, web: { enabled: false, title: '線上客服', subtitle: '有任何問題都可以問我', color: '#2c5aa0', position: 'right', autoOpen: false, allowedOrigins: '' } },
       general: { replyDelay: 2, botUrl: '', brand: '鑫堡股份有限公司', memory: { turns: 10, hours: 6, chars: 600 } },
       ai: [], kb: [], messages: [], pauses: [], key: '',
     };
@@ -175,7 +177,7 @@ function demoBotApi(action, params, db) {
         success: true, cs: demoBotCs(b), general: b.general, ai: masked(),
         aiProviders: { gemini: { name: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' }, claude: { name: 'Claude', endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5' }, openai: { name: 'OpenAI 相容', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' } },
         aiUsing: b.ai.length ? { source: 'bot', name: b.ai[0].provider, model: b.ai[0].model || 'default', count: b.ai.length } : null,
-        keyHint: b.key ? '••••' + b.key.slice(-4) : '', hasKey: !!b.key, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
+        keys: { cs: { has: !!b.key, hint: b.key ? '••••' + b.key.slice(-4) : '', shared: false }, staff: { has: !!b.staffKey, hint: b.staffKey ? '••••' + b.staffKey.slice(-4) : '', shared: false } }, csProductFields: DEMO_CS_FIELDS, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
       };
     case 'botSaveSettings': {
       if (params.cs) {
@@ -216,12 +218,25 @@ function demoBotApi(action, params, db) {
       save();
       return { success: true, deleted: before - b.kb.length };
     }
-    case 'botGenKey':
-      b.key = Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+    case 'botGenKey': {
+      const field = params.role === 'staff' ? 'staffKey' : 'key';
+      b[field] = Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
       save();
-      return { success: true, key: b.key, keyHint: '••••' + b.key.slice(-4) };
-    case 'botRevealKey':
-      return b.key ? { success: true, key: b.key } : { success: false, message: '還沒有產生 Bot 金鑰' };
+      return { success: true, key: b[field], keyHint: '••••' + b[field].slice(-4), role: params.role === 'staff' ? 'staff' : 'cs' };
+    }
+    case 'botRevealKey': {
+      const k = params.role === 'staff' ? b.staffKey : b.key;
+      return k ? { success: true, key: k } : { success: false, message: '還沒有產生這把金鑰' };
+    }
+    case 'botCsPreview': {
+      const s = b.cs.sources || {};
+      const counts = {};
+      b.kb.forEach((k) => {
+        const name = k.Type === 'doc' ? '文件' : '常見問題';
+        if (k.IsActive !== false && (k.Type === 'doc' ? s.docs !== false : s.qa !== false)) counts[name] = (counts[name] || 0) + 1;
+      });
+      return { success: true, total: Object.values(counts).reduce((a, c) => a + c, 0), counts, sampleProducts: [], productFields: s.productFields || [], blocked: ['產品底價、供應商、產品備註', '客戶資料、聯絡窗口、聯繫紀錄與追蹤', '案件與評估、報價', '員工、帳號與權限', '員工助理的記憶與對話', '其他試算表分頁'] };
+    }
     case 'botConversations': {
       const groups = {};
       b.messages.forEach((m) => {
@@ -279,7 +294,7 @@ function demoStaffState(db) {
   const b = demoBotState(db);
   if (!b.staff) {
     b.staff = {
-      config: { enabled: false, welcome: '', pendingText: '', prompt: '', webEnabled: true, push: { enabled: false, hour: 8, last: '' }, memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, auto: false, autoEvery: 6 } },
+      config: { enabled: false, welcome: '', pendingText: '', prompt: '', webEnabled: true, hidePrice: false, ceiling: { products: 'edit', cases: 'edit', customers: 'edit' }, writes: ['addMemo', 'logFollowUp', 'updateCustomer', 'addCustomer', 'createCase', 'updateCaseStatus', 'remember'], push: { enabled: false, hour: 8, last: '' }, memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, auto: false, autoEvery: 6 } },
       members: [
         { LineUserId: 'U' + 'a'.repeat(32), DisplayName: '王小明', PictureUrl: '', Status: '待開通', Role: 'viewer', PermsObj: {}, LinkedUsername: '', LinkedName: '', Note: '', PushDaily: false, IsFollowing: true, FollowedAt: '2026-11-04 09:00:00', LastSeenAt: '2026-11-04 09:00:00', ApprovedBy: '' },
         { LineUserId: 'U' + 'b'.repeat(32), DisplayName: '李小華', PictureUrl: '', Status: '已開通', Role: 'limited', PermsObj: { cases: 'edit', customers: 'view' }, LinkedUsername: 'a', LinkedName: 'A', Note: 'FAE', PushDaily: true, IsFollowing: true, FollowedAt: '2026-10-20 10:00:00', LastSeenAt: '2026-11-03 17:20:00', ApprovedBy: 'Admin' },
@@ -298,7 +313,8 @@ function demoStaffApi(action, params, db) {
     case 'botGetStaff':
       return {
         success: true, config: st.config, members: st.members, accounts: (db.users || []).map((u) => ({ username: u.Username, name: u.DisplayName || u.Username })),
-        me: '0000', canLinkOthers: true, memory: st.memory, memoryCategories: DEMO_STAFF_CATS, blocks: DEMO_BLOCKS, writes: [],
+        me: '0000', canLinkOthers: true, memory: st.memory, memoryCategories: DEMO_STAFF_CATS, blocks: DEMO_BLOCKS,
+        writes: [{ key: 'addMemo', label: '新增備忘錄' }, { key: 'logFollowUp', label: '記錄追蹤 / 改下次追蹤' }, { key: 'updateCustomer', label: '修改客戶資料' }, { key: 'addCustomer', label: '新增客戶' }, { key: 'createCase', label: '建立案件' }, { key: 'updateCaseStatus', label: '修改案件狀態 / 緊急程度' }, { key: 'remember', label: '記住（長期記憶）' }],
       };
     case 'botSaveStaff': {
       const c = params.config || {};
@@ -877,6 +893,7 @@ function handleDemoApi(action, params) {
     case 'botKbDelete':
     case 'botGenKey':
     case 'botRevealKey':
+    case 'botCsPreview':
     case 'botConversations':
     case 'botThread':
     case 'botHumanReply':

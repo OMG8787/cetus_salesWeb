@@ -68,6 +68,12 @@ function botStaffCfg_() {
     prompt: String(c.prompt || ''),
     webEnabled: c.webEnabled !== false,
     push: { enabled: push.enabled === true, hour: botInt_(push.hour, 0, 23, 8), last: String(push.last || '') },
+    // 助理能存取資料的上限：實際權限 = 成員（帳號）權限與這裡的上限取較小者
+    ceiling: botStaffCeiling_(c.ceiling),
+    // 助理可以提出的寫入動作（沒設定 = 全部）
+    writes: botStaffWrites_(c.writes),
+    // 助理永遠看不到產品底價與供應商（就算成員有產品權限）
+    hidePrice: c.hidePrice === true,
     memory: {
       enabled: m.enabled !== false,
       maxItems: botInt_(m.maxItems, 5, 100, 30),
@@ -77,6 +83,33 @@ function botStaffCfg_() {
       autoEvery: botInt_(m.autoEvery, 2, 30, 6),
     },
   };
+}
+
+var BOT_STAFF_CEILING_BLOCKS = ['products', 'cases', 'customers'];
+
+function botStaffCeiling_(c) {
+  c = c || {};
+  var out = {};
+  BOT_STAFF_CEILING_BLOCKS.forEach(function (b) {
+    out[b] = c[b] === 'none' || c[b] === 'view' ? c[b] : 'edit';
+  });
+  return out;
+}
+
+function botStaffWrites_(list) {
+  var all = Object.keys(BOT_STAFF_WRITES);
+  if (!Array.isArray(list)) return all;
+  return all.filter(function (k) { return list.indexOf(k) > -1; });
+}
+
+/** 把帳號權限壓到管理員設定的上限以下（none < view < edit）。 */
+function botCapAccess_(access) {
+  var rank = { none: 0, view: 1, edit: 2 };
+  var ceiling = botStaffCfg_().ceiling;
+  BOT_STAFF_CEILING_BLOCKS.forEach(function (b) {
+    if ((rank[access.blocks[b]] || 0) > rank[ceiling[b]]) access.blocks[b] = ceiling[b];
+  });
+  return access;
 }
 
 // ------------------------------------------------------------
@@ -106,7 +139,7 @@ function botMemberAccess_(m) {
   var a = accessOf_({ Role: role, Perms: m['Perms'] });
   a.canDelete = false;
   a.isAdmin = false;
-  return a;
+  return botCapAccess_(a);
 }
 
 /** 這個編號（U 開頭 = LINE 成員；W 開頭 = 網站登入帳號）能做什麼；ok = 已開通可以用。 */
@@ -116,7 +149,7 @@ function botStaffCtx_(id) {
     var uname = botCacheGet_('webid:' + id);
     var u = uname ? findUserRow_(uname) : null;
     if (!u) return { ok: false, status: '未登入', problem: '網站登入已逾期，請重新整理頁面再試', id: id, web: true };
-    var a = accessOf_(u);
+    var a = botCapAccess_(accessOf_(u));
     a.canDelete = false;
     a.isAdmin = false;
     return { ok: cfg.enabled && cfg.webEnabled, status: '已開通', problem: !cfg.enabled ? '員工助理還沒啟用' : !cfg.webEnabled ? '網站智能助理沒有開放' : '', id: id, web: true, name: String(u['DisplayName'] || u['Username']), username: String(u['Username']), access: a, ownerKey: String(u['Username']) };
@@ -408,8 +441,10 @@ function botStaffCall_(ctx, action, params) {
       total: prows.length,
       items: prows.slice(0, Math.min(limit, 15)).map(function (r) {
         var o = botTrimRow_(r, BOT_PRODUCT_KEYS, 120);
-        o.Supplier = r['Supplier'] || undefined;
-        o.RefPrice = r['RefPrice'] || undefined; // 底價：有「產品與詢價」查看權限的人才看得到（跟網站一樣）
+        if (!botStaffCfg_().hidePrice) {
+          o.Supplier = r['Supplier'] || undefined;
+          o.RefPrice = r['RefPrice'] || undefined; // 底價：有「產品與詢價」查看權限的人才看得到（跟網站一樣），管理員也可以全部隱藏
+        }
         return o;
       }),
     };
@@ -436,6 +471,7 @@ function botStaffCall_(ctx, action, params) {
   }
 
   if (action === 'calendar') {
+    if (botLevel_(ctx, 'customers') === 'none' && botLevel_(ctx, 'cases') === 'none') throw new Error('你沒有「行事曆」的查看權限（需要客戶或案件的查看權限）');
     var r2 = handleGetCalendarEvents({ days: botInt_(params.days, 1, 30, 7) });
     if (!r2.success) throw new Error(r2.message);
     return { items: r2.events.filter(function (e) { return String(e.Title).indexOf('[AOI客戶追蹤]') !== 0; }).slice(0, 30) };
@@ -454,7 +490,7 @@ function botStaffCall_(ctx, action, params) {
       ov.openCases = { total: open.length, byStatus: byStatus, high: open.filter(function (r) { return r['Urgency'] === '高'; }).slice(0, 5).map(function (r) { return botTrimRow_(r, ['CaseID', 'CustomerName', 'Status'], 60); }) };
     }
     try {
-      var ev = handleGetCalendarEvents({ days: 2 });
+      var ev = botLevel_(ctx, 'customers') === 'none' && botLevel_(ctx, 'cases') === 'none' ? { success: false } : handleGetCalendarEvents({ days: 2 });
       if (ev.success) ov.events = ev.events.filter(function (e) { return String(e.Title).indexOf('[AOI客戶追蹤]') !== 0; }).slice(0, 10);
     } catch (e) {
       // 沒有日曆權限就略過
@@ -479,7 +515,9 @@ var BOT_STAFF_WRITES = {
 var BOT_CUSTOMER_EDITABLE = { Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', Address: '地址', TaxId: '統一編號', Category: '分類', Urgency: '急迫性', Notes: '客戶備註' };
 
 function botWritableOps_(ctx) {
+  var allowed = botStaffCfg_().writes;
   return Object.keys(BOT_STAFF_WRITES).filter(function (k) {
+    if (allowed.indexOf(k) < 0) return false;
     if (k === 'remember') return botStaffCfg_().memory.enabled;
     var b = BOT_STAFF_WRITES[k].block;
     return !b || botLevel_(ctx, b) === 'edit';
@@ -497,6 +535,7 @@ function botFindCustomerRow_(name) {
 function botWriteCheck_(ctx, w) {
   var spec = BOT_STAFF_WRITES[w.action];
   if (!spec) throw new Error('不能執行：' + w.action);
+  if (botStaffCfg_().writes.indexOf(w.action) < 0) throw new Error('管理員沒有開放「' + spec.label + '」給助理使用');
   if (spec.block) botNeed_(ctx, spec.block, 'edit');
   var d = w.data || {};
   var s = function (k) { return String(d[k] == null ? '' : d[k]).trim(); };
@@ -764,6 +803,9 @@ function handleBotSaveStaff(body) {
     var next = Object.assign({}, cur);
     ['enabled', 'webEnabled'].forEach(function (k) { if (c[k] !== undefined) next[k] = c[k] === true; });
     ['welcome', 'pendingText', 'prompt'].forEach(function (k) { if (c[k] !== undefined) next[k] = String(c[k]).slice(0, 4000); });
+    if (c.ceiling) next.ceiling = botStaffCeiling_(c.ceiling);
+    if (Array.isArray(c.writes)) next.writes = botStaffWrites_(c.writes);
+    if (c.hidePrice !== undefined) next.hidePrice = c.hidePrice === true;
     if (c.push) next.push = Object.assign({}, cur.push || {}, { enabled: c.push.enabled === true, hour: botInt_(c.push.hour, 0, 23, 8) });
     if (c.memory) {
       var m = c.memory;
@@ -887,7 +929,7 @@ function botPushTick() {
 
 function botPushRequest_() {
   var url = botGeneral_().botUrl;
-  var secret = botSecret_();
+  var secret = botKey_('staff');
   if (!url || !secret) throw new Error('還沒有設定機器人網址或 Bot 金鑰');
   var res = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/api/push', { method: 'post', contentType: 'application/json', headers: { 'x-bot-secret': secret }, muteHttpExceptions: true, payload: '{}' });
   return { code: res.getResponseCode(), body: String(res.getContentText()).slice(0, 300) };
@@ -918,14 +960,14 @@ function botPushTargets_() {
 // ------------------------------------------------------------
 function handleBotAssistInfo(body) {
   var cfg = botStaffCfg_();
-  return { success: true, enabled: cfg.enabled && cfg.webEnabled && !!botGeneral_().botUrl && !!botSecret_() };
+  return { success: true, enabled: cfg.enabled && cfg.webEnabled && !!botGeneral_().botUrl && !!botKey_('staff') };
 }
 
 function handleBotAssist(body) {
   var cfg = botStaffCfg_();
   if (!cfg.enabled || !cfg.webEnabled) return { success: false, message: '網站智能助理沒有開放' };
   var url = botGeneral_().botUrl;
-  var secret = botSecret_();
+  var secret = botKey_('staff');
   if (!url || !secret) return { success: false, message: '機器人還沒連線：請系統管理員到「BOT 設定 → 連線與設定」完成設定' };
   var id = botWebId_(body._user.username);
   botCachePut_('webid:' + id, body._user.username, 600);

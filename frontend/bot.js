@@ -8,7 +8,7 @@ let kbLoaded = false;
 let curTab = 'overview';
 let selectedConv = null; // 後台對話列表選到的客人
 let talkTimer = null;
-let keyShown = false;
+let keyShown = {};
 let revealedKey = '';
 
 const DAY_NAMES = '日一二三四五六';
@@ -80,7 +80,7 @@ function renderOverview() {
   const g = d.general || {};
   const steps = [
     { ok: !!d.aiUsing, title: 'AI 模型', text: d.aiUsing ? `使用 ${d.aiUsing.name} ${d.aiUsing.model}${d.aiUsing.count > 1 ? `（共 ${d.aiUsing.count} 個，依序備援）` : ''}` : '還沒有設定 AI 的 API Key', tab: 'ai' },
-    { ok: d.hasKey, title: 'Bot 金鑰', text: d.hasKey ? '已產生（' + d.keyHint + '）' : '還沒有產生，機器人伺服器需要它才能連到這個系統', tab: 'conn' },
+    { ok: d.keys.cs.has, title: '客服機器人金鑰', text: d.keys.cs.has ? '已產生（' + d.keys.cs.hint + '）' + (d.keys.cs.shared ? '，目前與員工助理共用舊版金鑰，建議重新產生以分開' : '') : '還沒有產生，客服機器人伺服器需要它才能連到這個系統', tab: 'conn' },
     { ok: !!g.botUrl, title: '機器人伺服器（Vercel）', text: g.botUrl ? g.botUrl + '（機器人第一次連線時會自動記下）' : '還沒有連線：部署 linebot 到 Vercel 並填好環境變數，或手動填「機器人網址」', tab: 'conn' },
     { ok: d.kbCount > 0 || (d.cs.sources.brand && d.cs.brandInfo) || d.cs.sources.products, title: '知識庫', text: d.kbCount > 0 ? `${d.kbCount} 筆常見問題 / 文件段落` : '還沒有資料：到「📚 知識庫」新增常見問題，或匯入文件', tab: 'kb' },
     { ok: d.cs.enabled, title: '客服機器人', text: d.cs.enabled ? '已啟用' : '還沒啟用：到「🛎️ 客服設定」勾選「啟用」並儲存', tab: 'cs' },
@@ -137,10 +137,13 @@ function fillCs(cs) {
   setVal('cs-topic-text', cs.topicText);
   setVal('cs-unsure', cs.unsure);
   $('cs-src-qa').checked = cs.sources.qa;
+  $('cs-src-docs').checked = cs.sources.docs;
   $('cs-src-brand').checked = cs.sources.brand;
   setVal('cs-brand-info', cs.brandInfo);
   $('cs-src-products').checked = cs.sources.products;
   setVal('cs-product-limit', cs.sources.productLimit);
+  setVal('cs-product-cats', cs.sources.productCategories);
+  renderProductFields(cs.sources.productFields);
   toggleHoursBox();
 }
 
@@ -160,7 +163,15 @@ function readCs() {
     welcome: val('cs-welcome'),
     prompt: val('cs-prompt'),
     handoffText: val('cs-handoff-text'),
-    sources: { qa: $('cs-src-qa').checked, brand: $('cs-src-brand').checked, products: $('cs-src-products').checked, productLimit: val('cs-product-limit') },
+    sources: {
+      qa: $('cs-src-qa').checked,
+      docs: $('cs-src-docs').checked,
+      brand: $('cs-src-brand').checked,
+      products: $('cs-src-products').checked,
+      productLimit: val('cs-product-limit'),
+      productCategories: val('cs-product-cats'),
+      productFields: [...document.querySelectorAll('#cs-product-fields input:checked')].map((e) => e.value),
+    },
     brandInfo: val('cs-brand-info'),
     replyWhen: val('cs-reply-when'),
     hours: {
@@ -704,9 +715,12 @@ function fillConn() {
   const gas = botData.gasUrl || (typeof API_URL !== 'undefined' ? API_URL : '');
   setVal('conn-gas', gas);
   $('conn-gas-hint').textContent = botData.gasUrl ? '' : '（Apps Script 沒回報網址，這裡顯示的是網站 config.js 設定的 API_URL，通常就是同一個）';
-  keyShown = false;
-  $('conn-key').type = 'password';
-  setVal('conn-key', botData.hasKey ? botData.keyHint : '');
+  keyShown = {};
+  ['cs', 'staff'].forEach((role) => {
+    $('conn-key-' + role).type = 'password';
+    setVal('conn-key-' + role, botData.keys[role].has ? botData.keys[role].hint : '');
+  });
+  $('conn-shared').style.display = botData.keys.cs.shared || botData.keys.staff.shared ? '' : 'none';
   const g = botData.general || {};
   setVal('conn-boturl', g.botUrl);
   setVal('gen-brand', g.brand);
@@ -718,41 +732,58 @@ function fillConn() {
   applyReadOnly();
 }
 
-async function toggleKey() {
-  if (!botData.hasKey) return;
-  if (!keyShown) {
-    const r = await callApi('botRevealKey', {});
+async function toggleKey(role) {
+  if (!botData.keys[role].has) return;
+  if (!keyShown[role]) {
+    const r = await callApi('botRevealKey', { role });
     if (!r.success) return alert(r.message);
-    revealedKey = r.key;
-    setVal('conn-key', revealedKey);
-    $('conn-key').type = 'text';
-    keyShown = true;
+    setVal('conn-key-' + role, r.key);
+    $('conn-key-' + role).type = 'text';
+    keyShown[role] = true;
   } else fillConn();
 }
 
-async function copyKey() {
-  if (!botData.hasKey) return alert('還沒有產生 Bot 金鑰');
-  const r = await callApi('botRevealKey', {}, { silent: true });
+async function copyKey(role) {
+  if (!botData.keys[role].has) return alert('還沒有產生這把金鑰');
+  const r = await callApi('botRevealKey', { role }, { silent: true });
   if (!r.success) return alert(r.message);
   try {
     await navigator.clipboard.writeText(r.key);
-    alert('已複製 Bot 金鑰');
+    alert('已複製金鑰');
   } catch (e) {
     prompt('請手動複製：', r.key);
   }
 }
 
-async function genKey() {
-  if (botData.hasKey && !confirm('重新產生後，舊的 Bot 金鑰立即失效，機器人會暫停服務，直到你到 Vercel 更新 BOT_SECRET 並 Redeploy。\n\n確定要重新產生嗎？')) return;
-  const r = await callApi('botGenKey', {});
+async function genKey(role) {
+  const name = role === 'staff' ? '員工助理' : '客服機器人';
+  const env = role === 'staff' ? 'BOT_STAFF_SECRET' : 'BOT_CS_SECRET';
+  if (botData.keys[role].has && !confirm(`重新產生後，舊的${name}金鑰立即失效，${name}會暫停服務，直到你到 Vercel 更新 ${env} 並 Redeploy。\n\n確定要重新產生嗎？`)) return;
+  const r = await callApi('botGenKey', { role });
   if (!r.success) return alert(r.message);
   await loadAll(true);
   fillConn();
-  revealedKey = r.key;
-  setVal('conn-key', r.key);
-  $('conn-key').type = 'text';
-  keyShown = true;
-  alert('已產生新的 Bot 金鑰（上方欄位顯示的就是）。請複製到 Vercel 的 BOT_SECRET。');
+  setVal('conn-key-' + role, r.key);
+  $('conn-key-' + role).type = 'text';
+  keyShown[role] = true;
+  alert(`已產生新的${name}金鑰（上方欄位顯示的就是）。請複製到 Vercel 的 ${env}。`);
+}
+
+/** 客服可以問到的產品欄位勾選 */
+function renderProductFields(selected) {
+  const fields = botData.csProductFields || [];
+  $('cs-product-fields').innerHTML = fields
+    .map(([key, label]) => `<label class="bot-day"><input type="checkbox" value="${htmlEsc(key)}" ${selected.includes(key) ? 'checked' : ''} /> ${htmlEsc(label)}</label>`)
+    .join('');
+}
+
+async function previewCs() {
+  const r = await callApi('botCsPreview', {}, { silent: true });
+  if (!r.success) return ($('cs-preview').innerHTML = `<div class="calc-hint" style="color:#c0392b;">${htmlEsc(r.message || '失敗')}</div>`);
+  const counts = Object.entries(r.counts).map(([k, v]) => `${htmlEsc(k)} ${v} 筆`).join('、') || '（目前沒有任何資料，機器人只會請客人找真人）';
+  $('cs-preview').innerHTML = `<div class="calc-hint" style="margin-top:6px;">目前（以<b>已儲存</b>的設定為準）客服機器人可用的資料：<b>${counts}</b>，共 ${r.total} 段。</div>` +
+    (r.sampleProducts.length ? '<div class="calc-hint" style="margin-top:6px;">產品範例（客人實際問得到的內容）：</div>' + r.sampleProducts.map((t) => `<pre class="bot-pre">${htmlEsc(t)}</pre>`).join('') : '') +
+    `<div class="calc-hint" style="margin-top:6px;color:#1e8e3e;">🔒 永遠看不到：${r.blocked.map(htmlEsc).join('、')}</div>`;
 }
 
 async function saveGeneral() {

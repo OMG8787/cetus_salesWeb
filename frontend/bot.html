@@ -187,11 +187,22 @@
     <div class="panel">
       <h3 class="bot-h">📚 知識庫來源</h3>
       <div class="calc-hint">RAG：每次先找出跟問題相關的內容，機器人只根據這些內容回答。</div>
-      <label class="bot-check"><input type="checkbox" id="cs-src-qa" /> 常見問題與文件（在「📚 知識庫」維護）</label>
+      <label class="bot-check"><input type="checkbox" id="cs-src-qa" /> 常見問題（在「📚 知識庫」維護）</label>
+      <label class="bot-check"><input type="checkbox" id="cs-src-docs" /> 匯入的文件（在「📚 知識庫」匯入）</label>
       <label class="bot-check"><input type="checkbox" id="cs-src-brand" /> 公司簡介（下方文字）</label>
       <textarea id="cs-brand-info" rows="4" maxlength="8000" placeholder="公司位置、營業時間、服務範圍、聯絡方式、代理品牌…（會自動切成小段，客人問到才會用到）"></textarea>
       <label class="bot-check"><input type="checkbox" id="cs-src-products" /> 產品資料庫的型號與規格（<b>不含底價、供應商</b>），最多 <input type="number" id="cs-product-limit" min="50" max="3000" style="width:90px;display:inline-block;" /> 筆</label>
       <div class="calc-hint">產品很多時會讓知識庫變大、回答變慢；機器人回答產品問題都需要有型號與規格資料時再打開。</div>
+      <label>客人可以問到的產品欄位（型號一定會有；底價、供應商、備註<b>不在清單裡，永遠不會給客服機器人</b>）</label>
+      <div id="cs-product-fields" class="bot-days"></div>
+      <label>只開放這些產品類別（以逗號或頓號分隔；空白 = 全部類別）</label>
+      <input id="cs-product-cats" maxlength="500" placeholder="例如：相機、鏡頭" />
+    </div>
+    <div class="panel">
+      <h3 class="bot-h">🔒 客服機器人看得到什麼（資料隔離）</h3>
+      <div class="calc-hint" style="line-height:1.8;">客服機器人<b>只讀取上面勾選的知識庫來源</b>，沒有任何管道連到客戶資料、案件、聯繫紀錄、報價、帳號或員工助理的記憶；客服用的金鑰也不能呼叫員工助理的功能。按下面的按鈕預覽它現在實際看得到的資料。</div>
+      <div class="bot-row"><button type="button" class="btn-secondary" onclick="previewCs()">👁️ 預覽客服看得到的資料</button></div>
+      <div id="cs-preview"></div>
     </div>
     <div id="cs-save-bar"><button type="button" onclick="saveCs()">💾 儲存客服設定</button> <span id="cs-save-msg" class="calc-hint"></span></div>
   </div>
@@ -317,6 +328,25 @@
     </div>
 
     <div class="panel">
+      <h3 style="margin-top:0;">🔒 助理能存取的資料（上限）</h3>
+      <div class="calc-hint" style="line-height:1.8;">這裡是整個員工助理的<b>天花板</b>：實際權限 = 成員（網站帳號）的權限與這裡的上限<b>取較小者</b>。例如客戶資料設「不開放」，所有成員的助理都查不到客戶。員工助理永遠不能刪除資料。</div>
+      <div class="bot-grid">
+        <div>
+          <label>產品與詢價 <select id="st-cap-products" class="st-cap"></select></label>
+          <label>案件管理 <select id="st-cap-cases" class="st-cap"></select></label>
+          <label>客戶與行事曆 <select id="st-cap-customers" class="st-cap"></select></label>
+          <label class="bot-check"><input type="checkbox" id="st-hide-price" /> 對助理隱藏產品<b>底價與供應商</b>（就算成員有產品權限也看不到）</label>
+          <div class="calc-hint">行事曆需要「客戶」或「案件」至少一項可查看。</div>
+        </div>
+        <div>
+          <label>助理可以「提出」的修改（要本人確認才寫入；取消勾選 = 完全不能做）</label>
+          <div id="st-writes"></div>
+        </div>
+      </div>
+      <div class="bot-row"><button type="button" class="bot-write" onclick="saveStaff()">💾 儲存員工助理設定</button><span id="st-msg2" class="calc-hint"></span></div>
+    </div>
+
+    <div class="panel">
       <h3 style="margin-top:0;">👥 成員 <button type="button" class="btn-mini" onclick="loadStaff()">↻ 重新整理</button></h3>
       <div class="calc-hint">LINE 名稱是員工自己的；<b>狀態改成「已開通」才能使用</b>。角色「特定」可以逐一區塊選查看 / 編輯。「綁定網站帳號」讓助理知道是誰（備忘錄、記錄聯繫的人名、個人記憶）；綁定其他人的帳號只有系統管理員可以。</div>
       <div id="st-members"></div>
@@ -340,7 +370,7 @@
         <summary style="cursor:pointer;font-weight:bold;">📖 員工助理 LINE 設定步驟</summary>
         <ol class="calc-hint" style="line-height:1.9;margin-top:8px;">
           <li>LINE Developers 另外建立<b>第二個</b> Messaging API Channel（員工專用，跟客服的官方帳號分開），複製 Channel secret 與 Channel access token。</li>
-          <li>Vercel 專案的 Environment Variables 加上 <code>LINE_CHANNEL_SECRET</code>、<code>LINE_CHANNEL_ACCESS_TOKEN</code>，然後 Redeploy。</li>
+          <li>Vercel 專案的 Environment Variables 加上 <code>BOT_STAFF_SECRET</code>（員工助理金鑰）、<code>LINE_CHANNEL_SECRET</code>、<code>LINE_CHANNEL_ACCESS_TOKEN</code>，然後 Redeploy。</li>
           <li>員工官方帳號的 Webhook URL 填 <code>https://你的專案.vercel.app/api/line</code>，打開 Use webhook，按 Verify；回應設定一樣關閉「自動回應訊息」。</li>
           <li>把員工官方帳號的 QR code 給同事加好友 → 回到這裡開通並設定權限。</li>
           <li>想要早報：勾「每天推播早報」與成員的「早報」，系統每小時檢查一次，到設定的時間推播（推播會用到官方帳號的每月訊息額度）。</li>
@@ -370,14 +400,23 @@
       <label>系統網址（Vercel 的 <code>GAS_URL</code>）</label>
       <div class="bot-row"><input id="conn-gas" readonly style="flex:1;margin:0;" /><button type="button" class="btn-secondary" onclick="copyText('conn-gas')">📋</button></div>
       <div class="calc-hint" id="conn-gas-hint"></div>
-      <label>Bot 金鑰（Vercel 的 <code>BOT_SECRET</code>）</label>
+      <div class="calc-hint" style="line-height:1.8;">🔒 <b>客服機器人與員工助理用兩把不同的金鑰</b>：客服金鑰只能呼叫客服的功能（知識庫、對話），員工金鑰只能呼叫員工助理的功能。就算客服那邊的金鑰外流，也碰不到員工助理與內部資料。建議<b>各部署一個 Vercel 專案</b>，客服專案只放客服金鑰與客服 LINE，員工專案只放員工金鑰與員工 LINE。</div>
+      <div id="conn-shared" class="calc-hint" style="display:none;color:#c0392b;">⚠️ 目前還是舊版「共用金鑰」（客服與員工助理共用同一把）。按下面任一個「重新產生」會自動拆成兩把，記得兩邊的 Vercel 都要更新。</div>
+      <label>客服機器人金鑰（客服 Vercel 專案的 <code>BOT_CS_SECRET</code>）</label>
       <div class="bot-row">
-        <input id="conn-key" readonly style="flex:1;margin:0;" placeholder="還沒有產生" />
-        <button type="button" class="btn-secondary" onclick="toggleKey()" id="conn-key-eye">👁️</button>
-        <button type="button" class="btn-secondary" onclick="copyKey()">📋</button>
-        <button type="button" class="bot-write" onclick="genKey()">🔑 產生 / 重新產生</button>
+        <input id="conn-key-cs" readonly style="flex:1;margin:0;" placeholder="還沒有產生" />
+        <button type="button" class="btn-secondary" onclick="toggleKey('cs')">👁️</button>
+        <button type="button" class="btn-secondary" onclick="copyKey('cs')">📋</button>
+        <button type="button" class="bot-write" onclick="genKey('cs')">🔑 產生 / 重新產生</button>
       </div>
-      <div class="calc-hint">重新產生後舊金鑰立即失效，要到 Vercel 更新 <code>BOT_SECRET</code> 並 Redeploy。</div>
+      <label>員工助理金鑰（員工 Vercel 專案的 <code>BOT_STAFF_SECRET</code>）</label>
+      <div class="bot-row">
+        <input id="conn-key-staff" readonly style="flex:1;margin:0;" placeholder="還沒有產生" />
+        <button type="button" class="btn-secondary" onclick="toggleKey('staff')">👁️</button>
+        <button type="button" class="btn-secondary" onclick="copyKey('staff')">📋</button>
+        <button type="button" class="bot-write" onclick="genKey('staff')">🔑 產生 / 重新產生</button>
+      </div>
+      <div class="calc-hint">重新產生後舊金鑰立即失效，要到對應的 Vercel 專案更新並 Redeploy。</div>
       <label>機器人網址（Vercel 專案網址，例如 https://aoi-bot.vercel.app；機器人第一次呼叫時會自動回報）</label>
       <input id="conn-boturl" placeholder="https://你的專案.vercel.app" />
     </div>
@@ -410,7 +449,7 @@
         <summary style="cursor:pointer;font-weight:bold;">📖 LINE 客服設定步驟</summary>
         <ol class="calc-hint" style="line-height:1.9;margin-top:8px;">
           <li>LINE Developers 建立一個 Messaging API Channel（客服用官方帳號），複製 Channel secret 與 Channel access token。</li>
-          <li>Vercel 專案（Root Directory 選 <code>linebot</code>）的 Environment Variables 填 <code>GAS_URL</code>、<code>BOT_SECRET</code>、<code>CS_LINE_CHANNEL_SECRET</code>、<code>CS_LINE_CHANNEL_ACCESS_TOKEN</code>，然後 Redeploy。</li>
+          <li>Vercel 專案（Root Directory 選 <code>linebot</code>）的 Environment Variables 填 <code>GAS_URL</code>、<code>BOT_CS_SECRET</code>（客服金鑰）、<code>CS_LINE_CHANNEL_SECRET</code>、<code>CS_LINE_CHANNEL_ACCESS_TOKEN</code>，然後 Redeploy。</li>
           <li>LINE 官方帳號的 Webhook URL 填 <code>https://你的專案.vercel.app/api/cs</code>，打開 Use webhook，按 Verify。</li>
           <li>LINE Official Account Manager → 回應設定：「聊天」保持開啟、打開 Webhook，<b>關閉</b>「自動回應訊息」與「加入好友的歡迎訊息」（改由機器人回覆）。</li>
           <li>回到這頁：填 AI 的 API Key、勾「啟用客服機器人」、建好常見問題，用「🧪 測試聊天」與手機實際測試。</li>

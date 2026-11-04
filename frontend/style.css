@@ -581,6 +581,8 @@ header, .tabs { position: relative; z-index: 300; }
 .as-form button { margin: 0; }
 @media print { .as-dock { display: none; } }
 
+.bot-pre { background: #f4f7fb; border: 1px solid #dde5f0; border-radius: 6px; padding: 8px 10px; margin: 4px 0; white-space: pre-wrap; font-size: 12px; }
+
 /* ---- 文案製作 ---- */
 .cp-plats { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .tab-content .cp-plat { margin: 0; padding: 5px 14px; border-radius: 16px; border: 1px solid #c9d5e6; background: #fff; color: #445; cursor: pointer; font-size: 14px; }

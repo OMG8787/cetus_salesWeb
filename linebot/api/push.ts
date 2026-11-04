@@ -8,7 +8,7 @@ import { pushBriefings } from "../src/staff.js";
  */
 export async function POST(request: Request): Promise<Response> {
   const given = request.headers.get("x-bot-secret") ?? "";
-  const secret = config.gas.secret;
+  const secret = config.gas.staffSecret;
   const a = Buffer.from(given);
   const b = Buffer.from(secret);
   if (!secret || a.length !== b.length || !timingSafeEqual(a, b)) return Response.json({ error: "未授權" }, { status: 401 });

@@ -316,3 +316,46 @@ test("早報：固定格式（逾期 / 今天 / 案件）；推播給名單內�
   assert.deepEqual(r, { targets: 2, sent: 2, failed: 0 });
   assert.equal(state.line.filter((l) => l.kind === "message/push").length, 2);
 });
+
+test("金鑰分開：員工助理的操作用員工金鑰、客服的操作用客服金鑰；網站助理與早報只認員工金鑰", async () => {
+  const { gas } = await import("../src/gas.js");
+  const { verifyTestToken } = await import("../src/web.js");
+  const { POST: webPost } = await import("../api/web.js");
+  const { POST: pushPost } = await import("../api/push.js");
+  const saved = { cs: process.env.BOT_CS_SECRET, staff: process.env.BOT_STAFF_SECRET };
+  process.env.BOT_CS_SECRET = "cs-key-111";
+  process.env.BOT_STAFF_SECRET = "staff-key-222";
+  try {
+    await gas.staffCall(U1, "me").catch(() => undefined);
+    await gas.csKnowledge().catch(() => undefined);
+    await gas.staffPushTargets().catch(() => undefined);
+    await gas.csWidget().catch(() => undefined);
+    const used = state.gas.map((g) => `${g.op}:${g.secret}`);
+    assert.deepEqual(used, ["call:staff-key-222", "csKnowledge:cs-key-111", "pushTargets:staff-key-222", "csWidget:cs-key-111"]);
+
+    // 網站助理 /api/web：客服金鑰不行
+    const post = (key: string) => webPost(new Request("https://x/api/web", { method: "POST", body: JSON.stringify({ secret: key, id: "W" + "c".repeat(32), text: "hi" }) }));
+    assert.equal((await post("cs-key-111")).status, 401);
+    assert.notEqual((await post("staff-key-222")).status, 401);
+    // 早報 /api/push：客服金鑰不行
+    const push = (key: string) => pushPost(new Request("https://x/api/push", { method: "POST", headers: { "x-bot-secret": key } }));
+    assert.equal((await push("cs-key-111")).status, 401);
+    assert.equal((await push("staff-key-222")).status, 200);
+
+    // 測試聊天權杖：用客服金鑰簽；員工金鑰簽的不算
+    const { createHmac } = await import("node:crypto");
+    const ts = String(Date.now());
+    const sign = (key: string) => createHmac("sha256", key).update(ts).digest("hex");
+    assert.equal(verifyTestToken(ts, sign("cs-key-111")), true);
+    assert.equal(verifyTestToken(ts, sign("staff-key-222")), false);
+
+    // 只設定員工金鑰時，客服操作不能用（不會偷用員工金鑰）
+    delete process.env.BOT_CS_SECRET;
+    delete process.env.BOT_SECRET;
+    await assert.rejects(() => gas.csKnowledge(), /BOT_CS_SECRET/);
+  } finally {
+    process.env.BOT_SECRET = "aoi-test-secret";
+    if (saved.cs === undefined) delete process.env.BOT_CS_SECRET; else process.env.BOT_CS_SECRET = saved.cs;
+    if (saved.staff === undefined) delete process.env.BOT_STAFF_SECRET; else process.env.BOT_STAFF_SECRET = saved.staff;
+  }
+});
