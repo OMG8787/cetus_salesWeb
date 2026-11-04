@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261104b" />
+<link rel="stylesheet" href="style.css?v=20261104c" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -73,6 +73,7 @@
     <button type="button" class="bot-tab" data-tab="web">🌐 網站客服視窗</button>
     <button type="button" class="bot-tab" data-tab="talk">💬 對話與小編接手</button>
     <button type="button" class="bot-tab" data-tab="test">🧪 測試聊天</button>
+    <button type="button" class="bot-tab" data-tab="staff">🧑‍💼 員工助理</button>
     <button type="button" class="bot-tab" data-tab="ai">🧠 AI 模型</button>
     <button type="button" class="bot-tab" data-tab="conn">🔌 連線與設定</button>
   </div>
@@ -280,6 +281,72 @@
     </div>
   </div>
 
+  <!-- ===================== 員工助理 ===================== -->
+  <div class="bot-panel" data-panel="staff" style="display:none;">
+    <div class="panel">
+      <h3 style="margin-top:0;">🧑‍💼 員工私人助理</h3>
+      <div class="calc-hint" style="line-height:1.8;">
+        員工用 <b>LINE（員工專用官方帳號）</b>或<b>網站右下角的「智能助理」</b>聊天查資料、交代事情：「今天要追蹤哪些客戶？」「甲公司的聯絡人電話」「記一筆：今天電話聯繫乙公司，下週三再追蹤」。<br>
+        ・員工加官方帳號好友後，下面「成員」會出現一列（<b>待開通、沒有任何權限</b>），首頁備忘錄也會通知；你確認是同事後才開通並設定權限（跟網站帳號同一套：編輯者 / 查看 / 特定）。<br>
+        ・查詢<b>依這個人的權限過濾</b>；新增 / 修改只有 AI「提出」，<b>本人按確認才寫入</b>；助理不能刪除任何資料。
+      </div>
+      <label class="bot-check"><input type="checkbox" id="st-enabled" /> <b>啟用員工助理</b></label>
+      <label class="bot-check"><input type="checkbox" id="st-web" /> 開放網站右下角的「智能助理」（用登入帳號本人的權限；需要先啟用上面那項）</label>
+      <label>歡迎詞（員工加好友、已開通時）</label>
+      <textarea id="st-welcome" rows="2" maxlength="500" placeholder="👋 您好，我是鑫堡的員工助理。可以問我客戶、案件、追蹤事項…"></textarea>
+      <label>尚未開通時的回覆</label>
+      <textarea id="st-pending" rows="2" maxlength="500" placeholder="👋 您好！你的帳號還在等待管理員開通，開通後就可以用我查詢客戶、案件與行程囉。"></textarea>
+      <label>給助理的額外規則（選填，優先遵守）</label>
+      <textarea id="st-prompt" rows="3" maxlength="2000" placeholder="例如：回覆盡量簡短；客戶名稱一律用全名；金額一律用新台幣"></textarea>
+      <div class="bot-grid" style="margin-top:6px;">
+        <div>
+          <label class="bot-check"><input type="checkbox" id="st-push" /> 每天推播早報（只推給下面勾了「早報」的成員）</label>
+          <div class="bot-row">每天 <input type="number" id="st-push-hour" min="0" max="23" style="width:70px;display:inline-block;" /> 點（台灣時間）
+            <button type="button" class="btn-secondary bot-write" onclick="pushNow()">立即推播一次</button><span id="st-push-msg" class="calc-hint"></span></div>
+        </div>
+        <div>
+          <label class="bot-check"><input type="checkbox" id="st-mem" /> 啟用長期記憶（稱呼、習慣、公司規定…）</label>
+          <div class="bot-row">每次最多帶入 <input type="number" id="st-mem-max" min="5" max="100" style="width:70px;display:inline-block;" /> 筆</div>
+          <label class="bot-check"><input type="checkbox" id="st-mem-confirm" /> 員工說「記住…」要先按確認</label>
+          <label class="bot-check"><input type="checkbox" id="st-mem-shared" /> 一般員工也可以新增 / 修改「全公司」的記憶</label>
+        </div>
+      </div>
+      <div class="bot-row"><button type="button" class="bot-write" onclick="saveStaff()">💾 儲存員工助理設定</button><span id="st-msg" class="calc-hint"></span></div>
+    </div>
+
+    <div class="panel">
+      <h3 style="margin-top:0;">👥 成員 <button type="button" class="btn-mini" onclick="loadStaff()">↻ 重新整理</button></h3>
+      <div class="calc-hint">LINE 名稱是員工自己的；<b>狀態改成「已開通」才能使用</b>。角色「特定」可以逐一區塊選查看 / 編輯。「綁定網站帳號」讓助理知道是誰（備忘錄、記錄聯繫的人名、個人記憶）；綁定其他人的帳號只有系統管理員可以。</div>
+      <div id="st-members"></div>
+    </div>
+
+    <div class="panel">
+      <h3 style="margin-top:0;">🧠 長期記憶</h3>
+      <div class="calc-hint">個人記憶只有那位員工的助理知道；全公司記憶每個人的助理都會帶著（例如公司規定、產品線說明）。員工也可以直接對助理說「記住…」。</div>
+      <div class="bot-row">
+        <select id="mem-scope" style="width:auto;"><option value="all">全公司</option><option value="user">我自己的</option></select>
+        <select id="mem-cat" style="width:auto;"></select>
+        <select id="mem-imp" style="width:auto;"><option value="3">重要度 3</option><option value="5">重要度 5（最高）</option><option value="4">重要度 4</option><option value="2">重要度 2</option><option value="1">重要度 1</option></select>
+      </div>
+      <input id="mem-content" maxlength="300" placeholder="一句話，例如：公司上班時間是 9:00–18:00" />
+      <div class="bot-row"><button type="button" class="bot-write" onclick="addMemory()">＋ 新增記憶</button><span id="mem-msg" class="calc-hint"></span></div>
+      <div id="st-memory"></div>
+    </div>
+
+    <div class="panel">
+      <details>
+        <summary style="cursor:pointer;font-weight:bold;">📖 員工助理 LINE 設定步驟</summary>
+        <ol class="calc-hint" style="line-height:1.9;margin-top:8px;">
+          <li>LINE Developers 另外建立<b>第二個</b> Messaging API Channel（員工專用，跟客服的官方帳號分開），複製 Channel secret 與 Channel access token。</li>
+          <li>Vercel 專案的 Environment Variables 加上 <code>LINE_CHANNEL_SECRET</code>、<code>LINE_CHANNEL_ACCESS_TOKEN</code>，然後 Redeploy。</li>
+          <li>員工官方帳號的 Webhook URL 填 <code>https://你的專案.vercel.app/api/line</code>，打開 Use webhook，按 Verify；回應設定一樣關閉「自動回應訊息」。</li>
+          <li>把員工官方帳號的 QR code 給同事加好友 → 回到這裡開通並設定權限。</li>
+          <li>想要早報：勾「每天推播早報」與成員的「早報」，系統每小時檢查一次，到設定的時間推播（推播會用到官方帳號的每月訊息額度）。</li>
+        </ol>
+      </details>
+    </div>
+  </div>
+
   <!-- ===================== AI 模型 ===================== -->
   <div class="bot-panel" data-panel="ai" style="display:none;">
     <div class="panel">
@@ -351,6 +418,15 @@
   </div>
 </section>
 
+<!-- 員工成員權限 -->
+<div id="perm-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:520px;">
+    <div class="modal-header"><h3 style="margin:0;" id="perm-title">功能權限</h3><button type="button" onclick="closeModal('perm-modal')">關閉</button></div>
+    <div id="perm-body"></div>
+    <div style="margin-top:10px;"><button type="button" onclick="savePerm()">儲存權限</button></div>
+  </div>
+</div>
+
 <!-- 常見問題 / 知識庫段落 編輯 -->
 <div id="faq-modal" class="modal-overlay" style="display:none;">
   <div class="modal-box" style="max-width:640px;">
@@ -383,9 +459,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261104b"></script>
-<script src="demo.js?v=20261104b"></script>
-<script src="common.js?v=20261104b"></script>
-<script src="bot.js?v=20261104b"></script>
+<script src="config.js?v=20261104c"></script>
+<script src="demo.js?v=20261104c"></script>
+<script src="common.js?v=20261104c"></script>
+<script src="assistant.js?v=20261104c"></script>
+<script src="bot.js?v=20261104c"></script>
+<script src="botstaff.js?v=20261104c"></script>
 </body>
 </html>

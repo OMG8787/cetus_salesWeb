@@ -7,7 +7,9 @@ AOI 業務系統的機器人伺服器，部署在 Vercel。設定、知識庫、
 | `/api/cs` | **客服機器人**的 LINE Webhook（對外官方帳號）：客人問產品、規格、公司資訊，機器人用知識庫回答；報價、訂購、客訴、找人 → 轉真人 |
 | `/widget.js` + `/api/widget/*` | **網站客服視窗**：貼一行 `<script>` 到任何網站，右下角出現客服視窗，跟 LINE 客服同一套知識庫與規則 |
 | `/api/test` | 網站「BOT 設定 → 測試聊天」用（用管理系統簽的權杖，不通知同仁、不留對話紀錄） |
-| `/api/line` | 員工助理的 LINE Webhook（選用） |
+| `/api/line` | **員工助理**的 LINE Webhook（員工專用官方帳號）：員工查客戶 / 案件 / 行程、記錄追蹤；修改要本人確認才寫入 |
+| `/api/web` | 網站右下角「智能助理」：只給管理系統（Apps Script）用 Bot 金鑰呼叫 |
+| `/api/push` | 每日早報：管理系統每小時檢查，到時間呼叫（header `x-bot-secret`） |
 
 ```
 LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
@@ -37,7 +39,7 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
    | `GAS_URL` | BOT 設定頁的「系統網址」（結尾 /exec） |
    | `BOT_SECRET` | BOT 設定頁產生的 Bot 金鑰 |
    | `CS_LINE_CHANNEL_SECRET`、`CS_LINE_CHANNEL_ACCESS_TOKEN` | 客服官方帳號的 Channel secret / access token（只用網站客服視窗可以先不填） |
-   | `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`（選填） | 員工助理官方帳號 |
+   | `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`（選填） | 員工助理官方帳號（跟客服的官方帳號分開建立；Webhook 填 `/api/line`）。只用網站智能助理可以不填 |
    | `SITE_URL`（選填） | 網站網址 |
    | `BOT_URL`（選填） | 機器人自己的網址；沒填就用 Vercel 正式網址，機器人會自動回報給 BOT 設定頁 |
 

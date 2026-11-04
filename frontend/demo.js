@@ -264,6 +264,95 @@ function demoBotApi(action, params, db) {
   return null;
 }
 
+// ---- 示範模式的員工助理（資料存在本機）----
+const DEMO_STAFF_CATS = ['稱呼與職務', '負責的工作', '工作習慣', '回覆偏好', '客戶與專案', '產品與規格', '公司規定', '其他'];
+const DEMO_BLOCKS = [
+  { key: 'products', label: '產品與詢價（產品搜尋、選型計算、報價系統）' },
+  { key: 'cases', label: '案件管理' },
+  { key: 'customers', label: '客戶與行事曆（客戶、聯絡人、聯繫紀錄）' },
+  { key: 'files', label: '檔案製作（評估報告、行銷宣傳）' },
+  { key: 'copy', label: '文案製作' },
+  { key: 'bot', label: 'BOT 設定（客服機器人、員工助理）' },
+];
+
+function demoStaffState(db) {
+  const b = demoBotState(db);
+  if (!b.staff) {
+    b.staff = {
+      config: { enabled: false, welcome: '', pendingText: '', prompt: '', webEnabled: true, push: { enabled: false, hour: 8, last: '' }, memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, auto: false, autoEvery: 6 } },
+      members: [
+        { LineUserId: 'U' + 'a'.repeat(32), DisplayName: '王小明', PictureUrl: '', Status: '待開通', Role: 'viewer', PermsObj: {}, LinkedUsername: '', LinkedName: '', Note: '', PushDaily: false, IsFollowing: true, FollowedAt: '2026-11-04 09:00:00', LastSeenAt: '2026-11-04 09:00:00', ApprovedBy: '' },
+        { LineUserId: 'U' + 'b'.repeat(32), DisplayName: '李小華', PictureUrl: '', Status: '已開通', Role: 'limited', PermsObj: { cases: 'edit', customers: 'view' }, LinkedUsername: 'a', LinkedName: 'A', Note: 'FAE', PushDaily: true, IsFollowing: true, FollowedAt: '2026-10-20 10:00:00', LastSeenAt: '2026-11-03 17:20:00', ApprovedBy: 'Admin' },
+      ],
+      memory: [{ id: 1, scope: 'all', owner: '', category: '公司規定', content: '公司上班時間是 9:00–18:00', importance: 5, updatedAt: '2026-11-01 10:00:00' }],
+    };
+  }
+  return b.staff;
+}
+
+function demoStaffApi(action, params, db) {
+  const st = demoStaffState(db);
+  const save = () => saveDemoDB(db);
+  const nowStr = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+  switch (action) {
+    case 'botGetStaff':
+      return {
+        success: true, config: st.config, members: st.members, accounts: (db.users || []).map((u) => ({ username: u.Username, name: u.DisplayName || u.Username })),
+        me: '0000', canLinkOthers: true, memory: st.memory, memoryCategories: DEMO_STAFF_CATS, blocks: DEMO_BLOCKS, writes: [],
+      };
+    case 'botSaveStaff': {
+      const c = params.config || {};
+      st.config = Object.assign({}, st.config, c, { push: Object.assign({}, st.config.push, c.push || {}), memory: Object.assign({}, st.config.memory, c.memory || {}) });
+      save();
+      return { success: true, config: st.config };
+    }
+    case 'botMemberSave': {
+      const m = st.members.find((x) => x.LineUserId === params.lineUserId);
+      if (!m) return { success: false, message: '找不到這位成員' };
+      if (params.role === 'limited' && !Object.keys(params.perms || {}).length) return { success: false, message: '「特定」至少要開放一個功能區塊' };
+      if (params.status !== undefined) m.Status = params.status;
+      if (params.role !== undefined) {
+        m.Role = params.role;
+        m.PermsObj = params.role === 'limited' ? params.perms : {};
+      }
+      if (params.linkedUsername !== undefined) m.LinkedUsername = params.linkedUsername;
+      if (params.pushDaily !== undefined) m.PushDaily = params.pushDaily;
+      if (params.note !== undefined) m.Note = params.note;
+      save();
+      return { success: true };
+    }
+    case 'botMemberRemove':
+      st.members = st.members.filter((x) => x.LineUserId !== params.lineUserId);
+      save();
+      return { success: true };
+    case 'botMemorySave': {
+      const d = params.data || {};
+      if (!String(d.content || '').trim()) return { success: false, message: '記憶內容不能空白' };
+      if (st.memory.some((m) => m.content === d.content && m.scope === d.scope)) return { success: true, result: { duplicate: true } };
+      st.memory.push({ id: st.memory.reduce((n, m) => Math.max(n, m.id), 0) + 1, scope: d.scope === 'all' ? 'all' : 'user', owner: '0000', category: d.category || '其他', content: d.content, importance: d.importance || 3, updatedAt: nowStr() });
+      save();
+      return { success: true, result: { id: 1 } };
+    }
+    case 'botMemoryDelete':
+      st.memory = st.memory.filter((m) => !(params.ids || []).includes(m.id));
+      save();
+      return { success: true, deleted: 1 };
+    case 'botPushNow':
+      return { success: false, message: '示範模式沒有機器人伺服器' };
+    case 'botAssistInfo':
+      return { success: true, enabled: st.config.enabled && st.config.webEnabled };
+    case 'botAssist': {
+      // 示範模式沒有 AI：只示範畫面流程（提出修改 → 確認）
+      if (params.reset) return { success: true, reply: '', choices: [], pending: null };
+      if (params.confirm === true) return { success: true, reply: '✅ 已寫入（1 項）\n📝 新增備忘錄：示範', choices: [], pending: null };
+      if (params.confirm === false) return { success: true, reply: '好的，已取消，沒有寫入任何資料。', choices: [], pending: null };
+      if (/記/.test(params.text || '')) return { success: true, reply: '已整理好，請確認：\n\n📝 等你確認後才會寫入：\n📝 新增備忘錄：示範', choices: [], pending: { token: 'demo123456', summary: '📝 新增備忘錄：示範' } };
+      return { success: true, reply: '（示範模式，沒有接 AI）你說：' + params.text, choices: ['今天要追蹤誰', '進行中案件'], pending: null };
+    }
+  }
+  return null;
+}
+
 function demoAdminAccess() {
   const blocks = {};
   ['products', 'cases', 'customers', 'files', 'copy', 'bot'].forEach((b) => (blocks[b] = 'edit'));
@@ -689,6 +778,17 @@ function handleDemoApi(action, params) {
     case 'botTestToken':
     case 'botClear':
       return demoBotApi(action, params, db);
+
+    case 'botGetStaff':
+    case 'botSaveStaff':
+    case 'botMemberSave':
+    case 'botMemberRemove':
+    case 'botMemorySave':
+    case 'botMemoryDelete':
+    case 'botPushNow':
+    case 'botAssistInfo':
+    case 'botAssist':
+      return demoStaffApi(action, params, db);
 
     case 'getUsers': {
       db.users = db.users || [];
