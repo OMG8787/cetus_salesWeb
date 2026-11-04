@@ -19,13 +19,24 @@
     return null;
   }
 
-  async function enabled() {
+  let info = { enabled: false, reason: '' };
+
+  /** 助理能不能用：沒啟用時浮窗還是會出現，並說明缺哪一步（快取 2 分鐘） */
+  async function loadInfo() {
     const cached = store(INFO_KEY);
-    if (cached && Date.now() - cached.at < 10 * 60000) return cached.enabled;
+    if (cached && Date.now() - cached.at < 2 * 60000) return cached.info;
     const r = await callApi('botAssistInfo', {}, { silent: true });
-    const on = !!(r && r.success && r.enabled);
-    store(INFO_KEY, { at: Date.now(), enabled: on });
-    return on;
+    let result;
+    if (r && r.success) result = { enabled: !!r.enabled, reason: r.reason || '' };
+    else result = { enabled: false, reason: '管理系統還沒有安裝員工助理（Apps Script 要貼上最新的 Code.gs、Bot.gs、BotStaff.gs，執行 setup 並重新部署）' };
+    store(INFO_KEY, { at: Date.now(), info: result });
+    return result;
+  }
+
+  function offMessage() {
+    const where = typeof canWrite === 'function' && canWrite('bot') ? '到「BOT 設定 → 員工助理」完成設定' : '請洽管理員到「BOT 設定 → 員工助理」完成設定';
+    return `🤖 智能助理目前還不能使用：${info.reason}。
+${where}後，這裡就可以用聊天查客戶、案件、行程，或記錄追蹤。`;
   }
 
   function esc(t) {
@@ -63,6 +74,10 @@
   async function send(text) {
     text = String(text || '').trim();
     if (!text || busy) return;
+    if (!info.enabled) {
+      log.push({ role: 'bot', text: offMessage() });
+      return render();
+    }
     log.push({ role: 'user', text });
     box.querySelector('.as-input').value = '';
     const r = await call({ text });
@@ -93,6 +108,7 @@
   }
 
   function build() {
+    if (box) return;
     box = document.createElement('div');
     box.className = 'as-dock';
     box.innerHTML = `<button type="button" class="as-fab" title="智能助理">🤖</button>
@@ -104,10 +120,18 @@
       </div>`;
     document.body.appendChild(box);
     const panel = box.querySelector('.as-panel');
-    box.querySelector('.as-fab').addEventListener('click', () => {
+    box.querySelector('.as-fab').addEventListener('click', async () => {
       panel.style.display = panel.style.display === 'none' ? '' : 'none';
       if (panel.style.display !== 'none') {
-        if (!log.length) log.push({ role: 'bot', text: '您好，我是你的員工助理 😊 想查客戶、案件、行程，或記錄追蹤，直接說就可以。' });
+        // 還沒啟用時，每次打開都重新確認一次（管理員剛設定好，不用重新整理頁面）
+        if (!info.enabled) {
+          store(INFO_KEY, null);
+          try {
+            info = await loadInfo();
+          } catch (e) {}
+          log = [];
+        }
+        if (!log.length) log.push({ role: 'bot', text: info.enabled ? '您好，我是你的員工助理 😊 想查客戶、案件、行程，或記錄追蹤，直接說就可以。' : offMessage() });
         render();
         box.querySelector('.as-input').focus();
       }
@@ -124,7 +148,10 @@
   window.addEventListener('load', async () => {
     if (typeof currentToken === 'undefined' || !currentToken) return;
     try {
-      if (await enabled()) build();
-    } catch (e) {}
+      info = await loadInfo();
+    } catch (e) {
+      info = { enabled: false, reason: '連不上管理系統' };
+    }
+    build();
   });
 })();

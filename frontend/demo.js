@@ -356,7 +356,7 @@ function demoStaffApi(action, params, db) {
     case 'botPushNow':
       return { success: false, message: '示範模式沒有機器人伺服器' };
     case 'botAssistInfo':
-      return { success: true, enabled: st.config.enabled && st.config.webEnabled };
+      return { success: true, enabled: st.config.enabled && st.config.webEnabled, reason: !st.config.enabled ? '員工助理還沒有啟用' : !st.config.webEnabled ? '網站智能助理沒有開放' : '' };
     case 'botAssist': {
       // 示範模式沒有 AI：只示範畫面流程（提出修改 → 確認）
       if (params.reset) return { success: true, reply: '', choices: [], pending: null };

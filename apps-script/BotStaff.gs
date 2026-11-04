@@ -960,7 +960,12 @@ function botPushTargets_() {
 // ------------------------------------------------------------
 function handleBotAssistInfo(body) {
   var cfg = botStaffCfg_();
-  return { success: true, enabled: cfg.enabled && cfg.webEnabled && !!botGeneral_().botUrl && !!botKey_('staff') };
+  var reason = '';
+  if (!cfg.enabled) reason = '員工助理還沒有啟用';
+  else if (!cfg.webEnabled) reason = '網站智能助理沒有開放';
+  else if (!botGeneral_().botUrl) reason = '機器人伺服器（Vercel）還沒有連線';
+  else if (!botKey_('staff')) reason = '還沒有產生員工助理金鑰';
+  return { success: true, enabled: !reason, reason: reason };
 }
 
 function handleBotAssist(body) {
