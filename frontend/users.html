@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>帳號管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261029a" />
+<link rel="stylesheet" href="style.css?v=20261104a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -24,24 +24,24 @@
   <div class="nav-group">
     <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
     <div class="nav-dropdown">
-      <button class="tab-btn" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
-      <button class="tab-btn" onclick="location.href='calc.html'">選型計算</button>
-      <button class="tab-btn" onclick="location.href='quote.html'">報價系統</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='quote.html'">報價系統</button>
     </div>
   </div>
   <div class="nav-group">
     <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
     <div class="nav-dropdown">
-      <button class="tab-btn" onclick="location.href='cases.html'">案件管理</button>
-      <button class="tab-btn" onclick="location.href='customers.html'">客戶管理</button>
-      <button class="tab-btn" onclick="location.href='schedule.html'">業務行事曆</button>
+      <button class="tab-btn" data-block="cases" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" data-block="customers" onclick="location.href='customers.html'">客戶管理</button>
+      <button class="tab-btn" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
     </div>
   </div>
   <div class="nav-group">
     <button class="nav-group-btn" onclick="location.href='evalreport.html'">檔案製作 ▾</button>
     <div class="nav-dropdown">
-      <button class="tab-btn" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
-      <button class="tab-btn" onclick="location.href='marketing.html'">行銷宣傳製作</button>
+      <button class="tab-btn" data-block="files" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
+      <button class="tab-btn" data-block="files" onclick="location.href='marketing.html'">行銷宣傳製作</button>
     </div>
   </div>
   <div class="nav-group active-group">
@@ -57,20 +57,30 @@
 <section class="tab-content">
   <h2>帳號管理</h2>
   <p class="calc-hint">
-    管理登入系統用的帳號與角色：<strong>admin</strong>（管理員，全部功能）／<strong>sales</strong>（業務，不能管理帳號/人員/裝置，但可以刪除客戶/案件等資料）／
-    <strong>fae</strong>（工程，不能刪除資料、不能管理帳號/人員/裝置）。只有 <strong>admin</strong> 能看到這頁。
-    密碼只會顯示「這一次」（新增或重設時），系統不會存明文密碼，請截圖或抄下來交給當事人。
+    管理登入系統用的帳號與角色（只有系統管理員看得到這頁）。密碼只會顯示「這一次」（新增或重設時），系統不會存明文密碼，請截圖或抄下來交給當事人。
   </p>
+  <div class="panel u-roles">
+    <b>四種角色</b>
+    <ul class="u-role-list">
+      <li><b>系統管理員</b>：全部功能，<b>可以刪除</b>，管理帳號與系統設定（至少要保留一位，也不能把自己降級）。</li>
+      <li><b>編輯者</b>：全部業務功能可以新增、修改；<b>不能刪除</b>、不能管理帳號。</li>
+      <li><b>查看</b>：全部業務功能唯讀，不能新增、修改、刪除。</li>
+      <li><b>特定</b>：只開放勾選的功能區塊，每個區塊各自選「查看」或「編輯」；不能刪除。</li>
+    </ul>
+    <div class="calc-hint">刪除只有系統管理員，而且是伺服器端檢查：就算用編輯者帳號直接送出刪除請求也會被拒絕。改角色、改權限在對方<b>下一次操作</b>就生效。</div>
+  </div>
+  <div id="u-legacy" class="panel" style="display:none;background:#fff9e8;border-color:#f1c40f;">
+    <b>還有 <span id="u-legacy-count">0</span> 個舊角色帳號（業務 sales / 工程 fae）</b>
+    <div class="calc-hint" style="margin:6px 0;">舊角色目前維持原本的權限（業務可以刪除客戶、案件、產品…，工程不行），也不能使用「BOT 設定」與「文案製作」。按下「遷移舊角色」後<b>全部變成編輯者</b>：可新增修改、但<b>不能刪除</b>（原本業務的刪除權限會沒有）。要個別調整也可以直接在下面列表改每個帳號的角色。</div>
+    <button onclick="migrateRoles()">遷移舊角色 → 編輯者</button>
+  </div>
 
   <h3>新增帳號</h3>
   <div id="user-add-panel">
     <input id="user-username" placeholder="帳號（必填，之後不能改）" />
     <input id="user-displayname" placeholder="顯示名稱" />
-    <select id="user-role">
-      <option value="sales">sales（業務）</option>
-      <option value="fae">fae（工程/FAE）</option>
-      <option value="admin">admin（管理員）</option>
-    </select>
+    <select id="user-role" onchange="onNewRoleChange()"></select>
+    <div id="user-perms-box" style="display:none;"></div>
     <input id="user-password" placeholder="密碼（留空自動產生亂數密碼）" />
     <button onclick="addUser()">新增</button>
   </div>
@@ -80,9 +90,19 @@
   <button onclick="loadUsers()">重新整理</button>
   <div id="users-message" class="calc-hint"></div>
   <table id="users-table" style="display:none;">
-    <thead><tr><th>帳號</th><th>顯示名稱</th><th>角色</th><th>操作</th></tr></thead>
+    <thead><tr><th>帳號</th><th>顯示名稱</th><th>角色</th><th>功能權限</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
+
+  <div id="perm-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header"><h3 style="margin:0;">功能權限：<span id="perm-modal-user"></span></h3><button type="button" onclick="closePermModal()">關閉</button></div>
+      <div class="calc-hint" style="margin-bottom:8px;">「特定」角色只開放勾選的功能，每項各自選「查看」或「編輯」（不能刪除）。</div>
+      <div id="perm-modal-box"></div>
+      <div style="margin-top:12px;"><button type="button" onclick="savePermModal()">儲存</button></div>
+    </div>
+  </div>
+
   <details id="db-admin" class="panel" style="margin-top:24px;">
     <summary style="cursor:pointer;font-weight:bold;font-size:16px;">🗄️ 資料庫管理（容量 / 釋放空白儲存格）</summary>
     <div class="calc-hint" style="margin:8px 0;">
@@ -104,10 +124,10 @@
   </details>
 </section>
 
-<script src="config.js?v=20261029a"></script>
-<script src="demo.js?v=20261029a"></script>
-<script src="common.js?v=20261029a"></script>
-<script src="users.js?v=20261029a"></script>
-<script src="dbadmin.js?v=20261029a"></script>
+<script src="config.js?v=20261104a"></script>
+<script src="demo.js?v=20261104a"></script>
+<script src="common.js?v=20261104a"></script>
+<script src="users.js?v=20261104a"></script>
+<script src="dbadmin.js?v=20261104a"></script>
 </body>
 </html>

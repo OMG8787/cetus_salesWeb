@@ -48,7 +48,8 @@
  *                    （CreatedAt = 記錄時間 yyyy-MM-dd HH:mm；Changes = 這次改了哪些客戶資料 / 追蹤日，一行一項。
  *                    Method 為「資料修改」「改期」的是系統自動記下的修改紀錄，不是實際聯繫，工作日報會略過）
  *                    （CaseID 選填，標記這筆聯繫是針對哪個案件/專案，同客戶有多案件時用來分開查）
- *   Users         - Username, PasswordHash, Role, DisplayName, Phone, Email, Birthday（個人資料可由本人在「個人資料」頁修改）
+ *   Users         - Username, PasswordHash, Role, DisplayName, Phone, Email, Birthday, Perms（個人資料可由本人在「個人資料」頁修改；
+ *                    Role = admin 系統管理員 / editor 編輯者 / viewer 查看 / limited 特定（Perms = 各功能區塊的 view / edit JSON）；舊角色 sales / fae 可一鍵遷移）
  *   LoginLogs     - LoginTime, Username, DisplayName, Result, DeviceId, DeviceLabel, LastActive, EndTime, EndReason（登入歷程）
  *                    （Role 決定權限，見 PERMISSIONS：admin 可以做任何事／sales 業務／fae 工程）
  *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
@@ -158,6 +159,7 @@ var ROUTES = {
   updateUser:              { auth: true, fn: handleUpdateUser },
   deleteUser:              { auth: true, fn: handleDeleteUser },
   resetUserPassword:       { auth: true, fn: handleResetUserPassword },
+  migrateRoles:            { auth: true, fn: handleMigrateRoles },
 
   // 個人化：常用型號 / 首頁常用網站 / 備忘錄 / 行事曆行程
   getFavorites:            { auth: true, fn: handleGetFavorites },
@@ -203,7 +205,7 @@ function doPost(e) {
   var result;
   try {
     var body = JSON.parse(e.postData.contents);
-    var route = ROUTES[body.action];
+    var route = getRoute_(body.action);
 
     if (!route) {
       result = { success: false, message: '未知的操作: ' + body.action };
@@ -248,12 +250,10 @@ SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFoll
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID', 'CreatedAt', 'Changes'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
-SCHEMA[SHEET_USERS] = ['Username', 'PasswordHash', 'Role', 'DisplayName', 'Phone', 'Email', 'Birthday'];
+SCHEMA[SHEET_USERS] = ['Username', 'PasswordHash', 'Role', 'DisplayName', 'Phone', 'Email', 'Birthday', 'Perms'];
 SCHEMA[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DisplayName', 'Result', 'DeviceId', 'DeviceLabel', 'LastActive', 'EndTime', 'EndReason'];
 /** 公司分類固定選項（客戶管理頁下拉選單用，"AOI同業資料" 目前沒有既有資料，先開放選項給之後手動建立）。 */
 var CUSTOMER_CATEGORIES = ['AOI同業資料', '器材原廠', '機構合作設備商', '一般客戶'];
-/** 帳號角色：admin(管理員，全部功能) / sales(業務) / fae(工程/FAE)。 */
-var ROLES = ['admin', 'sales', 'fae'];
 SCHEMA[SHEET_CONFIG] = ['Key', 'Value'];
 SCHEMA[SHEET_SOFTWARE] = ['Name'];
 SCHEMA[SHEET_FAVORITES] = ['Username', 'InternalModel'];
@@ -290,56 +290,175 @@ var CONFIG_KEYS = [
 
 var WARM_TRIGGER_MINUTES = 10;
 
-/**
- * 權限矩陣：action(=ROUTES的key) -> 允許操作的角色陣列。
- * 沒有在這裡列出的動作 = 只要有登入(任何角色)就能用，避免漏列導致功能被意外鎖住。
- * 只把「刪除/管理帳號裝置/管理人員清單」這類明確該限制的動作列進來。
- * 之後要調整某個功能給誰用，改這裡就好，不用改 doPost。
- */
-var PERMISSIONS = {};
-PERMISSIONS['getUsers'] = ['admin'];
-PERMISSIONS['addUser'] = ['admin'];
-PERMISSIONS['updateUser'] = ['admin'];
-PERMISSIONS['deleteUser'] = ['admin'];
-PERMISSIONS['resetUserPassword'] = ['admin'];
-PERMISSIONS['dbStatus'] = ['admin'];
-PERMISSIONS['dbTrim'] = ['admin'];
-PERMISSIONS['getLoginOverview'] = ['admin'];
-PERMISSIONS['getLoginLogs'] = ['admin'];
-PERMISSIONS['forceLogout'] = ['admin'];
-PERMISSIONS['clearLoginLogs'] = ['admin'];
-PERMISSIONS['setLoginKeep'] = ['admin'];
-PERMISSIONS['addStaff'] = ['admin'];
-PERMISSIONS['updateStaff'] = ['admin'];
-PERMISSIONS['deleteStaff'] = ['admin'];
-PERMISSIONS['deleteProduct'] = ['admin', 'sales'];
-PERMISSIONS['deleteProducts'] = ['admin', 'sales'];
-PERMISSIONS['deleteSoftware'] = ['admin'];
-PERMISSIONS['importCatalogProducts'] = ['admin', 'sales'];
-PERMISSIONS['importDehongProducts'] = ['admin', 'sales'];
-PERMISSIONS['dedupeData'] = ['admin'];
-PERMISSIONS['importFlirProducts'] = ['admin', 'sales'];
-PERMISSIONS['importBaslerProducts'] = ['admin', 'sales'];
-PERMISSIONS['importMindvisionProducts'] = ['admin', 'sales'];
-PERMISSIONS['importMyutronProducts'] = ['admin', 'sales'];
-PERMISSIONS['syncCalcCatalog'] = ['admin', 'sales'];
-PERMISSIONS['deleteCustomer'] = ['admin', 'sales'];
-PERMISSIONS['deleteCase'] = ['admin', 'sales'];
-PERMISSIONS['renameCase'] = ['admin', 'sales'];
-PERMISSIONS['deletePriceRecord'] = ['admin', 'sales'];
-PERMISSIONS['deleteContactLog'] = ['admin', 'sales'];
-PERMISSIONS['deleteCustomerContact'] = ['admin', 'sales'];
-PERMISSIONS['deleteCaseAttachment'] = ['admin', 'sales'];
+// ------------------------------------------------------------
+// 權限：四種角色 + 功能區塊
+//   admin   系統管理員：全部功能，可刪除，管理帳號與系統設定（至少保留一位）
+//   editor  編輯者：全部業務功能可新增 / 修改，不能刪除、不能管理帳號
+//   viewer  查看：全部業務功能唯讀
+//   limited 特定：只開放被勾選的功能區塊，每個區塊各自選「查看」或「編輯」，不能刪除
+//   sales / fae  舊角色（還沒執行「遷移舊角色」前維持原本的權限；sales 可刪除客戶 / 案件 / 產品等，fae 不行；不能用 BOT 設定與文案製作）
+// 每個後端動作都在 ACTION_PERM 登記「屬於哪個功能區塊、需要什麼等級」，伺服器端一律檢查，不能只靠畫面隱藏按鈕。
+// ------------------------------------------------------------
+var ROLES = ['admin', 'editor', 'viewer', 'limited'];
+var ROLE_LABELS = { admin: '系統管理員', editor: '編輯者', viewer: '查看', limited: '特定', sales: '業務（舊角色）', fae: '工程（舊角色）' };
+/** 「特定」角色可以個別開放的功能區塊。 */
+var PERM_BLOCKS = [
+  { key: 'products', label: '產品與詢價（產品搜尋、選型計算、報價系統）' },
+  { key: 'cases', label: '案件管理' },
+  { key: 'customers', label: '客戶與行事曆（客戶、聯絡人、聯繫紀錄）' },
+  { key: 'files', label: '檔案製作（評估報告、行銷宣傳）' },
+  { key: 'copy', label: '文案製作' },
+  { key: 'bot', label: 'BOT 設定（客服機器人、員工助理）' },
+];
+var PERM_LEVELS = ['view', 'edit'];
 
-/** 檢查目前使用者能不能做這個動作：即時查 Users 分頁目前的 Role（不是登入當下快取的），改權限馬上生效。 */
+/**
+ * action → [區塊, 等級]。等級：r 查看 / w 新增修改 / d 刪除（只有系統管理員）。
+ * 區塊：'*' = 任何登入帳號（個人資料、常用型號…）；'admin' = 只有系統管理員。
+ * 沒登記的動作一律當成「只有系統管理員」，避免漏列變成大家都能用。
+ * 新模組（Bot.gs、Copy.gs）的動作在它們自己的 botPerms_() / copyPerms_() 登記。
+ */
+var ACTION_PERM = {
+  // 個人
+  logoutDevice: ['*', 'r'], getProfile: ['*', 'r'], updateProfile: ['*', 'w'], changePassword: ['*', 'w'],
+  getFavorites: ['*', 'r'], toggleFavorite: ['*', 'w'], getShortcuts: ['*', 'r'], saveShortcuts: ['*', 'w'],
+  getMemos: ['*', 'r'], addMemo: ['*', 'w'], updateMemo: ['*', 'w'], deleteMemo: ['*', 'w'],
+  getCalendarEvents: ['*', 'r'], getStaff: ['*', 'r'], getSoftware: ['*', 'r'],
+  // 只有系統管理員
+  getUsers: ['admin', 'r'], addUser: ['admin', 'w'], updateUser: ['admin', 'w'], deleteUser: ['admin', 'd'], resetUserPassword: ['admin', 'w'], migrateRoles: ['admin', 'w'],
+  getLoginOverview: ['admin', 'r'], getLoginLogs: ['admin', 'r'], forceLogout: ['admin', 'w'], clearLoginLogs: ['admin', 'd'], setLoginKeep: ['admin', 'w'],
+  addStaff: ['admin', 'w'], updateStaff: ['admin', 'w'], deleteStaff: ['admin', 'd'], deleteSoftware: ['admin', 'd'],
+  dbStatus: ['admin', 'r'], dbTrim: ['admin', 'w'], dedupeData: ['admin', 'w'],
+  // 產品與詢價
+  searchProducts: ['products', 'r'], getProduct: ['products', 'r'], getCalcCatalog: ['products', 'r'], getPriceHistory: ['products', 'r'], generateQuoteDoc: ['products', 'r'],
+  addProduct: ['products', 'w'], updateProduct: ['products', 'w'], deleteProduct: ['products', 'd'], deleteProducts: ['products', 'd'],
+  importCatalogProducts: ['products', 'w'], importDehongProducts: ['products', 'w'], importFlirProducts: ['products', 'w'], importBaslerProducts: ['products', 'w'],
+  importMindvisionProducts: ['products', 'w'], importMyutronProducts: ['products', 'w'], syncCalcCatalog: ['products', 'w'],
+  addPriceRecord: ['products', 'w'], updatePriceRecord: ['products', 'w'], deletePriceRecord: ['products', 'd'],
+  generateInquiryDraft: ['products', 'w'], createGmailDraft: ['products', 'w'],
+  // 案件
+  getCases: ['cases', 'r'], getCase: ['cases', 'r'], getCasesPageData: ['cases', 'r'], getCaseImages: ['cases', 'r'], generateRequirementDoc: ['cases', 'r'],
+  createCase: ['cases', 'w'], updateCase: ['cases', 'w'], renameCase: ['cases', 'w'], uploadCaseAttachment: ['cases', 'w'], addSoftware: ['cases', 'w'], generateEvaluationDoc: ['cases', 'w'],
+  deleteCase: ['cases', 'd'], deleteCaseAttachment: ['cases', 'd'],
+  // 客戶與行事曆
+  getCustomers: ['customers', 'r'], getCustomerContacts: ['customers', 'r'], getContactLogs: ['customers', 'r'],
+  addCustomer: ['customers', 'w'], updateCustomer: ['customers', 'w'], saveFollowUp: ['customers', 'w'], addCustomerContact: ['customers', 'w'], updateCustomerContact: ['customers', 'w'],
+  addContactLog: ['customers', 'w'], updateContactLog: ['customers', 'w'],
+  deleteCustomer: ['customers', 'd'], deleteCustomerContact: ['customers', 'd'], deleteContactLog: ['customers', 'd'],
+};
+
+/** 舊版「只有這些角色能做」的限制（舊角色 sales / fae 還沒遷移前沿用，行為跟以前一模一樣）。 */
+var LEGACY_PERMISSIONS = {
+  deleteProduct: ['sales'], deleteProducts: ['sales'], importCatalogProducts: ['sales'], importDehongProducts: ['sales'], importFlirProducts: ['sales'],
+  importBaslerProducts: ['sales'], importMindvisionProducts: ['sales'], importMyutronProducts: ['sales'], syncCalcCatalog: ['sales'],
+  deleteCustomer: ['sales'], deleteCase: ['sales'], renameCase: ['sales'], deletePriceRecord: ['sales'], deleteContactLog: ['sales'],
+  deleteCustomerContact: ['sales'], deleteCaseAttachment: ['sales'],
+};
+
+/** 某個動作要的權限；核心表找不到再問新模組。找不到回傳 null。 */
+function permFor_(action) {
+  if (ACTION_PERM[action]) return ACTION_PERM[action];
+  try {
+    if (typeof botPerms_ === 'function') {
+      var t1 = botPerms_();
+      if (t1 && t1[action]) return t1[action];
+    }
+    if (typeof copyPerms_ === 'function') {
+      var t2 = copyPerms_();
+      if (t2 && t2[action]) return t2[action];
+    }
+  } catch (e) {
+    // 模組出錯不影響其他動作的權限判斷
+  }
+  return null;
+}
+
+/** 這個帳號各功能區塊的等級：{ products: 'edit'|'view'|'none', ... }，以及能不能刪除。給畫面隱藏選單 / 按鈕用（真正的檢查在伺服器）。 */
+function accessOf_(dbUser) {
+  var role = (dbUser && dbUser['Role']) || '';
+  var blocks = {};
+  var canDelete = false;
+  PERM_BLOCKS.forEach(function (b) {
+    var lv = 'none';
+    if (role === 'admin' || role === 'editor') lv = 'edit';
+    else if (role === 'viewer') lv = 'view';
+    else if (role === 'limited') {
+      var p = parsePerms_(dbUser['Perms']);
+      lv = p[b.key] === 'edit' ? 'edit' : p[b.key] === 'view' ? 'view' : 'none';
+    } else if (role === 'sales' || role === 'fae') {
+      lv = b.key === 'bot' || b.key === 'copy' ? 'none' : 'edit';
+    }
+    blocks[b.key] = lv;
+  });
+  if (role === 'admin' || role === 'sales') canDelete = true; // 舊角色 sales 沿用原本的刪除權限
+  return { role: role, roleLabel: ROLE_LABELS[role] || role, blocks: blocks, canDelete: canDelete, isAdmin: role === 'admin' };
+}
+
+function parsePerms_(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  try {
+    var o = JSON.parse(String(raw));
+    return o && typeof o === 'object' ? o : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+/** 檢查目前使用者能不能做這個動作：即時查 Users 分頁目前的角色與權限（不是登入當下快取的），改權限、改角色下一次操作就生效。 */
 function requirePermission_(action, user) {
-  var allowedRoles = PERMISSIONS[action];
-  if (!allowedRoles) return; // 沒特別限制 = 任何已登入帳號都能用
   var dbUser = findUserRow_(user.username);
   var role = (dbUser && dbUser['Role']) || '';
-  if (allowedRoles.indexOf(role) === -1) {
-    throw new Error('權限不足，「' + action + '」需要 ' + allowedRoles.join(' 或 ') + ' 身份才能操作');
+  if (!dbUser) throw new Error('帳號已不存在，請重新登入');
+  var perm = permFor_(action);
+  var denied = function (why) {
+    throw new Error('權限不足：' + (why || '你的角色（' + (ROLE_LABELS[role] || role || '未設定') + '）不能執行這個操作'));
+  };
+
+  if (role === 'admin') return;
+  if (!perm) return denied('這個動作只有系統管理員可以執行');
+  var block = perm[0];
+  var level = perm[1];
+  if (block === '*') return;
+  if (block === 'admin') return denied('只有系統管理員可以執行這個操作');
+
+  // 舊角色：維持原本的限制，新功能（BOT 設定、文案製作）不開放
+  if (role === 'sales' || role === 'fae') {
+    if (block === 'bot' || block === 'copy') return denied('舊角色不能使用這個功能，請系統管理員到「帳號管理」遷移成新角色');
+    var allowed = LEGACY_PERMISSIONS[action];
+    if (allowed && allowed.indexOf(role) === -1) return denied('需要 ' + allowed.join(' 或 ') + ' 身份才能操作');
+    return;
   }
+
+  if (level === 'd') return denied('刪除只有系統管理員可以執行');
+  if (role === 'editor') return;
+  if (role === 'viewer') {
+    if (level === 'r') return;
+    return denied('你的角色是「查看」，只能查看資料，不能新增或修改');
+  }
+  if (role === 'limited') {
+    var lv = parsePerms_(dbUser['Perms'])[block];
+    var label = (PERM_BLOCKS.filter(function (b) { return b.key === block; })[0] || {}).label || block;
+    if (lv === 'edit') return;
+    if (lv === 'view' && level === 'r') return;
+    if (lv === 'view') return denied('「' + label + '」你只有查看權限，不能新增或修改');
+    return denied('你沒有「' + label + '」的權限');
+  }
+  return denied();
+}
+
+/** 路由查詢：核心 ROUTES 找不到再問選用的新模組（Bot.gs / Copy.gs，沒貼上這些檔案就略過）。 */
+function getRoute_(action) {
+  if (ROUTES[action]) return ROUTES[action];
+  if (typeof botRoutes_ === 'function') {
+    var t1 = botRoutes_();
+    if (t1 && t1[action]) return t1[action];
+  }
+  if (typeof copyRoutes_ === 'function') {
+    var t2 = copyRoutes_();
+    if (t2 && t2[action]) return t2[action];
+  }
+  return null;
 }
 
 // ------------------------------------------------------------
@@ -971,7 +1090,7 @@ function handleLogin(body) {
 
   var displayName = user['DisplayName'] || username;
   var token = issueSessionToken_(username, displayName, body.deviceId);
-  var result = { success: true, token: token, username: username, displayName: displayName, role: user['Role'] || '' };
+  var result = { success: true, token: token, username: username, displayName: displayName, role: user['Role'] || '', access: accessOf_(user) };
 
   // 前端有傳裝置 ID 的話（「記住這台裝置」），額外發一組長效裝置權杖，讓下次自動登入不用再打密碼
   if (body.deviceId) {
@@ -1028,7 +1147,7 @@ function handleResumeSession(body) {
       var logRow = findOpenLogRow_(body.deviceId, username);
       if (logRow > -1) updateRowFields(SHEET_LOGIN_LOGS, logRow, { LastActive: nowStr() });
       var displayName = user['DisplayName'] || username;
-      return { success: true, token: issueSessionToken_(username, displayName, body.deviceId), username: username, displayName: displayName, role: user['Role'] || '' };
+      return { success: true, token: issueSessionToken_(username, displayName, body.deviceId), username: username, displayName: displayName, role: user['Role'] || '', access: accessOf_(user) };
     }
   }
   return { success: false, message: '這台裝置的登入紀錄已被移除，請重新輸入帳密登入' };
@@ -1246,7 +1365,7 @@ function handleSetLoginKeep(body) {
 function handleGetProfile(body) {
   var u = findUserRow_(body._user.username);
   if (!u) return { success: false, message: '帳號不存在' };
-  return { success: true, profile: { Username: u['Username'], DisplayName: u['DisplayName'] || u['Username'], Role: u['Role'], Phone: u['Phone'] || '', Email: u['Email'] || '', Birthday: u['Birthday'] || '' } };
+  return { success: true, profile: { Username: u['Username'], DisplayName: u['DisplayName'] || u['Username'], Role: u['Role'], RoleLabel: ROLE_LABELS[u['Role']] || u['Role'], Phone: u['Phone'] || '', Email: u['Email'] || '', Birthday: u['Birthday'] || '' }, access: accessOf_(u) };
 }
 
 function handleUpdateProfile(body) {
@@ -1284,23 +1403,42 @@ function stripPasswordHash_(row) {
   return copy;
 }
 
+/** 整理「特定」角色的權限：只留已知的功能區塊，值只能是 view / edit。 */
+function cleanPerms_(raw) {
+  var src = parsePerms_(raw);
+  var out = {};
+  PERM_BLOCKS.forEach(function (b) {
+    if (src[b.key] === 'view' || src[b.key] === 'edit') out[b.key] = src[b.key];
+  });
+  return out;
+}
+
 function handleGetUsers(body) {
   var data = sheetToObjects(SHEET_USERS);
   var users = data.rows.map(function (r, i) {
-    return stripPasswordHash_(Object.assign({ RowIndex: i + 2 }, r));
+    var u = stripPasswordHash_(Object.assign({ RowIndex: i + 2 }, r));
+    u.RoleLabel = ROLE_LABELS[u.Role] || u.Role;
+    u.PermsObj = cleanPerms_(u.Perms);
+    u.IsSelf = u.Username === body._user.username;
+    return u;
   });
-  return { success: true, users: users, roles: ROLES };
+  return { success: true, users: users, roles: ROLES, roleLabels: ROLE_LABELS, blocks: PERM_BLOCKS, legacyCount: users.filter(function (u) { return u.Role === 'sales' || u.Role === 'fae'; }).length };
 }
 
 function handleAddUser(body) {
   if (!body.username) return { success: false, message: '帳號為必填' };
   if (findUserRow_(body.username)) return { success: false, message: '此帳號已存在' };
+  var role = body.role || 'editor';
+  if (ROLES.indexOf(role) === -1) return { success: false, message: '角色不正確（要是 ' + ROLES.join(' / ') + '）' };
+  var perms = role === 'limited' ? cleanPerms_(body.perms) : {};
+  if (role === 'limited' && !Object.keys(perms).length) return { success: false, message: '「特定」角色至少要開放一個功能區塊（選「查看」或「編輯」）' };
   var password = body.password || randomPassword_(10);
   appendObjectRow(SHEET_USERS, {
     Username: body.username,
     PasswordHash: sha256(password),
-    Role: body.role || 'sales',
+    Role: role,
     DisplayName: body.displayName || body.username,
+    Perms: role === 'limited' ? JSON.stringify(perms) : '',
   });
   return { success: true, password: body.password ? undefined : password };
 }
@@ -1315,7 +1453,7 @@ function findUserRowIndex_(username) {
   return -1;
 }
 
-/** 修改角色/顯示名稱，不能改帳號本身(Username)，避免跟裝置/工作階段的對應關係亂掉。 */
+/** 修改角色/顯示名稱/權限，不能改帳號本身(Username)，避免跟裝置/工作階段的對應關係亂掉。 */
 function countAdmins_() {
   return sheetToObjects(SHEET_USERS).rows.filter(function (r) {
     return r['Role'] === 'admin';
@@ -1324,23 +1462,57 @@ function countAdmins_() {
 
 function handleUpdateUser(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
-  var fields = Object.assign({}, body.fields);
-  if (fields.Role !== undefined && fields.Role !== 'admin' && readRowAsObject(SHEET_USERS, body.rowIndex)['Role'] === 'admin' && countAdmins_() <= 1) {
-    return { success: false, message: '這是唯一的管理員，不能降級，請先指定另一位管理員' };
-  }
-  delete fields.Username;
-  delete fields.PasswordHash;
-  updateRowFields(SHEET_USERS, body.rowIndex, fields);
-  return { success: true };
+  return withLock_(function () {
+    var target = readRowAsObject(SHEET_USERS, body.rowIndex);
+    var fields = Object.assign({}, body.fields);
+    delete fields.Username;
+    delete fields.PasswordHash;
+    var isSelf = target['Username'] === body._user.username;
+    if (fields.Role !== undefined) {
+      if (ROLES.indexOf(fields.Role) === -1 && fields.Role !== target['Role']) return { success: false, message: '角色不正確（要是 ' + ROLES.join(' / ') + '）' };
+      if (fields.Role !== 'admin' && target['Role'] === 'admin') {
+        if (isSelf) return { success: false, message: '不能把自己降級，以免沒人能管理系統。請先指定另一位系統管理員，再由他來調整你的角色。' };
+        if (countAdmins_() <= 1) return { success: false, message: '這是唯一的系統管理員，不能降級，請先指定另一位系統管理員' };
+      }
+    }
+    var newRole = fields.Role !== undefined ? fields.Role : target['Role'];
+    if (fields.Perms !== undefined || fields.Role !== undefined) {
+      var perms = newRole === 'limited' ? cleanPerms_(fields.Perms !== undefined ? fields.Perms : target['Perms']) : {};
+      if (newRole === 'limited' && !Object.keys(perms).length) return { success: false, message: '「特定」角色至少要開放一個功能區塊（選「查看」或「編輯」）' };
+      fields.Perms = newRole === 'limited' ? JSON.stringify(perms) : '';
+    }
+    updateRowFields(SHEET_USERS, body.rowIndex, fields);
+    return { success: true };
+  });
 }
 
 function handleDeleteUser(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
   var sheet = getSheet(SHEET_USERS);
   if (sheet.getLastRow() - 1 <= 1) return { success: false, message: '至少要保留一個帳號，無法刪除' };
-  if (readRowAsObject(SHEET_USERS, body.rowIndex)['Role'] === 'admin' && countAdmins_() <= 1) return { success: false, message: '這是唯一的管理員，不能刪除' };
+  var target = readRowAsObject(SHEET_USERS, body.rowIndex);
+  if (target['Username'] === body._user.username) return { success: false, message: '不能刪除自己的帳號' };
+  if (target['Role'] === 'admin' && countAdmins_() <= 1) return { success: false, message: '這是唯一的系統管理員，不能刪除' };
   sheet.deleteRow(body.rowIndex);
   return { success: true };
+}
+
+/** 一次把舊角色遷移成新角色：業務 sales、工程 fae → 編輯者（可新增修改、不能刪除；sales 原本能刪除客戶 / 案件 / 產品等，遷移後不能）。 */
+function handleMigrateRoles(body) {
+  return withLock_(function () {
+    var sheet = getSheet(SHEET_USERS);
+    var data = sheet.getDataRange().getValues();
+    var col = data[0].indexOf('Role');
+    var changed = { sales: 0, fae: 0 };
+    for (var i = 1; i < data.length; i++) {
+      var r = String(data[i][col]);
+      if (r === 'sales' || r === 'fae') {
+        sheet.getRange(i + 1, col + 1).setValue('editor');
+        changed[r]++;
+      }
+    }
+    return { success: true, changed: changed };
+  });
 }
 
 function handleResetUserPassword(body) {

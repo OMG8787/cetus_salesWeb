@@ -14,6 +14,7 @@
 let currentToken = sessionStorage.getItem('token') || null;
 let currentUsername = sessionStorage.getItem('username') || null;
 let currentRole = sessionStorage.getItem('role') || null;
+let currentAccess = null; // 各功能區塊的權限（登入時伺服器回傳），見下方「權限」
 let loadingCount = 0;
 
 // ------------------------------------------------------------
@@ -55,6 +56,7 @@ function refreshSession() {
     currentRole = r.role || '';
     sessionStorage.setItem('token', currentToken);
     sessionStorage.setItem('role', currentRole);
+    storeAccess(r.access, currentRole);
     return true;
   })().finally(() => {
     setTimeout(() => (refreshPromise = null), 1000);
@@ -167,6 +169,16 @@ async function callApi(action, params, opts) {
  * 回傳 true 才可以繼續往下執行頁面自己的初始化，回傳 false 時該次呼叫的頁面應該直接 return。
  */
 async function ensureAuth() {
+  if (!(await ensureLoggedIn())) return false;
+  // 沒有這個功能的權限：顯示說明，頁面不再往下載入資料
+  if (document.body && document.body.dataset.block && blockLevel(document.body.dataset.block) === 'none') {
+    applyPagePermission();
+    return false;
+  }
+  return true;
+}
+
+async function ensureLoggedIn() {
   if (currentToken) return true;
 
   const deviceId = getCookie(DEVICE_ID_COOKIE);
@@ -180,6 +192,7 @@ async function ensureAuth() {
       sessionStorage.setItem('token', currentToken);
       sessionStorage.setItem('username', currentUsername);
       sessionStorage.setItem('role', currentRole);
+      storeAccess(result.access, currentRole);
       return true;
     }
     // 裝置權杖失效(通常是管理員移除了這台裝置)，清掉本機記住的資訊，回登入頁重打密碼
@@ -204,16 +217,120 @@ function renderHeaderUser() {
   }
 }
 
-/**
- * 把畫面上標了 class="admin-only" 的導覽列按鈕，非 admin 角色時隱藏起來（純 UI 層級的引導，
- * 真正的權限限制在後端 PERMISSIONS 已經擋好了，就算有人手動打開頁面或改網址也不會真的能操作）。
- */
+// ------------------------------------------------------------
+// 權限（四種角色：系統管理員 / 編輯者 / 查看 / 特定，細節見 Code.gs「權限」）
+// 這裡只負責「畫面引導」：隱藏沒權限的選單、刪除按鈕、顯示唯讀提示；真正的檢查在伺服器，直接送請求也會被擋。
+// ------------------------------------------------------------
+const ROLE_LABELS = { admin: '系統管理員', editor: '編輯者', viewer: '查看', limited: '特定', sales: '業務（舊角色）', fae: '工程（舊角色）' };
+const ACCESS_BLOCKS = ['products', 'cases', 'customers', 'files', 'copy', 'bot'];
+const BLOCK_LABELS = { products: '產品與詢價', cases: '案件管理', customers: '客戶與行事曆', files: '檔案製作', copy: '文案製作', bot: 'BOT 設定' };
+
+/** 沒有伺服器給的權限資料時（舊的登入階段），依角色推算。 */
+function accessFromRole(role) {
+  const blocks = {};
+  ACCESS_BLOCKS.forEach((b) => {
+    blocks[b] = role === 'admin' || role === 'editor' ? 'edit' : role === 'viewer' ? 'view' : role === 'sales' || role === 'fae' ? (b === 'bot' || b === 'copy' ? 'none' : 'edit') : 'none';
+  });
+  return { role, roleLabel: ROLE_LABELS[role] || role, blocks, canDelete: role === 'admin' || role === 'sales', isAdmin: role === 'admin' };
+}
+
+function storeAccess(access, role) {
+  currentAccess = access || accessFromRole(role || currentRole);
+  try {
+    sessionStorage.setItem('access', JSON.stringify(currentAccess));
+  } catch (e) {}
+}
+
+function getAccess() {
+  if (currentAccess) return currentAccess;
+  try {
+    currentAccess = JSON.parse(sessionStorage.getItem('access') || 'null');
+  } catch (e) {
+    currentAccess = null;
+  }
+  return currentAccess || accessFromRole(currentRole);
+}
+
+/** 這個區塊的等級：'none' / 'view' / 'edit'（可以傳多個區塊用空白分開，取最低的）。 */
+function blockLevel(blocks) {
+  const rank = { none: 0, view: 1, edit: 2 };
+  const a = getAccess();
+  let min = 'edit';
+  String(blocks || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .forEach((b) => {
+      const lv = a.blocks[b] || 'none';
+      if (rank[lv] < rank[min]) min = lv;
+    });
+  return min;
+}
+
+const canRead = (blocks) => blockLevel(blocks) !== 'none';
+const canWrite = (blocks) => blockLevel(blocks) === 'edit';
+const canDelete = () => !!getAccess().canDelete;
+const isAdminUser = () => !!getAccess().isAdmin;
+
+/** 帳號管理 / 人員管理等「只有系統管理員」的選單，以及沒權限的功能區塊選單。 */
 function applyAdminOnlyVisibility() {
-  if (currentRole === 'admin') return;
-  document.querySelectorAll('.admin-only').forEach((el) => {
-    el.style.display = 'none';
+  const a = getAccess();
+  if (!a.isAdmin) {
+    document.querySelectorAll('.admin-only').forEach((el) => {
+      el.style.display = 'none';
+    });
+  }
+  // 沒有權限的功能：選單按鈕（data-block）隱藏，整個群組都沒東西就連群組一起隱藏
+  document.querySelectorAll('nav [data-block]').forEach((el) => {
+    if (!canRead(el.dataset.block)) el.style.display = 'none';
+  });
+  document.querySelectorAll('nav .nav-group').forEach((g) => {
+    const items = [...g.querySelectorAll('.nav-dropdown .tab-btn')];
+    if (items.length && items.every((i) => i.style.display === 'none')) g.style.display = 'none';
+  });
+  applyPagePermission();
+}
+
+// 刪除按鈕：編輯者 / 查看 / 特定角色看不到（伺服器端也會擋）。只認「刪除後端資料」的按鈕，不影響編輯器裡的「刪除這個區塊」。
+const DELETE_ONCLICK = /\b(deleteCustomerRow|deleteCase|deleteProduct|deleteSelectedProducts|deleteContactLog|deleteCustomerContact|deleteAttachment|deletePriceRecord|deleteSoftwareName|deleteStaffRow|deleteBotItem|deleteCopyItem)\b/;
+
+function hideDeleteButtons(root) {
+  if (canDelete()) return;
+  (root || document).querySelectorAll('button[onclick]').forEach((b) => {
+    if (DELETE_ONCLICK.test(b.getAttribute('onclick') || '')) b.style.display = 'none';
   });
 }
+
+/** 頁面最上方提示：這頁只能查看；沒有權限的頁面直接請對方回首頁。 */
+function applyPagePermission() {
+  const block = document.body && document.body.dataset.block;
+  if (!block) return;
+  const level = blockLevel(block);
+  if (level === 'none') {
+    document.body.innerHTML = `<div style="max-width:520px;margin:15vh auto;padding:24px;background:#fff;border-radius:8px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.08);">
+      <h3 style="margin-top:0;">你沒有這個功能的權限</h3>
+      <p>你的角色是「${ROLE_LABELS[getAccess().role] || getAccess().role}」，沒有開放「${block.split(/\s+/).map((b) => BLOCK_LABELS[b] || b).join('、')}」。需要的話請系統管理員到「帳號管理」調整。</p>
+      <button onclick="location.href='home.html'" style="padding:8px 16px;background:#2c5aa0;color:#fff;border:none;border-radius:4px;cursor:pointer;">回首頁</button></div>`;
+    return;
+  }
+  if (level === 'view' && !document.getElementById('ro-banner')) {
+    const bar = document.createElement('div');
+    bar.id = 'ro-banner';
+    bar.style.cssText = 'background:#fff4e0;border-bottom:1px solid #f1c40f;color:#8a5300;padding:6px 24px;font-size:14px;';
+    bar.textContent = `你的角色是「${ROLE_LABELS[getAccess().role] || getAccess().role}」，這個功能只能查看，不能新增、修改或刪除。`;
+    const nav = document.querySelector('nav.tabs');
+    (nav || document.body.firstChild).insertAdjacentElement(nav ? 'afterend' : 'beforebegin', bar);
+  }
+}
+
+// 動態畫出來的按鈕（列表重畫）也要套用「隱藏刪除按鈕」
+document.addEventListener('DOMContentLoaded', () => {
+  hideDeleteButtons();
+  let timer = null;
+  new MutationObserver(() => {
+    clearTimeout(timer);
+    timer = setTimeout(() => hideDeleteButtons(), 30);
+  }).observe(document.body, { childList: true, subtree: true });
+});
 
 /** 登出：連同「記住這台裝置」的紀錄一起清掉，下次要重新輸入密碼。 */
 async function logout() {

@@ -134,6 +134,12 @@ function demoSaveCustomer(db, params) {
   return { success: true, customer: Object.assign({ RowIndex: idx }, cust), log, changes: lines, keptOldContact: keptOld };
 }
 
+function demoAdminAccess() {
+  const blocks = {};
+  ['products', 'cases', 'customers', 'files', 'copy', 'bot'].forEach((b) => (blocks[b] = 'edit'));
+  return { role: 'admin', roleLabel: '系統管理員', blocks, canDelete: true, isAdmin: true };
+}
+
 function handleDemoApi(action, params) {
   const db = loadDemoDB();
 
@@ -148,7 +154,7 @@ function handleDemoApi(action, params) {
           else db.devices.push({ DeviceId: params.deviceId, Username: '0000', DeviceLabel: params.deviceLabel || '', TokenHash: 'demo-device-token', CreatedDate: new Date().toISOString().slice(0, 10), LastSeenDate: new Date().toISOString().slice(0, 10) });
           saveDemoDB(db);
         }
-        return { success: true, token: 'demo-token', username: '0000', displayName: '0000（示範帳號）', role: 'admin', deviceToken: params.deviceId ? 'demo-device-token' : undefined };
+        return { success: true, token: 'demo-token', username: '0000', displayName: '0000（示範帳號）', role: 'admin', access: demoAdminAccess(), deviceToken: params.deviceId ? 'demo-device-token' : undefined };
       }
       return { success: false, message: '示範模式僅接受帳密 0000 / 0000' };
     }
@@ -538,7 +544,35 @@ function handleDemoApi(action, params) {
     // ---------------- 帳號管理（示範模式：0000 帳號視同 admin，其他帳號存在本機） ----------------
     case 'getUsers': {
       db.users = db.users || [];
-      return { success: true, users: db.users.map((u, i) => Object.assign({ RowIndex: i }, u)), roles: ['admin', 'sales', 'fae'] };
+      const labels = { admin: '系統管理員', editor: '編輯者', viewer: '查看', limited: '特定', sales: '業務（舊角色）', fae: '工程（舊角色）' };
+      const users = db.users.map((u, i) => Object.assign({ RowIndex: i, Perms: '', IsSelf: false, RoleLabel: labels[u.Role] || u.Role, PermsObj: u.Perms ? JSON.parse(u.Perms) : {} }, u));
+      return {
+        success: true,
+        users,
+        roles: ['admin', 'editor', 'viewer', 'limited'],
+        roleLabels: labels,
+        legacyCount: users.filter((u) => u.Role === 'sales' || u.Role === 'fae').length,
+        blocks: [
+          { key: 'products', label: '產品與詢價（產品搜尋、選型計算、報價系統）' },
+          { key: 'cases', label: '案件管理' },
+          { key: 'customers', label: '客戶與行事曆（客戶、聯絡人、聯繫紀錄）' },
+          { key: 'files', label: '檔案製作（評估報告、行銷宣傳）' },
+          { key: 'copy', label: '文案製作' },
+          { key: 'bot', label: 'BOT 設定（客服機器人、員工助理）' },
+        ],
+      };
+    }
+
+    case 'migrateRoles': {
+      const changed = { sales: 0, fae: 0 };
+      (db.users || []).forEach((u) => {
+        if (u.Role === 'sales' || u.Role === 'fae') {
+          changed[u.Role]++;
+          u.Role = 'editor';
+        }
+      });
+      saveDemoDB(db);
+      return { success: true, changed };
     }
 
     case 'addUser': {
@@ -546,7 +580,7 @@ function handleDemoApi(action, params) {
       if (!params.username) return { success: false, message: '帳號為必填' };
       if (db.users.some((u) => u.Username === params.username)) return { success: false, message: '此帳號已存在' };
       const password = params.password || Math.random().toString(36).slice(2, 10);
-      db.users.push({ Username: params.username, Role: params.role || 'sales', DisplayName: params.displayName || params.username });
+      db.users.push({ Username: params.username, Role: params.role || 'editor', DisplayName: params.displayName || params.username, Perms: params.role === 'limited' ? JSON.stringify(params.perms || {}) : '' });
       saveDemoDB(db);
       return { success: true, password: params.password ? undefined : password };
     }
@@ -554,7 +588,10 @@ function handleDemoApi(action, params) {
     case 'updateUser': {
       const u = (db.users || [])[params.rowIndex];
       if (!u) return { success: false, message: '查無此帳號' };
-      Object.assign(u, params.fields || {});
+      const f = Object.assign({}, params.fields || {});
+      if (f.Perms && typeof f.Perms === 'object') f.Perms = JSON.stringify(f.Perms);
+      if (f.Role && f.Role !== 'limited') f.Perms = '';
+      Object.assign(u, f);
       saveDemoDB(db);
       return { success: true };
     }

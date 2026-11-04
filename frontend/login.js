@@ -14,6 +14,7 @@ async function doLogin() {
       sessionStorage.setItem('token', result.token);
       sessionStorage.setItem('username', result.displayName || result.username);
       sessionStorage.setItem('role', result.role || '');
+      sessionStorage.setItem('access', JSON.stringify(result.access || accessFromRole(result.role)));
       // 記住這台裝置：下次打開網頁會自動用這組權杖換新的登入，不用再打密碼，除非管理員從「裝置管理」移除
       if (result.deviceToken) setCookie(DEVICE_TOKEN_COOKIE, result.deviceToken, DEVICE_YEARS);
       location.href = 'home.html';
@@ -37,6 +38,7 @@ async function tryAutoLogin() {
     sessionStorage.setItem('token', result.token);
     sessionStorage.setItem('username', result.displayName || result.username);
     sessionStorage.setItem('role', result.role || '');
+    sessionStorage.setItem('access', JSON.stringify(result.access || accessFromRole(result.role)));
     location.href = 'home.html';
     return true;
   }

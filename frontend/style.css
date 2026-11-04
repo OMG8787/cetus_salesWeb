@@ -487,3 +487,13 @@ header, .tabs { position: relative; z-index: 300; }
 .qd-row input[type="text"], .qd-row input:not([type]) { width: auto; flex: 1 1 200px; margin: 0; }
 .qd-blockbar { border-top: 1px dashed #ccd; padding-top: 6px; margin-bottom: 0; }
 #qd-frame { width: 190mm; max-width: none; min-height: 600px; border: 0; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.2); }
+
+/* ---- 帳號管理：角色與功能權限 ---- */
+.u-role-list { margin: 6px 0 6px 18px; padding: 0; font-size: 14px; line-height: 1.7; }
+.u-perms { border: 1px solid #dde5f0; border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: #fbfcfe; }
+.u-perm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 4px 0; border-top: 1px dashed #e3e8ef; font-size: 14px; }
+.u-perm-row:first-of-type { border-top: 0; }
+.u-perm-name { flex: 1 1 260px; }
+.tab-content .u-perm-opt { display: inline-flex; align-items: center; gap: 4px; margin: 0; white-space: nowrap; }
+.tab-content .u-perm-opt input { display: inline-block; width: auto; margin: 0; }
+.u-perm-sum { font-size: 13px; max-width: 360px; }
