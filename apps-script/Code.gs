@@ -5131,6 +5131,8 @@ function handleCalSaveEvent(body) {
       var owner = String(found.row['Owner']);
       if (owner !== me && !wsIsAdmin_(me)) return { success: false, message: '這是別人的行程，只有擁有者可以修改' };
       var fields = { Title: c.title, StartDate: c.startDate, StartTime: c.startTime, EndDate: c.endDate, EndTime: c.endTime, AllDay: c.allDay, Location: c.location, Notes: c.notes, UpdatedAt: now };
+      // 客戶追蹤提醒的標題 / 時間 / 內容由客戶資料自動同步，這裡只能改「誰看得到」
+      if (String(found.row['Source']) === 'followup') fields = { UpdatedAt: now };
       if (body.shareMode !== undefined) {
         var sh = wsCleanShare_(body.shareMode, body.shareWith, owner);
         fields.ShareMode = sh.mode;
@@ -5197,6 +5199,11 @@ function wsSyncFollowUp_(customer, oldName) {
     UpdatedAt: nowStr(),
   };
   if (hits.length) {
+    // 同一位負責人改期 / 改內容時，保留他已經設定的「誰看得到」；換了負責人就回到只有新負責人自己看得到
+    if (String(hits[0].row['Owner']) === WS_ACTOR_) {
+      delete f.ShareMode;
+      delete f.ShareWith;
+    }
     updateRowFields(SHEET_CAL, hits[0].rowIndex, f);
     hits.slice(1).sort(function (a, b) { return b.rowIndex - a.rowIndex; }).forEach(function (h) { getSheet(SHEET_CAL).deleteRow(h.rowIndex); });
     return;

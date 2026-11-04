@@ -441,7 +441,8 @@ async function openEventModal(id, date) {
   const ev = id ? calEvents.find((x) => x.id === id) : null;
   if (id && !ev) return;
   await ShareUI.mount('ev-share');
-  const editable = !ev || (ev.canEdit && ev.source !== 'followup');
+  const editable = !ev || (ev.canEdit && ev.source !== 'followup'); // 內容能不能改
+  const shareEditable = !ev || ev.canEdit; // 誰看得到：擁有者都能改（包含客戶追蹤提醒）
   document.getElementById('ev-heading').textContent = ev ? (editable ? '編輯行程' : '行程內容') : '新增行程';
   document.getElementById('ev-id').value = ev ? ev.id : '';
   document.getElementById('ev-title').value = ev ? ev.title : '';
@@ -455,13 +456,13 @@ async function openEventModal(id, date) {
   ShareUI.set('ev-share', ev ? ev.shareMode : 'self', ev ? ev.shareWith : []);
   evSyncAllDay();
   ['ev-title', 'ev-date', 'ev-enddate', 'ev-allday', 'ev-start', 'ev-end', 'ev-loc', 'ev-notes'].forEach((k) => (document.getElementById(k).disabled = !editable));
-  document.querySelector('#ev-share .share-mode').disabled = !editable;
-  document.getElementById('ev-share').style.display = ev && !ev.isMine && !editable ? 'none' : '';
-  document.getElementById('ev-save').style.display = editable ? '' : 'none';
+  document.querySelector('#ev-share .share-mode').disabled = !shareEditable;
+  document.getElementById('ev-share').style.display = ev && !ev.isMine ? 'none' : '';
+  document.getElementById('ev-save').style.display = shareEditable ? '' : 'none';
   document.getElementById('ev-del').style.display = ev && ev.canEdit ? '' : 'none';
   const ro = document.getElementById('ev-readonly');
   ro.style.display = editable ? 'none' : '';
-  ro.textContent = !ev ? '' : ev.source === 'followup' ? '這是客戶「下次追蹤」自動加的提醒；要改日期請在下面的清單按「改日」或「追蹤完畢」。' : `這是 ${ev.ownerName} 分享給你的行程，只能查看，不能修改。`;
+  ro.textContent = !ev ? '' : ev.source === 'followup' && ev.isMine ? '這是客戶「下次追蹤」自動加的提醒，預設只有你自己看得到；要讓別人也看得到，可以在上面選「誰看得到」。要改日期請在下面的清單按「改日」或「追蹤完畢」。' : ev.source === 'followup' ? `這是 ${ev.ownerName} 分享給你的客戶追蹤提醒，只能查看。` : `這是 ${ev.ownerName} 分享給你的行程，只能查看，不能修改。`;
   document.getElementById('event-modal').style.display = 'flex';
 }
 
