@@ -319,7 +319,8 @@ function botAiList_() {
 }
 
 /** 呼叫一個 AI（純文字，沒有工具）。messages：[{role:'user'|'assistant', text}]。失敗丟出錯誤。 */
-function botCallAi_(cfg, system, messages) {
+function botCallAi_(cfg, system, messages, opts) {
+  var maxTokens = (opts && opts.maxTokens) || 0;
   var msgs = [];
   (messages || []).forEach(function (m) {
     var last = msgs[msgs.length - 1];
@@ -333,12 +334,13 @@ function botCallAi_(cfg, system, messages) {
   if (cfg.provider === 'claude') {
     url = base + '/messages';
     headers = { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' };
-    payload = { model: cfg.model, max_tokens: 4096, system: system, messages: msgs.map(function (m) { return { role: m.role, content: m.text }; }) };
+    payload = { model: cfg.model, max_tokens: maxTokens || 4096, system: system, messages: msgs.map(function (m) { return { role: m.role, content: m.text }; }) };
     pick = function (b) { return (b.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join(''); };
   } else if (cfg.provider === 'openai') {
     url = base + '/chat/completions';
     headers = { Authorization: 'Bearer ' + cfg.apiKey };
     payload = { model: cfg.model, messages: [{ role: 'system', content: system }].concat(msgs.map(function (m) { return { role: m.role, content: m.text }; })) };
+    if (maxTokens) payload.max_tokens = maxTokens;
     pick = function (b) { return (((b.choices || [])[0] || {}).message || {}).content || ''; };
   } else {
     url = base + '/models/' + encodeURIComponent(cfg.model) + ':generateContent';
@@ -347,6 +349,7 @@ function botCallAi_(cfg, system, messages) {
       systemInstruction: { parts: [{ text: system }] },
       contents: msgs.map(function (m) { return { role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }; }),
     };
+    if (maxTokens) payload.generationConfig = { maxOutputTokens: maxTokens };
     pick = function (b) { return (((((b.candidates || [])[0] || {}).content || {}).parts) || []).filter(function (p) { return !p.thought; }).map(function (p) { return p.text || ''; }).join(''); };
   }
   var res;

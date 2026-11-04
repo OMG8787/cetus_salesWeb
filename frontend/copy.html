@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>文案製作 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css?v=20261104d" />
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
+<link rel="apple-touch-icon" href="img/icon-192.png" />
+</head>
+<body data-block="copy">
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs tabs-grouped">
+  <button class="tab-btn nav-single" onclick="location.href='home.html'">首頁</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="products" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="cases" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" data-block="customers" onclick="location.href='customers.html'">客戶管理</button>
+      <button class="tab-btn" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
+    </div>
+  </div>
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='evalreport.html'">檔案製作 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="files" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
+      <button class="tab-btn" data-block="files" onclick="location.href='marketing.html'">行銷宣傳製作</button>
+      <button class="tab-btn active" data-block="copy" onclick="location.href='copy.html'">文案製作</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" data-block="bot" onclick="location.href='bot.html'">BOT 設定 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="bot" onclick="location.href='bot.html'">客服機器人</button>
+      <button class="tab-btn" data-block="bot" onclick="location.href='bot.html#staff'">員工助理</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">登入紀錄</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
+</nav>
+
+<section class="tab-content bot-page">
+  <div class="calc-toolbar">
+    <h2 style="margin:0;">✍️ 文案製作</h2>
+    <span class="calc-hint">選平台與主題 → 確認提示詞 → AI 產生版本 → 套用、改寫、儲存；人設／風格／結尾放在素材庫，並可讓 AI 學你喜歡的風格。</span>
+  </div>
+  <div id="cp-ro" class="calc-hint" style="display:none;margin:6px 0;color:#8a5300;">你目前只有「查看」權限：可以看文案、素材並複製內文，不能產生或儲存。</div>
+  <div id="cp-msg" class="calc-hint" style="min-height:18px;"></div>
+
+  <div class="bot-tabs" id="cp-tabs">
+    <button type="button" class="bot-tab active" data-tab="edit">✍️ 文案編輯</button>
+    <button type="button" class="bot-tab" data-tab="list">📄 我的文案</button>
+    <button type="button" class="bot-tab" data-tab="lib">🎨 素材庫</button>
+    <button type="button" class="bot-tab" data-tab="ai">🧠 AI 模型</button>
+  </div>
+
+  <!-- ===================== 文案編輯 ===================== -->
+  <div class="bot-panel" data-panel="edit">
+    <div class="panel">
+      <div class="bot-row"><h3 style="margin:0;" id="cp-title">新文案</h3><span id="cp-liked" class="bot-badge" style="display:none;">💖 已喜愛</span>
+        <button type="button" class="btn-mini cp-write" onclick="newPost()">＋ 新文案</button></div>
+
+      <label>發佈平台</label>
+      <div id="cp-plats" class="cp-plats"></div>
+
+      <label>主題（想寫什麼）</label>
+      <textarea id="cp-topic" rows="3" maxlength="2000" placeholder="例：自動對位點膠機如何縮短換線時間"></textarea>
+      <div class="bot-grid">
+        <div><label>目標關鍵字（選填）</label><input id="cp-keywords" maxlength="300" placeholder="例：AOI 檢測、點膠" /></div>
+        <div><label>語氣</label><input id="cp-tone" list="cp-tones" maxlength="40" /><datalist id="cp-tones"></datalist></div>
+      </div>
+
+      <details class="cp-det"><summary>行銷目標 <span id="cp-mk-count" class="calc-hint"></span></summary><div id="cp-marketing"></div></details>
+
+      <details class="cp-det"><summary>活動資訊（選填，會原樣寫進文案）</summary>
+        <div id="cp-schedule"></div>
+        <div class="bot-row"><button type="button" class="btn-mini cp-write" onclick="addScheduleRow()">＋ 增加日期</button></div>
+        <div class="bot-grid" id="cp-event-fields"></div>
+        <div class="bot-row"><button type="button" class="btn-mini cp-write" onclick="clearEvent()">清空活動資訊</button></div>
+      </details>
+
+      <details class="cp-det"><summary>本次帶入的素材（人設、風格、結尾）</summary><div id="cp-materials"></div></details>
+
+      <div class="bot-row"><button type="button" class="cp-write" id="cp-gen-btn" onclick="openGenerate()">✨ 確認設定並生成</button><span id="cp-busy" class="calc-hint"></span></div>
+
+      <div id="cp-pending" class="panel cp-pending" style="display:none;">
+        <h3 style="margin-top:0;" id="cp-pending-title"></h3>
+        <dl id="cp-pending-rows" class="cp-dl"></dl>
+        <label>最終送出的完整提示詞（可在此微調，只影響本次）</label>
+        <textarea id="cp-pending-prompt" rows="12" style="font-family:monospace;font-size:12px;"></textarea>
+        <div class="bot-row"><button type="button" class="btn-secondary" onclick="closePending()">返回修改</button><button type="button" onclick="runPending()">✓ 確認送出</button></div>
+      </div>
+
+      <div id="cp-variants" style="display:none;"></div>
+
+      <hr style="border:0;border-top:1px solid #dde5f0;margin:14px 0;" />
+      <div class="bot-row" style="justify-content:space-between;"><label style="margin:0;">內文</label><span id="cp-count" class="calc-hint"></span></div>
+      <textarea id="cp-content" rows="10" oninput="updateCount()"></textarea>
+      <div id="cp-longtitle" class="calc-hint"></div>
+
+      <div class="bot-row cp-write-row"><span class="calc-hint">快速改寫：</span><span id="cp-quick"></span>
+        <select id="cp-convert" style="width:auto;" class="cp-write" onchange="onConvert(this)"></select>
+        <button type="button" class="btn-mini" id="cp-undo" style="display:none;" onclick="undoContent()">↩ 復原</button></div>
+
+      <div class="bot-grid">
+        <div><label>狀態</label><select id="cp-status"></select></div>
+        <div><label>預計發佈日期</label><input type="date" id="cp-when" /></div>
+      </div>
+      <label>備註</label><input id="cp-note" maxlength="300" placeholder="例：週五早上 9 點發" />
+
+      <div class="bot-row">
+        <button type="button" class="cp-write" onclick="savePost()">💾 儲存</button>
+        <button type="button" class="btn-secondary cp-write" id="cp-like-btn" onclick="toggleLike()">🤍 我喜歡這篇（讓 AI 學習）</button>
+        <button type="button" class="btn-secondary" onclick="copyContent(false)">📋 複製文案</button>
+        <button type="button" class="btn-secondary" id="cp-open-btn" onclick="copyContent(true)">複製並開啟平台</button>
+        <button type="button" class="btn-secondary btn-danger" id="cp-del-btn" style="display:none;" onclick="deletePost(curId)">刪除這篇</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 我的文案 ===================== -->
+  <div class="bot-panel" data-panel="list" style="display:none;">
+    <div class="panel">
+      <div class="bot-row">
+        <input id="ls-keyword" placeholder="搜尋主題 / 內文 / 備註" oninput="renderList()" style="max-width:260px;" />
+        <select id="ls-status" onchange="renderList()" style="width:auto;"><option value="">全部狀態</option></select>
+        <select id="ls-platform" onchange="renderList()" style="width:auto;"><option value="">全部平台</option></select>
+        <label class="bot-check" style="margin:0;"><input type="checkbox" id="ls-liked" onchange="renderList()" /> 只看喜愛的</label>
+        <span id="ls-count" class="calc-hint"></span>
+      </div>
+      <div id="ls-table"></div>
+    </div>
+  </div>
+
+  <!-- ===================== 素材庫 ===================== -->
+  <div class="bot-panel" data-panel="lib" style="display:none;">
+    <div class="panel">
+      <h3 style="margin-top:0;">🤖 AI 學習風格</h3>
+      <div class="calc-hint">在文案編輯頁按「🤍 我喜歡這篇」收集喜愛的文案；這裡可讓 AI 用最近 3 篇＋上一版指南，滾動整理出你的風格指南。生成文案時會當成一個風格帶入（可在編輯頁取消勾選）。</div>
+      <label class="bot-check"><input type="checkbox" id="st-enabled" class="cp-write" /> 生成時帶入 AI 學習風格</label>
+      <textarea id="st-profile" rows="8" maxlength="3000" class="cp-write" placeholder="尚未整理。按下方「用最近喜愛的文案整理」，或自己寫。"></textarea>
+      <div class="bot-row"><button type="button" class="cp-write" onclick="saveStyle()">💾 儲存風格指南</button><button type="button" class="btn-secondary cp-write" onclick="learnStyle()">🧠 用最近喜愛的文案整理</button><span id="st-msg" class="calc-hint"></span></div>
+    </div>
+
+    <div class="panel">
+      <div class="bot-row"><h3 style="margin:0;">🎨 人設／風格／結尾</h3>
+        <button type="button" class="btn-mini cp-write" onclick="openLib(null)">＋ 新增素材</button></div>
+      <div class="calc-hint">範圍可限定平台：「一般社群貼文」＝除了 YouTube／方格子以外。「預設帶入」的素材在編輯頁預設勾選。</div>
+      <div id="lib-list"></div>
+    </div>
+
+    <div class="panel">
+      <h3 style="margin-top:0;">📥 匯入發文助手（CetusSalesAgent）</h3>
+      <div class="calc-hint">選 <code>settings.json</code>（人設／風格／結尾，名稱相同的會略過）或 <code>data.json</code>（歷史文案，狀態與預計發佈日一併帶入）。</div>
+      <div class="bot-row"><input type="file" id="imp-file" accept=".json,application/json" class="cp-write" /><button type="button" class="cp-write" onclick="importFile()">匯入</button><span id="imp-msg" class="calc-hint"></span></div>
+    </div>
+  </div>
+
+  <!-- ===================== AI 模型 ===================== -->
+  <div class="bot-panel" data-panel="ai" style="display:none;">
+    <div class="panel">
+      <h3 style="margin-top:0;">🧠 文案專用 AI 模型（依順序備援）</h3>
+      <div class="calc-hint">第一個是主要模型；它失敗（金鑰錯誤、額度用完、服務忙碌）時自動改用下一個。<b>沒有設定時沿用「BOT 設定 → AI 模型」</b>。API Key 只存在你的試算表，畫面上只顯示最後 4 碼；金鑰欄留空 = 沿用原本的。</div>
+      <div id="ai-using" class="calc-hint" style="margin:6px 0;"></div>
+      <div id="ai-rows"></div>
+      <div class="bot-row">
+        <button type="button" class="btn-secondary cp-write" onclick="addAiRow()">＋ 新增模型</button>
+        <button type="button" class="cp-write" onclick="saveModels()">💾 儲存</button>
+        <span id="ai-msg" class="calc-hint"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 素材編輯 -->
+<div id="lib-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:620px;">
+    <div class="modal-header"><h3 style="margin:0;" id="lib-title">新增素材</h3><button type="button" onclick="closeModal('lib-modal')">關閉</button></div>
+    <label>類型</label>
+    <select id="lib-kind"></select>
+    <label>名稱</label>
+    <input id="lib-name" maxlength="60" />
+    <label>適用範圍</label>
+    <select id="lib-platform"></select>
+    <label>內容</label>
+    <textarea id="lib-text" rows="8" maxlength="6000"></textarea>
+    <label class="bot-check"><input type="checkbox" id="lib-enabled" checked /> 預設帶入（編輯頁預設勾選）</label>
+    <div style="margin-top:10px;"><button type="button" onclick="saveLib()">儲存</button></div>
+  </div>
+</div>
+
+<script src="config.js?v=20261104d"></script>
+<script src="demo.js?v=20261104d"></script>
+<script src="common.js?v=20261104d"></script>
+<script src="assistant.js?v=20261104d"></script>
+<script src="copy-prompts.js?v=20261104d"></script>
+<script src="copy.js?v=20261104d"></script>
+</body>
+</html>

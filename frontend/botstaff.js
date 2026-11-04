@@ -229,3 +229,9 @@ async function addMemory() {
   setVal('mem-content', '');
   loadStaff(true);
 }
+
+// 從導覽列「員工助理」連到 bot.html#staff（同一頁時只有網址 # 改變）
+window.addEventListener('hashchange', () => {
+  const t = (location.hash || '').replace('#', '');
+  if (t && document.querySelector(`.bot-tab[data-tab="${t}"]`)) showTab(t);
+});

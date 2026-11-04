@@ -353,6 +353,112 @@ function demoStaffApi(action, params, db) {
   return null;
 }
 
+// ---- 示範模式的文案製作（資料存在本機）----
+function demoCopyApi(action, params, db) {
+  if (!db.copy) db.copy = { posts: [], library: [], style: { profile: '', enabled: true, updatedAt: '' }, models: [] };
+  const c = db.copy;
+  const save = () => saveDemoDB(db);
+  const nowStr = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const nextId = (list) => list.reduce((n, x) => Math.max(n, x.id), 0) + 1;
+  const providers = { gemini: { name: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' }, claude: { name: 'Claude', endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5' }, openai: { name: 'OpenAI 相容', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' } };
+  const masked = () => c.models.map((m) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, hasKey: !!m.apiKey, keyHint: '••••' + String(m.apiKey).slice(-4), defaultModel: '' }));
+  switch (action) {
+    case 'copyGetData':
+      return {
+        success: true, posts: c.posts.slice().sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))), total: c.posts.length, library: c.library, style: c.style,
+        models: masked(), providers, aiReady: c.models.length > 0, usingBotModels: false, botAvailable: true, today: new Date().toISOString().slice(0, 10),
+      };
+    case 'copySavePost': {
+      const p = params.post || {};
+      if (!String(p.content || '').trim() && !String(p.topic || '').trim()) return { success: false, message: '主題與內文都是空的' };
+      const row = Object.assign({ liked: false, created_by: '示範', created_at: nowStr() }, p, { updated_at: nowStr() });
+      const i = c.posts.findIndex((x) => x.id === params.id);
+      if (params.id && i < 0) return { success: false, message: '找不到這篇文案（可能已被刪除）' };
+      if (i > -1) c.posts[i] = Object.assign({}, c.posts[i], row, { id: params.id });
+      else {
+        row.id = nextId(c.posts);
+        c.posts.push(row);
+      }
+      save();
+      return { success: true, id: i > -1 ? params.id : row.id };
+    }
+    case 'copySetLiked': {
+      const x = c.posts.find((q) => q.id === params.id);
+      if (!x) return { success: false, message: '找不到這篇文案' };
+      x.liked = params.liked === true;
+      x.updated_at = nowStr();
+      save();
+      return { success: true };
+    }
+    case 'copyDeletePost':
+      c.posts = c.posts.filter((x) => x.id !== params.id);
+      save();
+      return { success: true };
+    case 'copySaveLib': {
+      const it = params.item || {};
+      if (!it.name || !it.text) return { success: false, message: '名稱與內容不能空白' };
+      const i = c.library.findIndex((x) => x.id === params.id);
+      if (i > -1) c.library[i] = Object.assign({}, c.library[i], it);
+      else c.library.push(Object.assign({ id: nextId(c.library) }, it));
+      save();
+      return { success: true };
+    }
+    case 'copyToggleLib': {
+      const x = c.library.find((q) => q.id === params.id);
+      if (x) x.enabled = params.enabled === true;
+      save();
+      return { success: true };
+    }
+    case 'copyDeleteLib':
+      c.library = c.library.filter((x) => x.id !== params.id);
+      save();
+      return { success: true };
+    case 'copyImport': {
+      let data;
+      try {
+        data = JSON.parse(params.json);
+      } catch (e) {
+        return { success: false, message: '檔案不是正確的 JSON' };
+      }
+      let n = 0;
+      if (Array.isArray(data)) {
+        data.filter((p) => p && (p.content || p.topic)).forEach((p) => {
+          c.posts.push({ id: nextId(c.posts), platform: p.platform || 'Threads', topic: p.topic || '', keywords: p.keywords || '', tone: p.tone || '', marketing: p.marketing || [], event: { schedule: [{ date: '', time: '' }] }, content: p.content || '', note: p.note || '', status: p.status || 'draft', scheduled_for: p.when || '', liked: false, created_by: '示範', created_at: nowStr(), updated_at: nowStr() });
+          n++;
+        });
+        save();
+        return n ? { success: true, message: '已匯入 ' + n + ' 篇文案', count: n } : { success: false, message: '檔案裡沒有可匯入的文案' };
+      }
+      [['prompts', 'prompt'], ['styles', 'style'], ['endings', 'ending']].forEach(([k, kind]) => {
+        (data[k] || []).forEach((it) => {
+          if (!it || !it.name || !it.text || c.library.some((l) => l.kind === kind && l.name === it.name)) return;
+          c.library.push({ id: nextId(c.library), kind, name: it.name, text: it.text, platform: it.platform || '', enabled: true });
+          n++;
+        });
+      });
+      save();
+      return n ? { success: true, message: '已匯入 ' + n + ' 個素材', count: n } : { success: false, message: '沒有新的素材可匯入（名稱相同的會略過）' };
+    }
+    case 'copySaveStyle':
+      if (params.profile !== undefined) c.style.profile = params.profile;
+      if (params.enabled !== undefined) c.style.enabled = params.enabled;
+      c.style.updatedAt = nowStr();
+      save();
+      return { success: true, style: c.style };
+    case 'copySaveModels':
+      c.models = (params.models || []).map((m, i) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, apiKey: m.apiKey || (c.models[i] && c.models[i].apiKey) || '' })).filter((m) => m.apiKey);
+      save();
+      return { success: true, models: masked() };
+    case 'copyTestModel':
+      return c.models[params.index || 0] ? { success: true, reply: '成功', ms: 321, model: 'demo', provider: 'Gemini' } : { success: false, message: '沒有這個模型' };
+    case 'copyGenerate':
+      if (!c.models.length) return { success: false, message: '還沒有設定 AI 模型' };
+      // 示範模式沒有 AI：回傳固定的假內容，只示範畫面流程
+      return { success: true, text: '（示範）版本一\n=====\n（示範）版本二\n=====\n（示範）版本三', model: 'Demo／demo', failures: [] };
+  }
+  return null;
+}
+
 function demoAdminAccess() {
   const blocks = {};
   ['products', 'cases', 'customers', 'files', 'copy', 'bot'].forEach((b) => (blocks[b] = 'edit'));
@@ -778,6 +884,20 @@ function handleDemoApi(action, params) {
     case 'botTestToken':
     case 'botClear':
       return demoBotApi(action, params, db);
+
+    case 'copyGetData':
+    case 'copySavePost':
+    case 'copySetLiked':
+    case 'copyDeletePost':
+    case 'copySaveLib':
+    case 'copyToggleLib':
+    case 'copyDeleteLib':
+    case 'copyImport':
+    case 'copySaveStyle':
+    case 'copySaveModels':
+    case 'copyTestModel':
+    case 'copyGenerate':
+      return demoCopyApi(action, params, db);
 
     case 'botGetStaff':
     case 'botSaveStaff':

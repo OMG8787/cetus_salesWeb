@@ -580,3 +580,16 @@ header, .tabs { position: relative; z-index: 300; }
 .as-form input { flex: 1; margin: 0; }
 .as-form button { margin: 0; }
 @media print { .as-dock { display: none; } }
+
+/* ---- 文案製作 ---- */
+.cp-plats { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.tab-content .cp-plat { margin: 0; padding: 5px 14px; border-radius: 16px; border: 1px solid #c9d5e6; background: #fff; color: #445; cursor: pointer; font-size: 14px; }
+.tab-content .cp-plat.active { background: #2c5aa0; color: #fff; border-color: #2c5aa0; }
+.cp-det { margin-top: 10px; }
+.cp-det summary { cursor: pointer; font-weight: bold; color: #2c5aa0; }
+.cp-pending { border: 2px solid #2c5aa0; background: #f7faff; margin-top: 12px; }
+.cp-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 10px; }
+.cp-dl dt { color: #667; font-size: 13px; }
+.cp-dl dd { margin: 0; word-break: break-word; }
+.cp-var { border-top: 1px solid #dde5f0; padding: 10px 0; }
+.bot-grid select, .bot-grid input[type="date"] { width: 100%; }
