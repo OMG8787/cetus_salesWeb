@@ -359,3 +359,88 @@ test("金鑰分開：員工助理的操作用員工金鑰、客服的操作用�
     if (saved.staff === undefined) delete process.env.BOT_STAFF_SECRET; else process.env.BOT_STAFF_SECRET = saved.staff;
   }
 });
+
+// ---------- 全功能：產品 / 詢價 / 報價 / 客戶窗口 / 案件內容 / 文案 ----------
+const allWritable = ["addMemo", "logFollowUp", "updateCustomer", "addCustomer", "createCase", "updateCaseStatus", "updateCase", "addContact", "addPriceRecord", "addProduct", "updateProduct", "createInquiryDraft", "saveCopyPost", "remember"];
+const toolNames = (i = 0) => (state.aiCalls[i].tools[0].functionDeclarations as { name: string }[]).map((t) => t.name);
+
+test("全功能工具：依權限出現（產品 / 文案 / 寫入白名單各自控制）", async () => {
+  state.info = { blocks: { products: "edit", cases: "edit", customers: "edit", copy: "edit" }, writable: allWritable };
+  state.ai = () => text("ok");
+  await handleStaffEvent(evMsg("hi"));
+  const all = toolNames();
+  for (const n of ["get_product", "price_history", "inquiry_draft", "calc_selection", "copy_posts", "copy_style", "update_case_info", "add_contact", "add_price_record", "add_product", "update_product", "create_inquiry_draft", "save_copy_post"]) assert.ok(all.includes(n), "缺工具 " + n);
+  assert.ok(!all.some((n) => /delete|remove|刪/.test(n)));
+
+  state.info = { blocks: { products: "view", cases: "none", customers: "none", copy: "none" }, writable: ["addMemo"] };
+  state.aiCalls = [];
+  state.aiRound = 0;
+  await handleStaffEvent(evMsg("hi"));
+  const viewer = toolNames();
+  assert.ok(viewer.includes("get_product") && viewer.includes("price_history") && viewer.includes("inquiry_draft"));
+  assert.ok(!viewer.includes("copy_posts") && !viewer.includes("copy_style"), "沒有文案權限不給文案查詢");
+  for (const n of ["update_case_info", "add_contact", "add_price_record", "add_product", "update_product", "create_inquiry_draft", "save_copy_post"]) assert.ok(!viewer.includes(n), "不該有寫入工具 " + n);
+
+  state.info = { blocks: { products: "edit", cases: "none", customers: "none", copy: "none" }, writable: ["addPriceRecord"] };
+  state.aiCalls = [];
+  state.aiRound = 0;
+  await handleStaffEvent(evMsg("hi"));
+  const onlyPrice = toolNames();
+  assert.ok(onlyPrice.includes("add_price_record") && !onlyPrice.includes("add_product") && !onlyPrice.includes("update_product"), "管理員只開報價 → 只有報價工具");
+});
+
+test("提示詞：有產品權限帶詢價規則（不估價、底價不外流）；有文案權限帶文案規則", () => {
+  const p = staffSystemPrompt(baseInfo({ blocks: { products: "edit", copy: "edit" } }));
+  assert.match(p, /沒有紀錄就說沒有，不要估價/);
+  assert.match(p, /不會寄出/);
+  assert.match(p, /絕對不要轉述給客戶/);
+  assert.match(p, /copy_style/);
+  const none = staffSystemPrompt(baseInfo({ blocks: { products: "none", copy: "none" } }));
+  assert.doesNotMatch(none, /不要估價|create_inquiry_draft/);
+  assert.doesNotMatch(none, /save_copy_post/);
+});
+
+test("查詢類工具的參數對應到管理系統的查詢", async () => {
+  state.info = { blocks: { products: "edit", copy: "edit" } };
+  const steps = [
+    ["get_product", { internal_model: "ACA2440" }, "product", { internalModel: "ACA2440" }],
+    ["price_history", { internal_model: "ACA2440", limit: 3 }, "priceHistory", { internalModel: "ACA2440", limit: 3 }],
+    ["inquiry_draft", { internal_model: "ACA2440", quantity: "10" }, "inquiryDraft", { internalModel: "ACA2440", quantity: "10" }],
+    ["copy_posts", { keyword: "光源", status: "draft" }, "copyPosts", { keyword: "光源", status: "draft", limit: undefined }],
+    ["copy_style", {}, "copyStyle", {}],
+  ] as const;
+  for (const [tool, args, call, params] of steps) {
+    state.gas = [];
+    state.aiRound = 0;
+    state.ai = (round) => (round === 0 ? toolCall(tool, args as Record<string, unknown>) : text("ok"));
+    await handleStaffEvent(evMsg("查"));
+    const c = gasOps("call").find((g) => g.call === call);
+    assert.ok(c, tool + " → " + call);
+    assert.deepEqual(JSON.parse(JSON.stringify(c.params)), JSON.parse(JSON.stringify(params)), tool);
+  }
+});
+
+test("寫入類工具：欄位名稱轉成管理系統的格式，只送有填的欄位", async () => {
+  state.info = { blocks: { products: "edit", cases: "edit", customers: "edit", copy: "edit" }, writable: allWritable };
+  const steps: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+    ["update_case_info", { case_id: "C-1", project_contact: "張工", requirement_details: "", fae: "李" }, "updateCase", { caseId: "C-1", fields: { ProjectContact: "張工", FAE: "李" } }],
+    ["add_contact", { company: "甲公司", contact_name: "李經理", title: "採購" }, "addContact", { company: "甲公司", contactName: "李經理", title: "採購" }],
+    ["add_price_record", { internal_model: "ACA2440", price: 14800, currency: "USD", case_id: "C-1" }, "addPriceRecord", { internalModel: "ACA2440", price: 14800, currency: "USD", caseId: "C-1" }],
+    ["add_product", { internal_model: "N1", brand: "Computar", focal_length: "25", fps: "30" }, "addProduct", { internalModel: "N1", fields: { Brand: "Computar", FocalLength: "25", FPS: "30" } }],
+    ["update_product", { internal_model: "ACA2440", notes: "新備註", supplier_email: "a@b.com" }, "updateProduct", { internalModel: "ACA2440", fields: { Notes: "新備註", SupplierContactEmail: "a@b.com" } }],
+    ["create_inquiry_draft", { internal_model: "ACA2440", quantity: "20" }, "createInquiryDraft", { internalModel: "ACA2440", quantity: "20" }],
+    ["save_copy_post", { platform: "Instagram", topic: "新品", content: "新品上市", scheduled_for: "2026-11-20" }, "saveCopyPost", { platform: "Instagram", topic: "新品", content: "新品上市", scheduledFor: "2026-11-20" }],
+  ];
+  for (const [tool, args, action, data] of steps) {
+    state.gas = [];
+    state.aiRound = 0;
+    state.ai = (round) => (round === 0 ? toolCall(tool, args) : text("已整理好，請確認"));
+    await handleStaffEvent(evMsg("改"));
+    const st = gasOps("stage")[0];
+    assert.ok(st, tool + " 沒有 stage");
+    const op = (st.ops as { action: string; data: Record<string, unknown> }[])[0];
+    assert.equal(op.action, action, tool);
+    assert.deepEqual(op.data, data, tool);
+    assert.equal(gasOps("commit").length, 0, tool + " 不能直接寫入");
+  }
+});

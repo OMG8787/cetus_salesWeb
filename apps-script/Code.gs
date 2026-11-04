@@ -4128,21 +4128,30 @@ function handleDeletePriceRecord(body) {
 // ------------------------------------------------------------
 // 詢價信件
 // ------------------------------------------------------------
+/** 詢價信的標題與內文（網站與助理共用）。 */
+function inquiryText_(p, lastPrice, quantity) {
+  return {
+    subject: '詢價 - ' + p['InternalModel'] + ' / ' + p['SupplierModel'],
+    body:
+      (p['SupplierContact'] ? p['SupplierContact'] + ' 您好，\n\n' : '您好，\n\n') +
+      '想請教以下產品報價：\n' +
+      '供應商型號: ' + p['SupplierModel'] + '\n' +
+      '對應內部型號: ' + p['InternalModel'] + '\n' +
+      (lastPrice ? '上次報價紀錄: ' + lastPrice['Price'] + ' ' + (lastPrice['Currency'] || '') + '（' + lastPrice['Date'] + '）\n' : '') +
+      '需求數量: ' + (quantity || '請提供') + '\n\n' +
+      '麻煩協助報價，謝謝！',
+  };
+}
+
 function handleGenerateInquiryDraft(body) {
   var productResult = handleGetProduct({ internalModel: body.internalModel });
   if (!productResult.success) return productResult;
   var p = productResult.product;
   var lastPrice = productResult.lastPrice;
 
-  var subject = '詢價 - ' + p['InternalModel'] + ' / ' + p['SupplierModel'];
-  var bodyText =
-    (p['SupplierContact'] ? p['SupplierContact'] + ' 您好，\n\n' : '您好，\n\n') +
-    '想請教以下產品報價：\n' +
-    '供應商型號: ' + p['SupplierModel'] + '\n' +
-    '對應內部型號: ' + p['InternalModel'] + '\n' +
-    (lastPrice ? '上次報價紀錄: ' + lastPrice['Price'] + ' ' + (lastPrice['Currency'] || '') + '（' + lastPrice['Date'] + '）\n' : '') +
-    '需求數量: ' + (body.quantity || '請提供') + '\n\n' +
-    '麻煩協助報價，謝謝！';
+  var text = inquiryText_(p, lastPrice, body.quantity);
+  var subject = text.subject;
+  var bodyText = text.body;
 
   var draftUrl = null;
   try {
@@ -7173,7 +7182,7 @@ function botSetup_(log) {
 var SHEET_BOT_MEMBERS = 'BotMembers';
 var SHEET_BOT_MEMORY = 'BotMemory';
 
-var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'logs', 'memos', 'calendar', 'calcCatalog'];
+var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'product', 'priceHistory', 'inquiryDraft', 'logs', 'memos', 'calendar', 'calcCatalog', 'copyPosts', 'copyStyle'];
 var BOT_STAFF_STATUS = { PENDING: '待開通', ACTIVE: '已開通', OFF: '停用' };
 var BOT_PENDING_SECONDS = 900;
 var BOT_CASE_STATUSES = ['需求單已發出', '評估單已發出', '已結案'];
@@ -7497,6 +7506,25 @@ var BOT_CUSTOMER_KEYS = ['CompanyName', 'Contact', 'Phone', 'CompanyPhone', 'Ema
 var BOT_CASE_KEYS = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Status', 'Urgency', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'CreatedDate', 'RequirementDetails', 'EvaluationResult'];
 var BOT_PRODUCT_KEYS = ['InternalModel', 'SupplierModel', 'Brand', 'Category', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD', 'Notes'];
 
+/** 用內部型號（不分大小寫）或供應商型號找產品；找不到回傳 near（名稱相近的）。 */
+function botFindProduct_(model) {
+  var key = String(model || '').trim().toLowerCase();
+  var rows = readProductsLite_().rows;
+  var found = null;
+  var idx = 0;
+  if (key) {
+    for (var i = 0; i < rows.length && !found; i++) if (String(rows[i]['InternalModel']).trim().toLowerCase() === key) { found = rows[i]; idx = i + 2; }
+    for (var j = 0; j < rows.length && !found; j++) if (String(rows[j]['SupplierModel']).trim().toLowerCase() === key) { found = rows[j]; idx = j + 2; }
+  }
+  var near = [];
+  if (!found && key) near = rows.filter(function (r) { return String(r['InternalModel'] + ' ' + r['SupplierModel']).toLowerCase().indexOf(key) > -1; }).slice(0, 5).map(function (r) { return r['InternalModel'] || r['SupplierModel']; });
+  return { obj: found, row: idx, near: near };
+}
+
+function botPriceOut_(h) {
+  return { Date: dateKey_(h['Date']) || String(h['Date'] || ''), Supplier: h['Supplier'], Price: h['Price'], Currency: h['Currency'] || 'TWD', CaseID: h['CaseID'] || undefined, Notes: h['Notes'] ? String(h['Notes']).slice(0, 100) : undefined };
+}
+
 function botMatch_(row, fields, kws) {
   var hay = fields.map(function (f) { return String(row[f] || ''); }).join(' ').toLowerCase().replace(/\s+/g, '');
   return kws.every(function (k) { return hay.indexOf(k) > -1; });
@@ -7613,6 +7641,66 @@ function botStaffCall_(ctx, action, params) {
     return botCalcCatalog_(null);
   }
 
+  if (action === 'product') {
+    botNeed_(ctx, 'products', 'view');
+    var pf = botFindProduct_(params.internalModel);
+    if (!pf.obj) throw new Error('找不到產品「' + String(params.internalModel || '').trim() + '」' + (pf.near.length ? '，你是不是要找：' + pf.near.join('、') : ''));
+    var hide = botStaffCfg_().hidePrice;
+    var po = botTrimRow_(pf.obj, BOT_PRODUCT_KEYS.concat(['CompatibleGroup', 'Origin']), 300);
+    if (!hide) {
+      ['Supplier', 'SupplierContact', 'SupplierContactEmail', 'RefPrice'].forEach(function (k) { if (pf.obj[k] !== '' && pf.obj[k] != null) po[k] = pf.obj[k]; }); // 供應商與底價：跟網站一樣有「產品與詢價」查看權限才看得到
+    }
+    var pout = { product: po };
+    var grp = String(pf.obj['CompatibleGroup'] || '');
+    if (grp) pout.compatible = readProductsLite_().rows.filter(function (r) { return r['CompatibleGroup'] === grp && r['InternalModel'] !== pf.obj['InternalModel']; }).slice(0, 10).map(function (r) { return botTrimRow_(r, ['InternalModel', 'SupplierModel', 'Brand', 'Category'], 80); });
+    if (!hide) {
+      var hist = handleGetPriceHistory({ internalModel: pf.obj['InternalModel'] }).history || [];
+      pout.priceCount = hist.length;
+      pout.priceHistory = hist.slice(0, 5).map(botPriceOut_);
+    }
+    return pout;
+  }
+
+  if (action === 'priceHistory') {
+    botNeed_(ctx, 'products', 'view');
+    if (botStaffCfg_().hidePrice) throw new Error('管理員設定助理不顯示價格與供應商資料');
+    var ph = botFindProduct_(params.internalModel);
+    var phm = ph.obj ? ph.obj['InternalModel'] : String(params.internalModel || '').trim();
+    var phist = handleGetPriceHistory({ internalModel: phm }).history || [];
+    if (!ph.obj && !phist.length) throw new Error('找不到產品「' + phm + '」' + (ph.near.length ? '，你是不是要找：' + ph.near.join('、') : ''));
+    return { internalModel: phm, total: phist.length, items: phist.slice(0, limit).map(botPriceOut_) };
+  }
+
+  if (action === 'inquiryDraft') {
+    botNeed_(ctx, 'products', 'view');
+    if (botStaffCfg_().hidePrice) throw new Error('管理員設定助理不顯示價格與供應商資料');
+    var iq = botFindProduct_(params.internalModel);
+    if (!iq.obj) throw new Error('找不到產品「' + String(params.internalModel || '').trim() + '」' + (iq.near.length ? '，你是不是要找：' + iq.near.join('、') : ''));
+    var ihist = handleGetPriceHistory({ internalModel: iq.obj['InternalModel'] }).history || [];
+    var itext = inquiryText_(iq.obj, ihist.length ? ihist[0] : null, params.quantity);
+    return { to: iq.obj['SupplierContactEmail'] || '', supplier: iq.obj['Supplier'] || '', subject: itext.subject, body: itext.body, note: '這只是文字草稿，還沒有建立 Gmail 草稿；要建立請用 create_inquiry_draft（會先請同事確認）' };
+  }
+
+  if (action === 'copyPosts') {
+    botNeed_(ctx, 'copy', 'view');
+    var cps = sheetToObjects(SHEET_COPY_POSTS).rows.map(copyPostOut_);
+    var cstatus = String(params.status || '');
+    var ckw = botKws_(params.keyword);
+    cps = cps.filter(function (x) { return (!cstatus || x.status === cstatus) && (!ckw.length || botMatch_({ t: x.topic, k: x.keywords, c: x.content, p: x.platform }, ['t', 'k', 'c', 'p'], ckw)); });
+    cps.sort(function (a, b) { return String(b.updated_at).localeCompare(String(a.updated_at)); });
+    return { total: cps.length, items: cps.slice(0, Math.min(limit, 15)).map(function (x) { return { id: x.id, platform: x.platform, topic: x.topic, status: x.status, scheduled_for: x.scheduled_for, tone: x.tone, content: String(x.content).slice(0, 400) }; }) };
+  }
+
+  if (action === 'copyStyle') {
+    botNeed_(ctx, 'copy', 'view');
+    var st = copyStyle_();
+    return {
+      platforms: COPY_PLATFORMS,
+      style: st.enabled ? st.profile : '',
+      library: sheetToObjects(SHEET_COPY_LIB).rows.map(copyLibOut_).filter(function (x) { return x.enabled; }).slice(0, 30).map(function (x) { return { kind: x.kind, name: x.name, text: String(x.text).slice(0, 300), platform: x.platform }; }),
+    };
+  }
+
   if (action === 'logs') {
     botNeed_(ctx, 'customers', 'view');
     var cn = String(params.companyName || '').trim();
@@ -7673,8 +7761,19 @@ var BOT_STAFF_WRITES = {
   addCustomer: { block: 'customers', label: '新增客戶' },
   createCase: { block: 'cases', label: '建立案件' },
   updateCaseStatus: { block: 'cases', label: '修改案件狀態 / 緊急程度' },
+  updateCase: { block: 'cases', label: '修改案件內容（聯絡人 / 需求說明 / 評估結果…）' },
+  addContact: { block: 'customers', label: '新增客戶聯絡窗口' },
+  addPriceRecord: { block: 'products', label: '記錄報價（價格紀錄）' },
+  addProduct: { block: 'products', label: '新增產品' },
+  updateProduct: { block: 'products', label: '修改產品資料' },
+  createInquiryDraft: { block: 'products', label: '建立詢價信 Gmail 草稿（不會寄出）' },
+  saveCopyPost: { block: 'copy', label: '儲存文案草稿' },
   remember: { block: '', label: '記住（長期記憶）' },
 };
+var BOT_PRICE_WRITES = ['addPriceRecord', 'createInquiryDraft']; // 管理員設定「助理不顯示價格」時，這些也不開放
+var BOT_CASE_EDITABLE = { ProjectContact: '專案聯絡人', ContactPhone: '聯絡電話', EndCustomerName: '終端客戶', Salesperson: '業務', FAE: 'FAE', RequirementDetails: '需求說明', EvaluationResult: '評估結果' };
+var BOT_PRODUCT_EDITABLE = { SupplierModel: '供應商型號', Brand: '品牌', Category: '類別', Interface: '介面', Resolution: '解析度', PixelSize: '像素尺寸', SensorSize: '靶面', FPS: '幀率', Mount: '接口', FocalLength: '焦距', Magnification: '倍率', WD: '工作距離', DOF: '景深', FocusWD: '對焦距離', CompatibleGroup: '相容群組', Origin: '產地', Notes: '備註' };
+var BOT_PRODUCT_PRICEY = { Supplier: '供應商', SupplierContact: '供應商聯絡人', SupplierContactEmail: '供應商 Email', RefPrice: '參考底價' }; // 有價格權限（沒被隱藏）才能改
 var BOT_CUSTOMER_EDITABLE = { Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', Address: '地址', TaxId: '統一編號', Category: '分類', Urgency: '急迫性', Notes: '客戶備註' };
 
 function botWritableOps_(ctx) {
@@ -7682,6 +7781,7 @@ function botWritableOps_(ctx) {
   return Object.keys(BOT_STAFF_WRITES).filter(function (k) {
     if (allowed.indexOf(k) < 0) return false;
     if (k === 'remember') return botStaffCfg_().memory.enabled;
+    if (botStaffCfg_().hidePrice && BOT_PRICE_WRITES.indexOf(k) > -1) return false;
     var b = BOT_STAFF_WRITES[k].block;
     return !b || botLevel_(ctx, b) === 'edit';
   });
@@ -7765,6 +7865,73 @@ function botWriteCheck_(ctx, w) {
     }
     if (!ps.length) throw new Error('請提供要改的狀態或緊急程度');
     return { line: '📁 案件「' + cs['CaseID'] + '」' + ps.join('；') };
+  }
+  if (w.action === 'updateCase') {
+    var uc = findCase(s('caseId'));
+    if (!uc) throw new Error('找不到案件「' + s('caseId') + '」');
+    var ucs = [];
+    Object.keys(d.fields || {}).forEach(function (k) {
+      if (!BOT_CASE_EDITABLE[k]) throw new Error('不能用助理修改這個欄位：' + k + '（只能改 ' + Object.keys(BOT_CASE_EDITABLE).join('、') + '；狀態請用 update_case，案件編號 / 客戶請到網站改）');
+      ucs.push(BOT_CASE_EDITABLE[k] + '：' + String(d.fields[k]).slice(0, 60));
+    });
+    if (!ucs.length) throw new Error('沒有要修改的欄位');
+    return { line: '📁 修改案件「' + uc['CaseID'] + '」：' + ucs.join('、') };
+  }
+  if (w.action === 'addContact') {
+    var ac = botFindCustomerRow_(s('company'));
+    if (!ac) throw new Error('找不到客戶「' + s('company') + '」，請先確認公司名稱');
+    if (!s('contactName')) throw new Error('聯絡人姓名不能空白');
+    var acn = String(ac.obj['CompanyName']);
+    if (sheetToObjects(SHEET_CUSTOMER_CONTACTS).rows.some(function (r) { return String(r['CompanyName']) === acn && String(r['ContactName']).trim() === s('contactName'); })) throw new Error(acn + ' 已經有聯絡人「' + s('contactName') + '」了');
+    return { line: '👤 ' + acn + ' 新增聯絡窗口：' + s('contactName') + (s('title') ? '（' + s('title') + '）' : '') + (s('phone') ? ' ' + s('phone') : '') + (s('email') ? ' ' + s('email') : '') };
+  }
+  if (w.action === 'addPriceRecord') {
+    if (botStaffCfg_().hidePrice) throw new Error('管理員設定助理不處理價格資料');
+    var ap = botFindProduct_(s('internalModel'));
+    if (!ap.obj) throw new Error('找不到產品「' + s('internalModel') + '」' + (ap.near.length ? '，你是不是要找：' + ap.near.join('、') : '') + '（要先有這個產品才能記報價）');
+    var price = Number(String(d.price == null ? '' : d.price).replace(/,/g, ''));
+    if (!(price > 0)) throw new Error('價格要是大於 0 的數字');
+    var cur = (s('currency') || 'TWD').toUpperCase();
+    if (!/^[A-Z]{3}$/.test(cur)) throw new Error('幣別要是 3 碼代號，例如 TWD、USD、CNY');
+    if (s('caseId') && !findCase(s('caseId'))) throw new Error('找不到案件「' + s('caseId') + '」');
+    return { line: '💲 記錄報價：' + ap.obj['InternalModel'] + '｜' + (s('supplier') || ap.obj['Supplier'] || '（供應商未填）') + '｜' + price + ' ' + cur + (s('caseId') ? '｜案件 ' + s('caseId') : '') };
+  }
+  if (w.action === 'addProduct') {
+    if (!s('internalModel')) throw new Error('內部型號不能空白');
+    if (botFindProduct_(s('internalModel')).obj) throw new Error('內部型號「' + s('internalModel') + '」已經存在，要改請用修改產品');
+    var apf = [];
+    Object.keys(d.fields || {}).forEach(function (k) {
+      if (!BOT_PRODUCT_EDITABLE[k] && !BOT_PRODUCT_PRICEY[k]) throw new Error('不能設定這個欄位：' + k + '（可設 ' + Object.keys(BOT_PRODUCT_EDITABLE).join('、') + '）');
+      if (BOT_PRODUCT_PRICEY[k] && botStaffCfg_().hidePrice) throw new Error('管理員設定助理不處理價格與供應商資料：' + BOT_PRODUCT_PRICEY[k]);
+      apf.push((BOT_PRODUCT_EDITABLE[k] || BOT_PRODUCT_PRICEY[k]) + '：' + String(d.fields[k]).slice(0, 40));
+    });
+    return { line: '📦 新增產品：' + s('internalModel') + (apf.length ? '（' + apf.join('、') + '）' : '') };
+  }
+  if (w.action === 'updateProduct') {
+    var up = botFindProduct_(s('internalModel'));
+    if (!up.obj) throw new Error('找不到產品「' + s('internalModel') + '」' + (up.near.length ? '，你是不是要找：' + up.near.join('、') : ''));
+    var ups = [];
+    Object.keys(d.fields || {}).forEach(function (k) {
+      if (!BOT_PRODUCT_EDITABLE[k] && !BOT_PRODUCT_PRICEY[k]) throw new Error('不能用助理修改這個欄位：' + k + '（內部型號請到網站改；可改 ' + Object.keys(BOT_PRODUCT_EDITABLE).join('、') + '）');
+      if (BOT_PRODUCT_PRICEY[k] && botStaffCfg_().hidePrice) throw new Error('管理員設定助理不處理價格與供應商資料：' + BOT_PRODUCT_PRICEY[k]);
+      ups.push((BOT_PRODUCT_EDITABLE[k] || BOT_PRODUCT_PRICEY[k]) + '：' + String(d.fields[k]).slice(0, 60));
+    });
+    if (!ups.length) throw new Error('沒有要修改的欄位');
+    return { line: '✏️ 修改產品「' + up.obj['InternalModel'] + '」：' + ups.join('、') };
+  }
+  if (w.action === 'createInquiryDraft') {
+    if (botStaffCfg_().hidePrice) throw new Error('管理員設定助理不處理價格與供應商資料');
+    var cd = botFindProduct_(s('internalModel'));
+    if (!cd.obj) throw new Error('找不到產品「' + s('internalModel') + '」' + (cd.near.length ? '，你是不是要找：' + cd.near.join('、') : ''));
+    if (!String(cd.obj['SupplierContactEmail'] || '').trim()) throw new Error('「' + cd.obj['InternalModel'] + '」沒有填供應商 Email，沒辦法建立詢價信草稿');
+    return { line: '✉️ 建立詢價信草稿（只存草稿、不寄出）：' + cd.obj['InternalModel'] + ' → ' + cd.obj['SupplierContactEmail'] + (s('quantity') ? '｜數量 ' + s('quantity') : '') };
+  }
+  if (w.action === 'saveCopyPost') {
+    if (!s('content') && !s('topic')) throw new Error('主題與內文至少要填一個');
+    if (s('platform') && COPY_PLATFORMS.indexOf(s('platform')) < 0) throw new Error('平台只能是：' + COPY_PLATFORMS.join('、'));
+    if (s('scheduledFor') && !isDateStr(s('scheduledFor'))) throw new Error('預排日期要是 YYYY-MM-DD');
+    if (d.id && !copyFindRow_(SHEET_COPY_POSTS, d.id)) throw new Error('找不到這篇文案 #' + d.id);
+    return { line: '📣 ' + (d.id ? '修改' : '儲存') + '文案草稿（' + (s('platform') || 'Threads') + '）：' + (s('topic') || s('content').slice(0, 30)) + (s('scheduledFor') ? '｜預排 ' + s('scheduledFor') : '') };
   }
   throw new Error('不能執行：' + w.action);
 }
@@ -7861,6 +8028,55 @@ function botWriteRun_(ctx, w) {
     var r5 = handleUpdateCase({ _user: user, caseId: s('caseId'), fields: f });
     if (!r5.success) throw new Error(r5.message);
     return { action: w.action, ok: true };
+  }
+  if (w.action === 'updateCase') {
+    var r6 = handleUpdateCase({ _user: user, caseId: s('caseId'), fields: d.fields });
+    if (!r6.success) throw new Error(r6.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'addContact') {
+    var r7 = handleAddCustomerContact({ _user: user, companyName: botFindCustomerRow_(s('company')).obj['CompanyName'], contactName: s('contactName'), title: s('title'), phone: s('phone'), email: s('email'), notes: s('notes') });
+    if (!r7.success) throw new Error(r7.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'addPriceRecord') {
+    var pp = botFindProduct_(s('internalModel')).obj;
+    var r8 = handleAddPriceRecord({ _user: user, internalModel: pp['InternalModel'], supplier: s('supplier') || pp['Supplier'], price: Number(String(d.price).replace(/,/g, '')), currency: (s('currency') || 'TWD').toUpperCase(), caseId: s('caseId'), notes: s('notes') });
+    if (!r8.success) throw new Error(r8.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'addProduct') {
+    var fl = d.fields || {};
+    var camel = function (k) { return k.charAt(0).toLowerCase() + k.slice(1); };
+    var np = { _user: user, internalModel: s('internalModel') };
+    Object.keys(fl).forEach(function (k) { np[k === 'FPS' ? 'fps' : k === 'WD' ? 'wd' : k === 'DOF' ? 'dof' : k === 'FocusWD' ? 'focusWd' : camel(k)] = fl[k]; });
+    var r9 = handleAddProduct(np);
+    if (!r9.success) throw new Error(r9.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'updateProduct') {
+    var fp = botFindProduct_(s('internalModel'));
+    var r10 = handleUpdateProduct({ _user: user, rowIndex: fp.row, fields: d.fields });
+    if (!r10.success) throw new Error(r10.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'createInquiryDraft') {
+    var ip = botFindProduct_(s('internalModel')).obj;
+    var ih = handleGetPriceHistory({ internalModel: ip['InternalModel'] }).history || [];
+    var tx = inquiryText_(ip, ih.length ? ih[0] : null, s('quantity'));
+    var r11 = handleCreateGmailDraft({ _user: user, to: ip['SupplierContactEmail'], subject: tx.subject, body: tx.body });
+    if (!r11.success) throw new Error(r11.message);
+    return { action: w.action, ok: true, draftUrl: r11.draftUrl };
+  }
+  if (w.action === 'saveCopyPost') {
+    var post = { platform: s('platform') || 'Threads', topic: s('topic'), keywords: s('keywords'), tone: s('tone'), content: s('content'), status: s('scheduledFor') ? 'scheduled' : 'draft', scheduled_for: s('scheduledFor') };
+    if (d.id) {
+      var old = copyPostOut_(copyFindRow_(SHEET_COPY_POSTS, d.id).row);
+      post = { platform: s('platform') || old.platform, topic: d.topic != null ? s('topic') : old.topic, keywords: d.keywords != null ? s('keywords') : old.keywords, tone: d.tone != null ? s('tone') : old.tone, content: d.content != null ? s('content') : old.content, status: s('scheduledFor') ? 'scheduled' : old.status, scheduled_for: s('scheduledFor') || old.scheduled_for, marketing: old.marketing, event: old.event, note: old.note };
+    }
+    var r12 = handleCopySavePost({ _user: user, id: d.id || 0, post: post });
+    if (!r12.success) throw new Error(r12.message);
+    return { action: w.action, ok: true, id: r12.id };
   }
   throw new Error('不能執行：' + w.action);
 }

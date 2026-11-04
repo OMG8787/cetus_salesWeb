@@ -77,6 +77,10 @@ export function staffSystemPrompt(info: StaffInfo): string {
     "5. 回覆會顯示在聊天視窗：不要用 Markdown（不要用 **粗體**、# 標題、表格），條列用「・」，盡量簡短。",
     "6. 同事的問題模稜兩可（例如有好幾家名稱相近的客戶）時不要猜，用 offer_choices 給選項按鈕並用一句話反問。",
     (info.blocks?.products ?? "none") !== "none" ? CALC_RULES : "",
+    (info.blocks?.products ?? "none") !== "none"
+      ? "產品與詢價：問價格先用 get_product / price_history 查報價紀錄，沒有紀錄就說沒有，不要估價；要詢價先用 inquiry_draft 產生信件內容給同事看，同事要存草稿再用 create_inquiry_draft（只存草稿、不會寄出）；拿到供應商新報價用 add_price_record 記錄。底價與供應商只能對同事講，絕對不要轉述給客戶。"
+      : "",
+    (info.blocks?.copy ?? "none") !== "none" ? "文案製作：寫社群文案前先用 copy_style 看公司風格與平台，照風格寫；寫好用 save_copy_post 存成草稿（不會自動發佈），並把內文貼給同事看。" : "",
     info.memory?.enabled
       ? "7. 同事要你「記住」某件事（稱呼、習慣、公司規定…）時用 remember 工具；要你忘掉時用 forget_memory。只記對之後的對話有用、不會很快過期的事，不要記客戶機密或密碼。"
       : "",
@@ -175,6 +179,38 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
       description: "查產品資料庫（型號、品牌、規格、介面、解析度…）；有權限的人才看得到供應商與參考底價，絕對不要把底價告訴客戶。",
       parameters: { type: "object", properties: { keyword: str("型號、品牌、類別或規格關鍵字，可用空白分隔"), limit: { type: "number", description: "最多幾筆，預設 8" } } },
       handler: (a) => query(uid, "products", { keyword: a.keyword, limit: a.limit }),
+    });
+    tools.push({
+      name: "get_product",
+      description: "查一個產品的完整資料：規格、相容產品，以及（有權限且管理員沒隱藏時）供應商、底價與最近 5 筆報價。內部型號或供應商型號要完整（不確定時先用 search_products）。",
+      parameters: { type: "object", properties: { internal_model: str("內部型號（或供應商型號）") }, required: ["internal_model"] },
+      handler: (a) => query(uid, "product", { internalModel: a.internal_model }),
+    });
+    tools.push({
+      name: "price_history",
+      description: "查一個產品的歷史報價紀錄（日期、供應商、價格、幣別、案件），最近的在前面。管理員可能設定助理不顯示價格。",
+      parameters: { type: "object", properties: { internal_model: str("內部型號"), limit: { type: "number", description: "筆數，預設 10" } }, required: ["internal_model"] },
+      handler: (a) => query(uid, "priceHistory", { internalModel: a.internal_model, limit: a.limit }),
+    });
+    tools.push({
+      name: "inquiry_draft",
+      description: "產生給供應商的詢價信文字草稿（含上次報價、需求數量）。只是文字，不會建立 Gmail 草稿；要建立草稿請另外用 create_inquiry_draft。",
+      parameters: { type: "object", properties: { internal_model: str("內部型號"), quantity: str("需求數量") }, required: ["internal_model"] },
+      handler: (a) => query(uid, "inquiryDraft", { internalModel: a.internal_model, quantity: a.quantity }),
+    });
+  }
+  if (lv("copy") !== "none") {
+    tools.push({
+      name: "copy_posts",
+      description: "查「文案製作」裡的文案（草稿 / 預排 / 已發佈），最近修改的在前面。",
+      parameters: { type: "object", properties: { keyword: str("主題、關鍵字、平台或內文關鍵字"), status: { type: "string", enum: ["draft", "scheduled", "posted"], description: "狀態" }, limit: { type: "number", description: "筆數，預設 8" } } },
+      handler: (a) => query(uid, "copyPosts", { keyword: a.keyword, status: a.status, limit: a.limit }),
+    });
+    tools.push({
+      name: "copy_style",
+      description: "查公司的文案風格與提示詞庫（寫文案前先看，照公司風格寫）；也列出可用的平台。",
+      parameters: { type: "object", properties: {} },
+      handler: () => query(uid, "copyStyle", {}),
     });
   }
   return tools;
@@ -282,6 +318,105 @@ function writeTools(uid: string, info: StaffInfo, staging: Staging): Tool[] {
       description: "修改案件的狀態（需求單已發出 / 評估單已發出 / 已結案）或緊急程度（高 / 中 / 低）",
       parameters: { type: "object", properties: { case_id: str("案件編號（完整）"), status: str("新狀態"), urgency: str("新的緊急程度") }, required: ["case_id"] },
       handler: (a) => propose("updateCaseStatus", { caseId: a.case_id, status: a.status, urgency: a.urgency })(),
+    });
+  }
+  if (writable.has("updateCase")) {
+    tools.push({
+      name: "update_case_info",
+      description: "修改案件的內容欄位：專案聯絡人、聯絡電話、終端客戶、業務、FAE、需求說明、評估結果。只填要改的欄位（文字欄位會整個取代，修改前先用 get_case 看原本內容）。狀態 / 緊急程度請用 update_case。",
+      parameters: {
+        type: "object",
+        properties: { case_id: str("案件編號（完整）"), project_contact: str("專案聯絡人"), contact_phone: str("聯絡電話"), end_customer: str("終端客戶"), salesperson: str("業務"), fae: str("FAE"), requirement_details: str("需求說明"), evaluation_result: str("評估結果") },
+        required: ["case_id"],
+      },
+      handler: (a) =>
+        propose("updateCase", {
+          caseId: a.case_id,
+          fields: Object.fromEntries(
+            Object.entries({ ProjectContact: a.project_contact, ContactPhone: a.contact_phone, EndCustomerName: a.end_customer, Salesperson: a.salesperson, FAE: a.fae, RequirementDetails: a.requirement_details, EvaluationResult: a.evaluation_result }).filter(([, v]) => v !== undefined && v !== ""),
+          ),
+        })(),
+    });
+  }
+  if (writable.has("addContact")) {
+    tools.push({
+      name: "add_contact",
+      description: "幫已存在的客戶新增一位聯絡窗口（姓名、職稱、電話、Email）。公司名稱要完整；同一間公司同名的聯絡人不能重複。",
+      parameters: { type: "object", properties: { company: str("客戶公司名稱（完整）"), contact_name: str("聯絡人姓名"), title: str("職稱"), phone: str("電話"), email: str("Email"), notes: str("備註") }, required: ["company", "contact_name"] },
+      handler: (a) => propose("addContact", { company: a.company, contactName: a.contact_name, title: a.title, phone: a.phone, email: a.email, notes: a.notes })(),
+    });
+  }
+  if (writable.has("addPriceRecord")) {
+    tools.push({
+      name: "add_price_record",
+      description: "記錄一筆供應商報價到產品的價格紀錄（日期自動用今天）。產品要已存在；價格要是數字，幣別預設 TWD。",
+      parameters: { type: "object", properties: { internal_model: str("內部型號"), price: { type: "number", description: "報價" }, currency: str("幣別，預設 TWD"), supplier: str("供應商（沒填就用產品的供應商）"), case_id: str("相關案件編號（可省略）"), notes: str("備註") }, required: ["internal_model", "price"] },
+      handler: (a) => propose("addPriceRecord", { internalModel: a.internal_model, price: a.price, currency: a.currency, supplier: a.supplier, caseId: a.case_id, notes: a.notes })(),
+    });
+  }
+  if (writable.has("addProduct")) {
+    tools.push({
+      name: "add_product",
+      description: "新增產品到產品資料庫（內部型號不能重複，先用 search_products 確認沒有）。規格欄位都是選填，沒把握的不要亂填。",
+      parameters: {
+        type: "object",
+        properties: {
+          internal_model: str("內部型號"), supplier_model: str("供應商型號"), brand: str("品牌"), category: str("類別，例如 相機 / 鏡頭 / 光源"),
+          interface: str("介面，例如 GigE / USB3.0"), resolution: str("解析度，例如 2448x2048"), pixel_size: str("像素尺寸 µm"), sensor_size: str("靶面"), fps: str("幀率"), mount: str("接口"),
+          focal_length: str("焦距 mm（FA 鏡頭）"), magnification: str("倍率（遠心鏡頭）"), wd: str("工作距離"), dof: str("景深"), notes: str("備註"),
+          supplier: str("供應商"), ref_price: str("參考底價"),
+        },
+        required: ["internal_model"],
+      },
+      handler: (a) =>
+        propose("addProduct", {
+          internalModel: a.internal_model,
+          fields: Object.fromEntries(
+            Object.entries({ SupplierModel: a.supplier_model, Brand: a.brand, Category: a.category, Interface: a.interface, Resolution: a.resolution, PixelSize: a.pixel_size, SensorSize: a.sensor_size, FPS: a.fps, Mount: a.mount, FocalLength: a.focal_length, Magnification: a.magnification, WD: a.wd, DOF: a.dof, Notes: a.notes, Supplier: a.supplier, RefPrice: a.ref_price }).filter(([, v]) => v !== undefined && v !== ""),
+          ),
+        })(),
+    });
+  }
+  if (writable.has("updateProduct")) {
+    tools.push({
+      name: "update_product",
+      description: "修改產品資料（規格、備註、供應商、參考底價等；內部型號不能用助理改）。只填要改的欄位，備註會整個取代，修改前先用 get_product 看原本內容。",
+      parameters: {
+        type: "object",
+        properties: {
+          internal_model: str("內部型號（完整）"), supplier_model: str("供應商型號"), brand: str("品牌"), category: str("類別"), interface: str("介面"), resolution: str("解析度"), pixel_size: str("像素尺寸"), sensor_size: str("靶面"),
+          fps: str("幀率"), mount: str("接口"), focal_length: str("焦距"), magnification: str("倍率"), wd: str("工作距離"), dof: str("景深"), focus_wd: str("對焦距離"), notes: str("備註"),
+          supplier: str("供應商"), supplier_contact: str("供應商聯絡人"), supplier_email: str("供應商 Email"), ref_price: str("參考底價"),
+        },
+        required: ["internal_model"],
+      },
+      handler: (a) =>
+        propose("updateProduct", {
+          internalModel: a.internal_model,
+          fields: Object.fromEntries(
+            Object.entries({ SupplierModel: a.supplier_model, Brand: a.brand, Category: a.category, Interface: a.interface, Resolution: a.resolution, PixelSize: a.pixel_size, SensorSize: a.sensor_size, FPS: a.fps, Mount: a.mount, FocalLength: a.focal_length, Magnification: a.magnification, WD: a.wd, DOF: a.dof, FocusWD: a.focus_wd, Notes: a.notes, Supplier: a.supplier, SupplierContact: a.supplier_contact, SupplierContactEmail: a.supplier_email, RefPrice: a.ref_price }).filter(([, v]) => v !== undefined && v !== ""),
+          ),
+        })(),
+    });
+  }
+  if (writable.has("createInquiryDraft")) {
+    tools.push({
+      name: "create_inquiry_draft",
+      description: "把詢價信存成 Gmail 草稿（只存草稿、不會寄出，建立在系統帳號的 Gmail 草稿匣）。產品要有供應商 Email。要先 inquiry_draft 看過內容再建立。",
+      parameters: { type: "object", properties: { internal_model: str("內部型號"), quantity: str("需求數量") }, required: ["internal_model"] },
+      handler: (a) => propose("createInquiryDraft", { internalModel: a.internal_model, quantity: a.quantity })(),
+    });
+  }
+  if (writable.has("saveCopyPost")) {
+    tools.push({
+      name: "save_copy_post",
+      description: "把寫好的社群文案存進「文案製作」成為草稿（有給 scheduled_for 就是預排）。修改既有文案時帶 id。寫之前先用 copy_style 看公司風格。不會自動發佈。",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "number", description: "要修改的文案編號（新增不用填）" }, platform: str("平台：Threads / Instagram / Facebook / X / LINE / YouTube / 方格子"), topic: str("主題"), keywords: str("關鍵字"), tone: str("語氣"), content: str("文案內文"), scheduled_for: str("預排日期 YYYY-MM-DD（可省略）") },
+        required: ["content"],
+      },
+      handler: (a) => propose("saveCopyPost", { id: a.id, platform: a.platform, topic: a.topic, keywords: a.keywords, tone: a.tone, content: a.content, scheduledFor: a.scheduled_for })(),
     });
   }
   if (writable.has("remember") && info.memory?.enabled) {
