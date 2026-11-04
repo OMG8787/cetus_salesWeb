@@ -302,7 +302,8 @@ test("早報：固定格式（逾期 / 今天 / 案件）；推播給名單內�
   const t = briefingText("小明", {
     followups: { total: 2, items: [{ CompanyName: "乙公司", NextFollowUpDate: "2026-11-01", status: "已逾期" }, { CompanyName: "甲公司", NextFollowUpDate: "2026-11-04", NextFollowUpTime: "14:30", NextFollowUpNote: "報價確認", status: "今天" }] },
     openCases: { total: 3, byStatus: { 需求單已發出: 2, 評估單已發出: 1 }, high: [{ CaseID: "C-1", CustomerName: "甲公司" }] },
-    events: [{ Title: "拜訪", Start: "2026-11-04T10:00", AllDay: false }, { Title: "明天的", Start: "2026-11-05T10:00" }],
+    events: [{ date: "2026-11-04", time: "10:00–11:00", title: "拜訪", location: "新竹" }, { date: "2026-11-05", time: "10:00–11:00", title: "明天的" }, { date: "2026-11-03", endDate: "2026-11-05", time: "全天", title: "展覽", from: "小華" }],
+    todos: [{ id: 1, title: "寄樣品", dueDate: "2026-11-04", priority: "高" }, { id: 2, title: "整理報價", dueDate: "2026-11-02" }, { id: 3, title: "下週的事", dueDate: "2026-11-10" }],
   }, "2026-11-04");
   assert.match(t, /早安，小明/);
   assert.match(t, /今天 1 家、已逾期 1 家/);
@@ -310,7 +311,11 @@ test("早報：固定格式（逾期 / 今天 / 案件）；推播給名單內�
   assert.match(t, /甲公司 14:30：報價確認/);
   assert.match(t, /進行中案件 3 件（需求單已發出 2、評估單已發出 1）/);
   assert.match(t, /緊急：C-1/);
-  assert.match(t, /10:00 拜訪/);
+  assert.match(t, /10:00 拜訪＠新竹/);
+  assert.match(t, /全天 展覽（小華 分享）/, "跨天行程今天也算");
+  assert.match(t, /寄樣品/);
+  assert.match(t, /整理報價（逾期，期限 11-02）/);
+  assert.doesNotMatch(t, /下週的事/);
   assert.doesNotMatch(t, /明天的/);
   const r = await pushBriefings();
   assert.deepEqual(r, { targets: 2, sent: 2, failed: 0 });
@@ -361,7 +366,7 @@ test("金鑰分開：員工助理的操作用員工金鑰、客服的操作用�
 });
 
 // ---------- 全功能：產品 / 詢價 / 報價 / 客戶窗口 / 案件內容 / 文案 ----------
-const allWritable = ["addMemo", "logFollowUp", "updateCustomer", "addCustomer", "createCase", "updateCaseStatus", "updateCase", "addContact", "addPriceRecord", "addProduct", "updateProduct", "createInquiryDraft", "saveCopyPost", "remember"];
+const allWritable = ["addEvent", "addTodo", "completeTodo", "addMemo", "logFollowUp", "updateCustomer", "addCustomer", "createCase", "updateCaseStatus", "updateCase", "addContact", "addPriceRecord", "addProduct", "updateProduct", "createInquiryDraft", "saveCopyPost", "remember"];
 const toolNames = (i = 0) => (state.aiCalls[i].tools[0].functionDeclarations as { name: string }[]).map((t) => t.name);
 
 test("全功能工具：依權限出現（產品 / 文案 / 寫入白名單各自控制）", async () => {
@@ -369,7 +374,7 @@ test("全功能工具：依權限出現（產品 / 文案 / 寫入白名單各�
   state.ai = () => text("ok");
   await handleStaffEvent(evMsg("hi"));
   const all = toolNames();
-  for (const n of ["get_product", "price_history", "inquiry_draft", "calc_selection", "copy_posts", "copy_style", "update_case_info", "add_contact", "add_price_record", "add_product", "update_product", "create_inquiry_draft", "save_copy_post"]) assert.ok(all.includes(n), "缺工具 " + n);
+  for (const n of ["list_todos", "add_event", "add_todo", "complete_todo", "get_product", "price_history", "inquiry_draft", "calc_selection", "copy_posts", "copy_style", "update_case_info", "add_contact", "add_price_record", "add_product", "update_product", "create_inquiry_draft", "save_copy_post"]) assert.ok(all.includes(n), "缺工具 " + n);
   assert.ok(!all.some((n) => /delete|remove|刪/.test(n)));
 
   state.info = { blocks: { products: "view", cases: "none", customers: "none", copy: "none" }, writable: ["addMemo"] };
@@ -408,6 +413,8 @@ test("查詢類工具的參數對應到管理系統的查詢", async () => {
     ["inquiry_draft", { internal_model: "ACA2440", quantity: "10" }, "inquiryDraft", { internalModel: "ACA2440", quantity: "10" }],
     ["copy_posts", { keyword: "光源", status: "draft" }, "copyPosts", { keyword: "光源", status: "draft", limit: undefined }],
     ["copy_style", {}, "copyStyle", {}],
+    ["list_todos", { status: "all", scope: "mine" }, "todos", { status: "all", scope: "mine", limit: undefined }],
+    ["list_calendar", { days: 14 }, "calendar", { days: 14 }],
   ] as const;
   for (const [tool, args, call, params] of steps) {
     state.gas = [];
@@ -429,6 +436,11 @@ test("寫入類工具：欄位名稱轉成管理系統的格式，只送有填�
     ["add_product", { internal_model: "N1", brand: "Computar", focal_length: "25", fps: "30" }, "addProduct", { internalModel: "N1", fields: { Brand: "Computar", FocalLength: "25", FPS: "30" } }],
     ["update_product", { internal_model: "ACA2440", notes: "新備註", supplier_email: "a@b.com" }, "updateProduct", { internalModel: "ACA2440", fields: { Notes: "新備註", SupplierContactEmail: "a@b.com" } }],
     ["create_inquiry_draft", { internal_model: "ACA2440", quantity: "20" }, "createInquiryDraft", { internalModel: "ACA2440", quantity: "20" }],
+    ["add_event", { title: "拜訪甲公司", date: "2026-11-10", time: "14:00", end_time: "15:30", location: "新竹", share_all: false }, "addEvent", { title: "拜訪甲公司", date: "2026-11-10", time: "14:00", endTime: "15:30", location: "新竹", allDay: false }],
+    ["add_event", { title: "展覽", date: "2026-11-12", share_all: true }, "addEvent", { title: "展覽", date: "2026-11-12", allDay: true, shareAll: true }],
+    ["add_todo", { title: "寄樣品", due_date: "2026-11-06", priority: "高" }, "addTodo", { title: "寄樣品", dueDate: "2026-11-06", priority: "高" }],
+    ["complete_todo", { id: 7 }, "completeTodo", { id: 7 }],
+    ["complete_todo", { id: 7, reopen: true }, "completeTodo", { id: 7, reopen: true }],
     ["save_copy_post", { platform: "Instagram", topic: "新品", content: "新品上市", scheduled_for: "2026-11-20" }, "saveCopyPost", { platform: "Instagram", topic: "新品", content: "新品上市", scheduledFor: "2026-11-20" }],
   ];
   for (const [tool, args, action, data] of steps) {

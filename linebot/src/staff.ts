@@ -76,6 +76,7 @@ export function staffSystemPrompt(info: StaffInfo): string {
     `4. 日期：同事說「明天」「下週三」這類相對日期，請依今天（${t.date}，星期${t.weekday}）換算成 YYYY-MM-DD 再使用，並在回覆裡寫出換算後的日期讓他核對。`,
     "5. 回覆會顯示在聊天視窗：不要用 Markdown（不要用 **粗體**、# 標題、表格），條列用「・」，盡量簡短。",
     "6. 同事的問題模稜兩可（例如有好幾家名稱相近的客戶）時不要猜，用 offer_choices 給選項按鈕並用一句話反問。",
+    "個人工作區：行事曆、工作清單、備忘錄是每個帳號各自的。新增的預設只有同事自己看得到，他明確說「分享給大家」才用 share_all；別人分享給他的只能看、不能改。需要綁定網站帳號才有行事曆與工作清單，沒綁定時照實告訴他。",
     (info.blocks?.products ?? "none") !== "none" ? CALC_RULES : "",
     (info.blocks?.products ?? "none") !== "none"
       ? "產品與詢價：問價格先用 get_product / price_history 查報價紀錄，沒有紀錄就說沒有，不要估價；要詢價先用 inquiry_draft 產生信件內容給同事看，同事要存草稿再用 create_inquiry_draft（只存草稿、不會寄出）；拿到供應商新報價用 add_price_record 記錄。底價與供應商只能對同事講，絕對不要轉述給客戶。"
@@ -111,21 +112,27 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
   const tools: Tool[] = [
     {
       name: "overview",
-      description: "今日總覽：近 3 天要追蹤的客戶（含逾期）、進行中案件數、今明兩天行程。同事問「今天有什麼事」「早報」時用。",
+      description: "今日總覽：近 3 天要追蹤的客戶（含逾期）、進行中案件數、今明兩天行程與快到期的工作。同事問「今天有什麼事」「早報」時用。",
       parameters: { type: "object", properties: {} },
       handler: () => query(uid, "overview", {}),
     },
     {
       name: "list_memos",
-      description: "查同事自己的與共享的備忘錄（最近的在前面）",
+      description: "查同事自己的與別人分享給他的備忘錄（最近的在前面）",
       parameters: { type: "object", properties: { limit: { type: "number", description: "筆數，預設 10" } } },
       handler: (a) => query(uid, "memos", { limit: a.limit }),
     },
     {
       name: "list_calendar",
-      description: "查行事曆上未來幾天的行程",
+      description: "查同事的行事曆未來幾天的行程（自己的 + 別人分享給他的；客戶下次追蹤也會在裡面，標示 followup）。需要綁定網站帳號。",
       parameters: { type: "object", properties: { days: { type: "number", description: "未來幾天，預設 7" } } },
       handler: (a) => query(uid, "calendar", { days: a.days }),
+    },
+    {
+      name: "list_todos",
+      description: "查同事的工作清單（自己的 + 別人分享給他的），未完成的在前面，依期限排序。status：open（預設，未完成）/ done / all。",
+      parameters: { type: "object", properties: { status: { type: "string", enum: ["open", "done", "all"], description: "預設 open" }, scope: { type: "string", enum: ["all", "mine", "shared"], description: "all（預設）/ mine 只看自己的 / shared 只看別人分享的" }, limit: { type: "number", description: "筆數，預設 10" } } },
+      handler: (a) => query(uid, "todos", { status: a.status, scope: a.scope, limit: a.limit }),
     },
   ];
   if (lv("customers") !== "none") {
@@ -419,6 +426,30 @@ function writeTools(uid: string, info: StaffInfo, staging: Staging): Tool[] {
       handler: (a) => propose("saveCopyPost", { id: a.id, platform: a.platform, topic: a.topic, keywords: a.keywords, tone: a.tone, content: a.content, scheduledFor: a.scheduled_for })(),
     });
   }
+  if (writable.has("addEvent")) {
+    tools.push({
+      name: "add_event",
+      description: "在同事自己的行事曆新增行程（預設只有他自己看得到；share_all=true 才分享給全部同事，對方只能看）。沒給時間就是全天行程。日期用 YYYY-MM-DD、時間用 HH:mm。需要綁定網站帳號。",
+      parameters: { type: "object", properties: { title: str("標題"), date: str("日期 YYYY-MM-DD"), time: str("開始時間 HH:mm（全天行程省略）"), end_time: str("結束時間 HH:mm（省略 = 一小時）"), end_date: str("結束日期（跨天才需要）"), location: str("地點"), notes: str("備註"), share_all: { type: "boolean", description: "分享給全部同事（只能看），預設否" } }, required: ["title", "date"] },
+      handler: (a) => propose("addEvent", { title: a.title, date: a.date, time: a.time, endTime: a.end_time, endDate: a.end_date, location: a.location, notes: a.notes, allDay: !a.time, shareAll: a.share_all === true ? true : undefined })(),
+    });
+  }
+  if (writable.has("addTodo")) {
+    tools.push({
+      name: "add_todo",
+      description: "在同事自己的工作清單新增一項工作（期限 YYYY-MM-DD、優先度 高 / 中 / 低，預設中）。預設只有他自己看得到。需要綁定網站帳號。",
+      parameters: { type: "object", properties: { title: str("工作內容"), due_date: str("期限 YYYY-MM-DD（可省略）"), priority: str("優先度：高 / 中 / 低"), notes: str("備註"), share_all: { type: "boolean", description: "分享給全部同事（只能看），預設否" } }, required: ["title"] },
+      handler: (a) => propose("addTodo", { title: a.title, dueDate: a.due_date, priority: a.priority, notes: a.notes, shareAll: a.share_all === true ? true : undefined })(),
+    });
+  }
+  if (writable.has("completeTodo")) {
+    tools.push({
+      name: "complete_todo",
+      description: "把同事自己的某項工作標示為完成（reopen=true 則重開）。要用 list_todos 看到的編號 id；別人分享的工作不能改。",
+      parameters: { type: "object", properties: { id: { type: "number", description: "工作編號" }, reopen: { type: "boolean", description: "重開（取消完成），預設否" } }, required: ["id"] },
+      handler: (a) => propose("completeTodo", { id: a.id, reopen: a.reopen === true ? true : undefined })(),
+    });
+  }
   if (writable.has("remember") && info.memory?.enabled) {
     const categories = info.memory.categories;
     tools.push({
@@ -609,7 +640,8 @@ interface Overview {
   today?: string;
   followups?: { total: number; items: { CompanyName?: string; Contact?: string; NextFollowUpTime?: string; NextFollowUpNote?: string; NextFollowUpDate?: string; status?: string }[] };
   openCases?: { total: number; byStatus: Record<string, number>; high: { CaseID?: string; CustomerName?: string; Status?: string }[] };
-  events?: { Title?: string; Start?: string; AllDay?: boolean }[];
+  events?: { date: string; endDate?: string; time?: string; title: string; location?: string; from?: string }[];
+  todos?: { id: number; title: string; dueDate?: string; priority?: string; status?: string; from?: string }[];
 }
 
 export function briefingText(name: string, ov: Overview, date = nowLocal().date): string {
@@ -632,10 +664,15 @@ export function briefingText(name: string, ov: Overview, date = nowLocal().date)
     lines.push("", `📁 進行中案件 ${oc.total} 件${parts.length ? "（" + parts.join("、") + "）" : ""}`);
     for (const c of oc.high.slice(0, 3)) lines.push(`・緊急：${c.CaseID}（${c.CustomerName}）`);
   }
-  const events = (ov.events ?? []).filter((x) => String(x.Start ?? "").slice(0, 10) === date);
+  const events = (ov.events ?? []).filter((x) => x.date <= date && (x.endDate ?? x.date) >= date);
   if (events.length) {
     lines.push("", "📅 今天行程");
-    for (const x of events.slice(0, 6)) lines.push(`・${x.AllDay ? "全天" : String(x.Start ?? "").slice(11, 16)} ${x.Title}`);
+    for (const x of events.slice(0, 6)) lines.push(`・${!x.time || x.time === "全天" ? "全天" : x.time.slice(0, 5)} ${x.title}${x.location ? "＠" + x.location : ""}${x.from ? `（${x.from} 分享）` : ""}`);
+  }
+  const todos = (ov.todos ?? []).filter((x) => x.dueDate && x.dueDate <= date);
+  if (todos.length) {
+    lines.push("", "✅ 今天要做 / 已逾期的工作");
+    for (const x of todos.slice(0, 6)) lines.push(`・${x.title}${x.dueDate && x.dueDate < date ? `（逾期，期限 ${x.dueDate.slice(5)}）` : ""}`);
   }
   return lines.join("\n");
 }

@@ -88,6 +88,9 @@ var SHEET_CASE_COMPANIES = 'CaseCompanies';
 var SHEET_FAVORITES = 'Favorites';
 var SHEET_SHORTCUTS = 'Shortcuts';
 var SHEET_MEMOS = 'Memos';
+var SHEET_CAL = 'CalEvents';
+var SHEET_TODOS = 'Todos';
+var SHEET_GROUPS = 'UserGroups';
 var SHEET_SOFTWARE = 'Software';
 var SHEET_LOGIN_LOGS = 'LoginLogs';
 
@@ -178,6 +181,20 @@ var ROUTES = {
   updateMemo:              { auth: true, fn: handleUpdateMemo },
   deleteMemo:              { auth: true, fn: handleDeleteMemo },
   getCalendarEvents:       { auth: true, fn: handleGetCalendarEvents },
+  // 個人工作區：行事曆 / 工作清單（每個帳號獨立，可分享給別人「只能查看」）與群組
+  calGetEvents:            { auth: true, fn: handleCalGetEvents },
+  calSaveEvent:            { auth: true, fn: handleCalSaveEvent },
+  calDeleteEvent:          { auth: true, fn: handleCalDeleteEvent },
+  todoGet:                 { auth: true, fn: handleTodoGet },
+  todoSave:                { auth: true, fn: handleTodoSave },
+  todoSetStatus:           { auth: true, fn: handleTodoSetStatus },
+  todoDelete:              { auth: true, fn: handleTodoDelete },
+  getShareTargets:         { auth: true, fn: handleGetShareTargets },
+  groupGetAll:             { auth: true, fn: handleGroupGetAll },
+  groupSave:               { auth: true, fn: handleGroupSave },
+  groupDelete:             { auth: true, fn: handleGroupDelete },
+  wsGetSettings:           { auth: true, fn: handleWsGetSettings },
+  wsSaveSettings:          { auth: true, fn: handleWsSaveSettings },
 
   // 文件產生（每種都支援 format: 'html' / 'pdf' / 'docx'）
   generateRequirementDoc:  { auth: true, fn: handleGenerateRequirementDoc },
@@ -208,6 +225,8 @@ var ROUTES = {
 // ------------------------------------------------------------
 // 3. 入口
 // ------------------------------------------------------------
+var WS_ACTOR_ = ''; // 這一次執行是誰在操作（客戶「下次追蹤」會寫進他自己的行事曆）
+
 function doPost(e) {
   var result;
   try {
@@ -219,6 +238,7 @@ function doPost(e) {
     } else {
       if (route.auth) {
         body._user = requireAuth(body); // handler 需要知道是誰在操作時用 body._user
+        WS_ACTOR_ = body._user.username;
         requirePermission_(body.action, body._user); // 依目前(即時查詢)的角色檢查這個動作能不能做
         touchSession_(body._user); // 約每 5 分鐘更新一次「最後使用」
       }
@@ -265,7 +285,10 @@ SCHEMA[SHEET_CONFIG] = ['Key', 'Value'];
 SCHEMA[SHEET_SOFTWARE] = ['Name'];
 SCHEMA[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 SCHEMA[SHEET_SHORTCUTS] = ['Username', 'Title', 'Url', 'OpenOnStart', 'SortOrder'];
-SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated', 'LinkType', 'LinkId', 'NeedBlock'];
+SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated', 'LinkType', 'LinkId', 'NeedBlock', 'ShareMode', 'ShareWith'];
+SCHEMA[SHEET_CAL] = ['ID', 'Owner', 'Title', 'StartDate', 'StartTime', 'EndDate', 'EndTime', 'AllDay', 'Location', 'Notes', 'ShareMode', 'ShareWith', 'Source', 'RefKey', 'CreatedAt', 'UpdatedAt'];
+SCHEMA[SHEET_TODOS] = ['ID', 'Owner', 'Title', 'Notes', 'DueDate', 'Priority', 'Status', 'ShareMode', 'ShareWith', 'CreatedAt', 'UpdatedAt', 'DoneAt'];
+SCHEMA[SHEET_GROUPS] = ['ID', 'Name', 'Members', 'CreatedBy'];
 SCHEMA[SHEET_DEVICES] = ['DeviceId', 'Username', 'DeviceLabel', 'TokenHash', 'CreatedDate', 'LastSeenDate', 'LoginTime', 'LastSeenTime'];
 
 /**
@@ -286,7 +309,10 @@ TEXT_COLUMNS[SHEET_PRICE_HISTORY] = ['ProductInternalModel', 'CaseID'];
 TEXT_COLUMNS[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD'];
 TEXT_COLUMNS[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 TEXT_COLUMNS[SHEET_SHORTCUTS] = ['Username'];
-TEXT_COLUMNS[SHEET_MEMOS] = ['Owner'];
+TEXT_COLUMNS[SHEET_MEMOS] = ['Owner', 'ShareWith'];
+TEXT_COLUMNS[SHEET_CAL] = ['Owner', 'StartDate', 'StartTime', 'EndDate', 'EndTime', 'ShareWith', 'RefKey'];
+TEXT_COLUMNS[SHEET_TODOS] = ['Owner', 'DueDate', 'ShareWith'];
+TEXT_COLUMNS[SHEET_GROUPS] = ['Members'];
 
 /** Config 分頁預設要有的設定（值留空，之後自己填）。 */
 var CONFIG_KEYS = [
@@ -331,6 +357,10 @@ var ACTION_PERM = {
   getFavorites: ['*', 'r'], toggleFavorite: ['*', 'w'], getShortcuts: ['*', 'r'], saveShortcuts: ['*', 'w'],
   getMemos: ['*', 'r'], addMemo: ['*', 'w'], updateMemo: ['*', 'w'], deleteMemo: ['*', 'w'],
   getCalendarEvents: ['*', 'r'], getStaff: ['*', 'r'], getSoftware: ['*', 'r'],
+  // 個人工作區：登入就能用自己的；分享給別人的只能看，改 / 刪只有擁有者（管理員可處理他人的）
+  calGetEvents: ['*', 'r'], calSaveEvent: ['*', 'w'], calDeleteEvent: ['*', 'w'],
+  todoGet: ['*', 'r'], todoSave: ['*', 'w'], todoSetStatus: ['*', 'w'], todoDelete: ['*', 'w'], getShareTargets: ['*', 'r'],
+  groupGetAll: ['admin', 'r'], groupSave: ['admin', 'w'], groupDelete: ['admin', 'd'], wsGetSettings: ['admin', 'r'], wsSaveSettings: ['admin', 'w'],
   // 只有系統管理員
   getUsers: ['admin', 'r'], addUser: ['admin', 'w'], updateUser: ['admin', 'w'], deleteUser: ['admin', 'd'], resetUserPassword: ['admin', 'w'], migrateRoles: ['admin', 'w'],
   getLoginOverview: ['admin', 'r'], getLoginLogs: ['admin', 'r'], forceLogout: ['admin', 'w'], clearLoginLogs: ['admin', 'd'], setLoginKeep: ['admin', 'w'],
@@ -619,6 +649,11 @@ function setup() {
     repairPhoneColumns_(log);
   } catch (e) {
     log.push('修復電話開頭 0 失敗：' + e.message);
+  }
+  try {
+    wsMigrateFollowUps_(log);
+  } catch (e) {
+    log.push('遷移客戶追蹤到內建行事曆失敗：' + e.message);
   }
   importLegacyCustomers_(log);
   seedSoftwareFromCases_(log);
@@ -4757,16 +4792,21 @@ function handleGetMemos(body) {
   var me = body._user.username;
   var rows = [];
   var access = accessOf_(findUserRow_(me));
+  var ctx = wsShareCtx_(me);
   sheetToObjects(SHEET_MEMOS).rows.forEach(function (r, i) {
     var mine = r['Owner'] === me;
-    if (!mine && r['Shared'] !== '是') return;
+    if (!mine && !wsVisible_(r, me, ctx.myGroups)) return;
     var need = String(r['NeedBlock'] || '');
     if (need && !mine && access.blocks[need] === 'none') return; // 機器人通知只有有「BOT 設定」權限的人看得到
+    var mode = wsMode_(r);
     rows.push({
       RowIndex: i + 2,
       Title: r['Title'],
       Content: r['Content'],
-      Shared: r['Shared'] === '是',
+      Shared: mode === 'all',
+      ShareMode: mode,
+      ShareWith: mine || access.isAdmin ? wsParseList_(r['ShareWith']) : [],
+      ShareLabel: wsShareLabel_(mode, r['ShareWith'], ctx),
       LinkType: r['LinkType'] || '',
       CanManage: mine || access.isAdmin || (!!need && access.blocks[need] === 'edit'),
       OwnerName: r['OwnerName'] || r['Owner'],
@@ -4784,12 +4824,15 @@ function handleGetMemos(body) {
 function handleAddMemo(body) {
   if (!String(body.title || '').trim() && !String(body.content || '').trim()) return { success: false, message: '標題或內容至少要填一個' };
   var today = todayStr();
+  var share = wsCleanShare_(body.shareMode !== undefined ? body.shareMode : body.shared ? 'all' : 'self', body.shareWith, body._user.username);
   appendObjectRow(SHEET_MEMOS, {
     Owner: body._user.username,
     OwnerName: body._user.displayName || body._user.username,
     Title: body.title || '',
     Content: body.content || '',
-    Shared: body.shared ? '是' : '',
+    Shared: share.mode === 'all' ? '是' : '',
+    ShareMode: share.mode,
+    ShareWith: share.withJson,
     CreatedDate: today,
     LastUpdated: today,
   });
@@ -4816,7 +4859,14 @@ function handleUpdateMemo(body) {
   var fields = { LastUpdated: todayStr() };
   if (f.Title !== undefined) fields.Title = f.Title;
   if (f.Content !== undefined) fields.Content = f.Content;
-  if (f.Shared !== undefined) fields.Shared = f.Shared ? '是' : '';
+  if (f.Shared !== undefined && f.ShareMode === undefined) f.ShareMode = f.Shared ? 'all' : 'self';
+  if (f.ShareMode !== undefined) {
+    var owner = String(readRowAsObject(SHEET_MEMOS, rowNum)['Owner'] || body._user.username);
+    var sh = wsCleanShare_(f.ShareMode, f.ShareWith, owner);
+    fields.ShareMode = sh.mode;
+    fields.ShareWith = sh.withJson;
+    fields.Shared = sh.mode === 'all' ? '是' : '';
+  }
   updateRowFields(SHEET_MEMOS, rowNum, fields);
   return { success: true };
 }
@@ -4836,7 +4886,556 @@ function handleDeleteMemo(body) {
   return { success: true };
 }
 
-/** 讀取執行者(部署網頁應用程式的那個 Google 帳號)預設行事曆，從今天起 days 天內的行程。 */
+// ============================================================
+// 個人工作區：行事曆 / 工作清單 / 備忘錄（每個帳號各自獨立）與群組
+//   ・分享對象 ShareMode：self 只有自己（預設）/ users 指定帳號 / groups 自訂群組 / all 全部同事
+//   ・被分享的人「只能查看」；修改、刪除只有擁有者（系統管理員可處理他人分享出來的）
+//   ・個人資料不走功能區塊權限，登入就能用自己的；分享也不會放寬任何人的編輯權限
+//   ・客戶的「下次追蹤」會自動寫進操作者自己的行事曆（Source = followup）
+// ============================================================
+var WS_SHARE_MODES = ['self', 'users', 'groups', 'all'];
+var WS_PRIORITIES = ['高', '中', '低'];
+var WS_TODO_STATUS = ['todo', 'doing', 'done'];
+var WS_MAX_RANGE_DAYS = 400;
+
+function wsParseList_(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw === '' || raw == null) return [];
+  try {
+    var v = JSON.parse(String(raw));
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** 分享對象的模式；舊的備忘錄只有「Shared = 是」視為分享給全部。 */
+function wsMode_(row) {
+  var m = String(row['ShareMode'] || '');
+  if (!m && String(row['Shared']) === '是') return 'all';
+  return m === 'users' || m === 'groups' || m === 'all' ? m : 'self';
+}
+
+function wsUserRows_() {
+  return sheetToObjects(SHEET_USERS).rows;
+}
+
+function wsGroupRows_() {
+  return sheetToObjects(SHEET_GROUPS).rows.map(function (r, i) {
+    return { RowIndex: i + 2, id: Number(r['ID']) || 0, name: String(r['Name'] || ''), members: wsParseList_(r['Members']).map(String), createdBy: String(r['CreatedBy'] || '') };
+  });
+}
+
+/** 讀分享用的對照表（帳號顯示名稱、群組、我所屬的群組）。 */
+function wsShareCtx_(me) {
+  var names = {};
+  wsUserRows_().forEach(function (u) { names[String(u['Username'])] = String(u['DisplayName'] || u['Username']); });
+  var groups = wsGroupRows_();
+  var byId = {};
+  var mine = [];
+  groups.forEach(function (g) {
+    byId[g.id] = g;
+    if (g.members.indexOf(me) > -1) mine.push(g.id);
+  });
+  return { names: names, groups: byId, myGroups: mine };
+}
+
+/** 這筆資料我看不看得到（自己的、指定我的、我所屬群組的、全部）。 */
+function wsVisible_(row, me, myGroups) {
+  if (String(row['Owner']) === me) return true;
+  var mode = wsMode_(row);
+  if (mode === 'all') return true;
+  var w = wsParseList_(row['ShareWith']);
+  if (mode === 'users') return w.map(String).indexOf(me) > -1;
+  if (mode === 'groups') return w.some(function (g) { return myGroups.indexOf(Number(g)) > -1; });
+  return false;
+}
+
+/** 整理分享設定：帳號 / 群組都要真的存在；選了對象卻是空的，退回「只有自己」。 */
+function wsCleanShare_(mode, withList, owner) {
+  mode = WS_SHARE_MODES.indexOf(mode) > -1 ? mode : 'self';
+  var list = wsParseList_(withList);
+  if (mode === 'users') {
+    var have = {};
+    wsUserRows_().forEach(function (u) { have[String(u['Username'])] = true; });
+    var seen = {};
+    list = list.map(String).filter(function (u) {
+      if (!have[u] || u === owner || seen[u]) return false;
+      seen[u] = true;
+      return true;
+    }).slice(0, 100);
+    if (!list.length) mode = 'self';
+  } else if (mode === 'groups') {
+    var gs = {};
+    wsGroupRows_().forEach(function (g) { gs[g.id] = true; });
+    var seenG = {};
+    list = list.map(Number).filter(function (g) {
+      if (!gs[g] || seenG[g]) return false;
+      seenG[g] = true;
+      return true;
+    }).slice(0, 50);
+    if (!list.length) mode = 'self';
+  } else {
+    list = [];
+  }
+  return { mode: mode, with: list, withJson: JSON.stringify(list) };
+}
+
+function wsShareLabel_(mode, withRaw, ctx) {
+  if (mode === 'all') return '全部同事（只能看）';
+  var w = wsParseList_(withRaw);
+  if (mode === 'users') return '指定 ' + w.length + ' 人：' + w.slice(0, 3).map(function (u) { return ctx.names[String(u)] || u; }).join('、') + (w.length > 3 ? '…' : '');
+  if (mode === 'groups') return '群組：' + w.map(function (g) { return ctx.groups[Number(g)] ? ctx.groups[Number(g)].name : '（已刪除的群組）'; }).join('、');
+  return '只有自己';
+}
+
+function wsIsAdmin_(username) {
+  return !!(username && accessOf_(findUserRow_(username)).isAdmin);
+}
+
+function wsNextId_(sheetName) {
+  var max = 0;
+  sheetToObjects(sheetName).rows.forEach(function (r) { max = Math.max(max, Number(r['ID']) || 0); });
+  return max + 1;
+}
+
+function wsFindById_(sheetName, id) {
+  var rows = sheetToObjects(sheetName).rows;
+  for (var i = 0; i < rows.length; i++) if (Number(rows[i]['ID']) === Number(id)) return { rowIndex: i + 2, row: rows[i] };
+  return null;
+}
+
+function wsClip_(v, n) {
+  return String(v == null ? '' : v).trim().slice(0, n);
+}
+
+function wsTimeAdd_(time, minutes) {
+  var m = time.match(/^(\d{2}):(\d{2})$/);
+  var total = Math.min(23 * 60 + 59, Number(m[1]) * 60 + Number(m[2]) + minutes);
+  return ('0' + Math.floor(total / 60)).slice(-2) + ':' + ('0' + (total % 60)).slice(-2);
+}
+
+// ------------------------------------------------------------
+// 行事曆
+// ------------------------------------------------------------
+/** 整理一筆行程的輸入；不合法就丟錯誤（訊息給使用者看）。 */
+function wsCleanEvent_(b) {
+  var title = wsClip_(b.title, 200);
+  if (!title) throw new Error('行程標題不能空白');
+  var startDate = dateKey_(b.startDate);
+  if (!startDate || !isDateStr(startDate)) throw new Error('日期要是 YYYY-MM-DD');
+  var startTime = normTimeStr_(b.startTime);
+  if (String(b.startTime || '').trim() && !startTime) throw new Error('開始時間要是 HH:mm');
+  var allDay = b.allDay === true || b.allDay === 'true' || !startTime;
+  var endDate = b.endDate ? dateKey_(b.endDate) : startDate;
+  if (!endDate || !isDateStr(endDate)) throw new Error('結束日期要是 YYYY-MM-DD');
+  if (endDate < startDate) throw new Error('結束日期不能早於開始日期');
+  if (Math.round((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000) > 60) throw new Error('單一行程最多跨 60 天');
+  var endTime = '';
+  if (!allDay) {
+    endTime = normTimeStr_(b.endTime);
+    if (String(b.endTime || '').trim() && !endTime) throw new Error('結束時間要是 HH:mm');
+    if (!endTime) endTime = wsTimeAdd_(startTime, 60);
+    if (endDate === startDate && endTime < startTime) throw new Error('結束時間不能早於開始時間');
+  } else {
+    startTime = '';
+  }
+  return { title: title, startDate: startDate, startTime: startTime, endDate: endDate, endTime: endTime, allDay: allDay, location: wsClip_(b.location, 200), notes: wsClip_(b.notes, 2000) };
+}
+
+function wsEventOut_(r, me, ctx, isAdmin) {
+  var mode = wsMode_(r);
+  var mine = String(r['Owner']) === me;
+  return {
+    id: Number(r['ID']) || 0,
+    title: String(r['Title'] || ''),
+    startDate: dateKey_(r['StartDate']),
+    startTime: normTimeStr_(r['StartTime']),
+    endDate: dateKey_(r['EndDate']) || dateKey_(r['StartDate']),
+    endTime: normTimeStr_(r['EndTime']),
+    allDay: !(r['AllDay'] === false || String(r['AllDay']).toUpperCase() === 'FALSE'),
+    location: String(r['Location'] || ''),
+    notes: String(r['Notes'] || ''),
+    shareMode: mode,
+    shareWith: mine || isAdmin ? wsParseList_(r['ShareWith']) : [],
+    shareLabel: wsShareLabel_(mode, r['ShareWith'], ctx),
+    source: String(r['Source'] || 'manual'),
+    refKey: String(r['RefKey'] || ''),
+    owner: String(r['Owner'] || ''),
+    ownerName: ctx.names[String(r['Owner'])] || String(r['Owner'] || ''),
+    isMine: mine,
+    canEdit: mine || isAdmin,
+  };
+}
+
+/** 某人看得到的行程（日期區間內有重疊的）。scope：mine / shared（別人分享給我的）/ all。 */
+function wsEventsFor_(me, from, to, scope) {
+  var ctx = wsShareCtx_(me);
+  var isAdmin = wsIsAdmin_(me);
+  var out = [];
+  sheetToObjects(SHEET_CAL).rows.forEach(function (r) {
+    var mine = String(r['Owner']) === me;
+    if (scope === 'mine' && !mine) return;
+    if (scope === 'shared' && mine) return;
+    if (!wsVisible_(r, me, ctx.myGroups)) return;
+    var sd = dateKey_(r['StartDate']);
+    var ed = dateKey_(r['EndDate']) || sd;
+    if (!sd || sd > to || ed < from) return;
+    out.push(wsEventOut_(r, me, ctx, isAdmin));
+  });
+  out.sort(function (a, b) {
+    return a.startDate.localeCompare(b.startDate) || (a.allDay === b.allDay ? 0 : a.allDay ? -1 : 1) || a.startTime.localeCompare(b.startTime) || a.id - b.id;
+  });
+  return out;
+}
+
+function wsEventBrief_(e) {
+  return { date: e.startDate, endDate: e.endDate !== e.startDate ? e.endDate : undefined, time: e.allDay ? '全天' : e.startTime + '–' + e.endTime, title: e.title, location: e.location || undefined, from: e.isMine ? undefined : e.ownerName, followup: e.source === 'followup' ? true : undefined };
+}
+
+function wsRangeFrom_(body) {
+  var from = body.from ? dateKey_(body.from) : todayStr();
+  if (!isDateStr(from)) throw new Error('起始日期要是 YYYY-MM-DD');
+  var to = body.to ? dateKey_(body.to) : addDaysStr(from, 30);
+  if (!isDateStr(to)) throw new Error('結束日期要是 YYYY-MM-DD');
+  if (to < from) throw new Error('結束日期不能早於起始日期');
+  if (Math.round((new Date(to + 'T00:00:00Z') - new Date(from + 'T00:00:00Z')) / 86400000) > WS_MAX_RANGE_DAYS) throw new Error('一次最多查 ' + WS_MAX_RANGE_DAYS + ' 天');
+  return { from: from, to: to };
+}
+
+function handleCalGetEvents(body) {
+  var r;
+  try {
+    r = wsRangeFrom_(body);
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  var scope = body.scope === 'mine' || body.scope === 'shared' ? body.scope : 'all';
+  return { success: true, from: r.from, to: r.to, today: todayStr(), events: wsEventsFor_(body._user.username, r.from, r.to, scope) };
+}
+
+function handleCalSaveEvent(body) {
+  var me = body._user.username;
+  return withLock_(function () {
+    var c;
+    try {
+      c = wsCleanEvent_(body);
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    var id = Number(body.id) || 0;
+    var now = nowStr();
+    if (id) {
+      var found = wsFindById_(SHEET_CAL, id);
+      if (!found) return { success: false, message: '找不到這個行程（可能已被刪除）' };
+      var owner = String(found.row['Owner']);
+      if (owner !== me && !wsIsAdmin_(me)) return { success: false, message: '這是別人的行程，只有擁有者可以修改' };
+      var fields = { Title: c.title, StartDate: c.startDate, StartTime: c.startTime, EndDate: c.endDate, EndTime: c.endTime, AllDay: c.allDay, Location: c.location, Notes: c.notes, UpdatedAt: now };
+      if (body.shareMode !== undefined) {
+        var sh = wsCleanShare_(body.shareMode, body.shareWith, owner);
+        fields.ShareMode = sh.mode;
+        fields.ShareWith = sh.withJson;
+      }
+      updateRowFields(SHEET_CAL, found.rowIndex, fields);
+      return { success: true, id: id };
+    }
+    var share = wsCleanShare_(body.shareMode, body.shareWith, me);
+    id = wsNextId_(SHEET_CAL);
+    appendObjectRow(SHEET_CAL, { ID: id, Owner: me, Title: c.title, StartDate: c.startDate, StartTime: c.startTime, EndDate: c.endDate, EndTime: c.endTime, AllDay: c.allDay, Location: c.location, Notes: c.notes, ShareMode: share.mode, ShareWith: share.withJson, Source: 'manual', RefKey: '', CreatedAt: now, UpdatedAt: now });
+    return { success: true, id: id };
+  });
+}
+
+function handleCalDeleteEvent(body) {
+  var me = body._user.username;
+  return withLock_(function () {
+    var found = wsFindById_(SHEET_CAL, body.id);
+    if (!found) return { success: false, message: '找不到這個行程（可能已被刪除）' };
+    if (String(found.row['Owner']) !== me && !wsIsAdmin_(me)) return { success: false, message: '這是別人的行程，只有擁有者可以刪除' };
+    getSheet(SHEET_CAL).deleteRow(found.rowIndex);
+    return { success: true };
+  });
+}
+
+// ------------------------------------------------------------
+// 客戶「下次追蹤」→ 操作者自己的行事曆
+// ------------------------------------------------------------
+function wsActorOk_() {
+  return !!(WS_ACTOR_ && findUserRow_(WS_ACTOR_));
+}
+
+/** 新增 / 改期 / 不再追蹤時同步（公司改名時 oldName 是舊名稱）。追蹤事件永遠只有自己看得到，只放在「現在負責的人」的行事曆。 */
+function wsSyncFollowUp_(customer, oldName) {
+  var name = String(customer['CompanyName'] || '');
+  var keys = [name];
+  if (oldName && oldName !== name) keys.push(String(oldName));
+  var rows = sheetToObjects(SHEET_CAL).rows;
+  var hits = [];
+  rows.forEach(function (r, i) {
+    if (String(r['Source']) === 'followup' && keys.indexOf(String(r['RefKey'])) > -1) hits.push({ rowIndex: i + 2, row: r });
+  });
+  var ds = dateKey_(customer['NextFollowUpDate']);
+  if (!ds) {
+    hits.slice().sort(function (a, b) { return b.rowIndex - a.rowIndex; }).forEach(function (h) { getSheet(SHEET_CAL).deleteRow(h.rowIndex); });
+    return;
+  }
+  if (!wsActorOk_()) return; // 沒辦法確定是誰在操作（例如沒綁定帳號的 LINE），就不動行事曆
+  var time = normTimeStr_(customer['NextFollowUpTime']);
+  var f = {
+    Owner: WS_ACTOR_,
+    Title: '客戶追蹤：' + name + (customer['Contact'] ? '（' + customer['Contact'] + '）' : ''),
+    StartDate: ds,
+    StartTime: time,
+    EndDate: ds,
+    EndTime: time ? wsTimeAdd_(time, 60) : '',
+    AllDay: !time,
+    Notes: String(customer['NextFollowUpNote'] || ''),
+    ShareMode: 'self',
+    ShareWith: '[]',
+    Source: 'followup',
+    RefKey: name,
+    UpdatedAt: nowStr(),
+  };
+  if (hits.length) {
+    updateRowFields(SHEET_CAL, hits[0].rowIndex, f);
+    hits.slice(1).sort(function (a, b) { return b.rowIndex - a.rowIndex; }).forEach(function (h) { getSheet(SHEET_CAL).deleteRow(h.rowIndex); });
+    return;
+  }
+  f.ID = wsNextId_(SHEET_CAL);
+  f.CreatedAt = nowStr();
+  appendObjectRow(SHEET_CAL, f);
+}
+
+function wsRemoveFollowUp_(name) {
+  var rows = sheetToObjects(SHEET_CAL).rows;
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i]['Source']) === 'followup' && String(rows[i]['RefKey']) === String(name)) getSheet(SHEET_CAL).deleteRow(i + 2);
+  }
+}
+
+/** setup 時把既有客戶的下次追蹤放進內建行事曆（只做一次）：負責人 = 該客戶進行中案件的業務（對得到帳號），否則第一位管理員。 */
+function wsMigrateFollowUps_(log) {
+  if (getConfig('WsFollowUpMigrated') === 'yes') return;
+  var users = wsUserRows_();
+  var byKey = {};
+  var firstAdmin = '';
+  users.forEach(function (u) {
+    var un = String(u['Username']);
+    byKey[un.toLowerCase()] = un;
+    if (u['DisplayName']) byKey[String(u['DisplayName']).toLowerCase()] = un;
+    if (!firstAdmin && u['Role'] === 'admin') firstAdmin = un;
+  });
+  if (!firstAdmin) return;
+  var owners = {};
+  sheetToObjects(SHEET_CASES).rows.forEach(function (c) {
+    if (c['Status'] === '已結案') return;
+    var u = byKey[String(c['Salesperson'] || '').trim().toLowerCase()];
+    if (u && !owners[c['CustomerName']]) owners[c['CustomerName']] = u;
+  });
+  var have = {};
+  sheetToObjects(SHEET_CAL).rows.forEach(function (r) { if (String(r['Source']) === 'followup') have[String(r['RefKey'])] = true; });
+  var made = 0;
+  var saved = WS_ACTOR_;
+  sheetToObjects(SHEET_CUSTOMERS).rows.forEach(function (c) {
+    var name = String(c['CompanyName'] || '');
+    if (!name || have[name] || !dateKey_(c['NextFollowUpDate'])) return;
+    WS_ACTOR_ = owners[name] || firstAdmin;
+    wsSyncFollowUp_(c, '');
+    made++;
+  });
+  WS_ACTOR_ = saved;
+  setConfig('WsFollowUpMigrated', 'yes');
+  if (log) log.push('客戶追蹤日放進內建行事曆：' + made + ' 筆（負責人依進行中案件的業務，找不到就放第一位管理員）');
+}
+
+// ------------------------------------------------------------
+// 工作清單
+// ------------------------------------------------------------
+function wsCleanTodo_(b) {
+  var title = wsClip_(b.title, 200);
+  if (!title) throw new Error('工作標題不能空白');
+  var due = b.dueDate ? dateKey_(b.dueDate) : '';
+  if (b.dueDate && (!due || !isDateStr(due))) throw new Error('期限要是 YYYY-MM-DD');
+  var priority = WS_PRIORITIES.indexOf(b.priority) > -1 ? b.priority : '中';
+  return { title: title, notes: wsClip_(b.notes, 2000), dueDate: due || '', priority: priority };
+}
+
+function wsTodoOut_(r, me, ctx, isAdmin) {
+  var mode = wsMode_(r);
+  var mine = String(r['Owner']) === me;
+  var st = WS_TODO_STATUS.indexOf(r['Status']) > -1 ? r['Status'] : 'todo';
+  return {
+    id: Number(r['ID']) || 0,
+    title: String(r['Title'] || ''),
+    notes: String(r['Notes'] || ''),
+    dueDate: dateKey_(r['DueDate']),
+    priority: WS_PRIORITIES.indexOf(r['Priority']) > -1 ? r['Priority'] : '中',
+    status: st,
+    shareMode: mode,
+    shareWith: mine || isAdmin ? wsParseList_(r['ShareWith']) : [],
+    shareLabel: wsShareLabel_(mode, r['ShareWith'], ctx),
+    owner: String(r['Owner'] || ''),
+    ownerName: ctx.names[String(r['Owner'])] || String(r['Owner'] || ''),
+    isMine: mine,
+    canEdit: mine || isAdmin,
+    createdAt: String(r['CreatedAt'] || ''),
+    doneAt: String(r['DoneAt'] || ''),
+  };
+}
+
+/** status：open（未完成）/ done / all；scope：mine / shared / all。排序：未完成在前 → 期限（沒期限最後）→ 優先度。 */
+function wsTodosFor_(me, scope, status) {
+  var ctx = wsShareCtx_(me);
+  var isAdmin = wsIsAdmin_(me);
+  var rank = { 高: 0, 中: 1, 低: 2 };
+  var out = [];
+  sheetToObjects(SHEET_TODOS).rows.forEach(function (r) {
+    var mine = String(r['Owner']) === me;
+    if (scope === 'mine' && !mine) return;
+    if (scope === 'shared' && mine) return;
+    if (!wsVisible_(r, me, ctx.myGroups)) return;
+    var t = wsTodoOut_(r, me, ctx, isAdmin);
+    if (status === 'open' && t.status === 'done') return;
+    if (status === 'done' && t.status !== 'done') return;
+    out.push(t);
+  });
+  out.sort(function (a, b) {
+    return (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0) || (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || rank[a.priority] - rank[b.priority] || a.id - b.id;
+  });
+  return out;
+}
+
+function wsTodoBrief_(t) {
+  return { id: t.id, title: t.title, dueDate: t.dueDate || undefined, priority: t.priority, status: t.status, notes: t.notes ? t.notes.slice(0, 100) : undefined, from: t.isMine ? undefined : t.ownerName };
+}
+
+function handleTodoGet(body) {
+  var scope = body.scope === 'mine' || body.scope === 'shared' ? body.scope : 'all';
+  var status = body.status === 'done' || body.status === 'all' ? body.status : 'open';
+  return { success: true, today: todayStr(), todos: wsTodosFor_(body._user.username, scope, status) };
+}
+
+function handleTodoSave(body) {
+  var me = body._user.username;
+  return withLock_(function () {
+    var c;
+    try {
+      c = wsCleanTodo_(body);
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    var id = Number(body.id) || 0;
+    var now = nowStr();
+    if (id) {
+      var found = wsFindById_(SHEET_TODOS, id);
+      if (!found) return { success: false, message: '找不到這個工作（可能已被刪除）' };
+      var owner = String(found.row['Owner']);
+      if (owner !== me && !wsIsAdmin_(me)) return { success: false, message: '這是別人的工作，只有擁有者可以修改' };
+      var fields = { Title: c.title, Notes: c.notes, DueDate: c.dueDate, Priority: c.priority, UpdatedAt: now };
+      if (body.shareMode !== undefined) {
+        var sh = wsCleanShare_(body.shareMode, body.shareWith, owner);
+        fields.ShareMode = sh.mode;
+        fields.ShareWith = sh.withJson;
+      }
+      updateRowFields(SHEET_TODOS, found.rowIndex, fields);
+      return { success: true, id: id };
+    }
+    var share = wsCleanShare_(body.shareMode, body.shareWith, me);
+    id = wsNextId_(SHEET_TODOS);
+    appendObjectRow(SHEET_TODOS, { ID: id, Owner: me, Title: c.title, Notes: c.notes, DueDate: c.dueDate, Priority: c.priority, Status: 'todo', ShareMode: share.mode, ShareWith: share.withJson, CreatedAt: now, UpdatedAt: now, DoneAt: '' });
+    return { success: true, id: id };
+  });
+}
+
+function handleTodoSetStatus(body) {
+  var me = body._user.username;
+  return withLock_(function () {
+    var found = wsFindById_(SHEET_TODOS, body.id);
+    if (!found) return { success: false, message: '找不到這個工作（可能已被刪除）' };
+    if (String(found.row['Owner']) !== me && !wsIsAdmin_(me)) return { success: false, message: '這是別人的工作，只有擁有者可以更改狀態' };
+    if (WS_TODO_STATUS.indexOf(body.status) < 0) return { success: false, message: '狀態只能是 todo / doing / done' };
+    updateRowFields(SHEET_TODOS, found.rowIndex, { Status: body.status, DoneAt: body.status === 'done' ? nowStr() : '', UpdatedAt: nowStr() });
+    return { success: true };
+  });
+}
+
+function handleTodoDelete(body) {
+  var me = body._user.username;
+  return withLock_(function () {
+    var found = wsFindById_(SHEET_TODOS, body.id);
+    if (!found) return { success: false, message: '找不到這個工作（可能已被刪除）' };
+    if (String(found.row['Owner']) !== me && !wsIsAdmin_(me)) return { success: false, message: '這是別人的工作，只有擁有者可以刪除' };
+    getSheet(SHEET_TODOS).deleteRow(found.rowIndex);
+    return { success: true };
+  });
+}
+
+// ------------------------------------------------------------
+// 群組（系統管理員在「帳號管理」建立）與分享對象清單
+// ------------------------------------------------------------
+/** 選分享對象用：所有帳號（顯示名稱）與群組；群組成員只給管理員看。 */
+function handleGetShareTargets(body) {
+  var me = body._user.username;
+  var isAdmin = wsIsAdmin_(me);
+  return {
+    success: true,
+    me: me,
+    users: wsUserRows_().map(function (u) { return { username: String(u['Username']), name: String(u['DisplayName'] || u['Username']) }; }),
+    groups: wsGroupRows_().map(function (g) { return { id: g.id, name: g.name, count: g.members.length, isMember: g.members.indexOf(me) > -1, members: isAdmin ? g.members : undefined }; }),
+  };
+}
+
+function handleGroupGetAll(body) {
+  return { success: true, groups: wsGroupRows_(), users: wsUserRows_().map(function (u) { return { username: String(u['Username']), name: String(u['DisplayName'] || u['Username']) }; }) };
+}
+
+function handleGroupSave(body) {
+  return withLock_(function () {
+    var name = wsClip_(body.name, 40);
+    if (!name) return { success: false, message: '群組名稱不能空白' };
+    var groups = wsGroupRows_();
+    var id = Number(body.id) || 0;
+    if (groups.some(function (g) { return g.id !== id && g.name.toLowerCase() === name.toLowerCase(); })) return { success: false, message: '已經有叫「' + name + '」的群組了' };
+    var have = {};
+    wsUserRows_().forEach(function (u) { have[String(u['Username'])] = true; });
+    var seen = {};
+    var members = wsParseList_(body.members).map(String).filter(function (u) {
+      if (!have[u] || seen[u]) return false;
+      seen[u] = true;
+      return true;
+    });
+    if (id) {
+      var found = groups.filter(function (g) { return g.id === id; })[0];
+      if (!found) return { success: false, message: '找不到這個群組' };
+      updateRowFields(SHEET_GROUPS, found.RowIndex, { Name: name, Members: JSON.stringify(members) });
+      return { success: true, id: id };
+    }
+    id = wsNextId_(SHEET_GROUPS);
+    appendObjectRow(SHEET_GROUPS, { ID: id, Name: name, Members: JSON.stringify(members), CreatedBy: body._user.username });
+    return { success: true, id: id };
+  });
+}
+
+/** 刪除群組：已經分享給這個群組的資料不會被刪，但沒有人再看得到（改分享對象即可恢復）。 */
+function handleGroupDelete(body) {
+  return withLock_(function () {
+    var found = wsGroupRows_().filter(function (g) { return g.id === Number(body.id); })[0];
+    if (!found) return { success: false, message: '找不到這個群組' };
+    getSheet(SHEET_GROUPS).deleteRow(found.RowIndex);
+    return { success: true };
+  });
+}
+
+function handleWsGetSettings(body) {
+  return { success: true, googleCalSync: getConfig('GoogleCalSync') === 'on' };
+}
+
+function handleWsSaveSettings(body) {
+  setConfig('GoogleCalSync', body.googleCalSync === true ? 'on' : '');
+  return { success: true, googleCalSync: body.googleCalSync === true };
+}
+
+/** （選用）讀取執行者(部署網頁應用程式的那個 Google 帳號)預設行事曆，從今天起 days 天內的行程。 */
 function handleGetCalendarEvents(body) {
   var days = Math.min(Math.max(Number(body.days) || 7, 1), 60);
   try {
@@ -5164,7 +5763,9 @@ function dateKey_(v) {
  *  - 有預約時間 → 有時間的行程（預設 1 小時）；沒有 → 整天行程；
  *  - 下次追蹤日清空（不再追蹤）→ 把之前建立的行程刪掉。
  */
-function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer) {
+function syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer, oldName) {
+  wsSyncFollowUp_(customer, oldName); // 內建行事曆：寫進操作者自己的（一定做）
+  if (getConfig('GoogleCalSync') !== 'on') return; // Google 日曆同步是選用功能，預設關閉（管理員在「帳號管理 → 群組與行事曆」開啟）
   var eventIdCol = header.indexOf('CalendarEventId');
   var existingId = eventIdCol > -1 ? String(customer['CalendarEventId'] || '') : '';
   var ds = dateKey_(customer['NextFollowUpDate']);
@@ -5458,7 +6059,7 @@ function applyCustomerUpdate_(rowNum, fields, opts) {
   var keptOld = false;
   if (opts.keepOldContact && changed.indexOf('Contact') > -1) keptOld = keepOldContact_(newObj.CompanyName, oldObj);
   var calendarFields = ['NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote', 'CompanyName', 'Contact'];
-  if (changed.some(function (f) { return calendarFields.indexOf(f) > -1; })) syncCustomerFollowUpToCalendar(rowNum, header, sheet, newObj);
+  if (changed.some(function (f) { return calendarFields.indexOf(f) > -1; })) syncCustomerFollowUpToCalendar(rowNum, header, sheet, newObj, renamed ? oldObj.CompanyName : '');
 
   return {
     customer: customerOut_(rowNum),
@@ -5547,6 +6148,7 @@ function handleDeleteCustomer(body) {
     if (caseCount && !body.force) {
       return { success: false, needConfirm: true, caseCount: caseCount, message: '「' + name + '」底下還有 ' + caseCount + ' 個案件，刪除客戶後這些案件會找不到客戶資料。' };
     }
+    wsRemoveFollowUp_(name);
     if (cust['CalendarEventId']) {
       try {
         var ev = CalendarApp.getDefaultCalendar().getEventById(String(cust['CalendarEventId']));
@@ -7182,7 +7784,7 @@ function botSetup_(log) {
 var SHEET_BOT_MEMBERS = 'BotMembers';
 var SHEET_BOT_MEMORY = 'BotMemory';
 
-var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'product', 'priceHistory', 'inquiryDraft', 'logs', 'memos', 'calendar', 'calcCatalog', 'copyPosts', 'copyStyle'];
+var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'product', 'priceHistory', 'inquiryDraft', 'logs', 'memos', 'calendar', 'todos', 'calcCatalog', 'copyPosts', 'copyStyle'];
 var BOT_STAFF_STATUS = { PENDING: '待開通', ACTIVE: '已開通', OFF: '停用' };
 var BOT_PENDING_SECONDS = 900;
 var BOT_CASE_STATUSES = ['需求單已發出', '評估單已發出', '已結案'];
@@ -7713,19 +8315,26 @@ function botStaffCall_(ctx, action, params) {
 
   if (action === 'memos') {
     var me = ctx.username;
+    var mctx = wsShareCtx_(me);
     var mrows = sheetToObjects(SHEET_MEMOS).rows.filter(function (r) {
       var need = String(r['NeedBlock'] || '');
       if (need && botLevel_(ctx, need) === 'none') return false;
-      return (me && r['Owner'] === me) || r['Shared'] === '是';
+      return (me && r['Owner'] === me) || (me && wsVisible_(r, me, mctx.myGroups));
     });
-    return { total: mrows.length, items: mrows.slice(-limit).reverse().map(function (r) { return { Title: r['Title'], Content: String(r['Content'] || '').slice(0, 200), Shared: r['Shared'] === '是', Date: dateKey_(r['LastUpdated']) }; }) };
+    return { total: mrows.length, items: mrows.slice(-limit).reverse().map(function (r) { return { Title: r['Title'], Content: String(r['Content'] || '').slice(0, 200), Shared: wsMode_(r) !== 'self', Mine: r['Owner'] === me, Owner: r['Owner'] === me ? undefined : r['OwnerName'] || r['Owner'], Date: dateKey_(r['LastUpdated']) }; }) };
   }
 
   if (action === 'calendar') {
-    if (botLevel_(ctx, 'customers') === 'none' && botLevel_(ctx, 'cases') === 'none') throw new Error('你沒有「行事曆」的查看權限（需要客戶或案件的查看權限）');
-    var r2 = handleGetCalendarEvents({ days: botInt_(params.days, 1, 30, 7) });
-    if (!r2.success) throw new Error(r2.message);
-    return { items: r2.events.filter(function (e) { return String(e.Title).indexOf('[AOI客戶追蹤]') !== 0; }).slice(0, 30) };
+    if (!ctx.username) throw new Error('行事曆是每個帳號各自的，請先把你的 LINE 綁定到網站帳號');
+    var cdays = botInt_(params.days, 1, 30, 7);
+    var evs = wsEventsFor_(ctx.username, todayStr(), addDaysStr(todayStr(), cdays - 1), 'all');
+    return { today: today, total: evs.length, items: evs.slice(0, 30).map(wsEventBrief_) };
+  }
+
+  if (action === 'todos') {
+    if (!ctx.username) throw new Error('工作清單是每個帳號各自的，請先把你的 LINE 綁定到網站帳號');
+    var tl = wsTodosFor_(ctx.username, String(params.scope || 'all'), String(params.status || 'open'));
+    return { today: today, total: tl.length, items: tl.slice(0, limit * 2).map(wsTodoBrief_) };
   }
 
   if (action === 'overview') {
@@ -7741,8 +8350,12 @@ function botStaffCall_(ctx, action, params) {
       ov.openCases = { total: open.length, byStatus: byStatus, high: open.filter(function (r) { return r['Urgency'] === '高'; }).slice(0, 5).map(function (r) { return botTrimRow_(r, ['CaseID', 'CustomerName', 'Status'], 60); }) };
     }
     try {
-      var ev = botLevel_(ctx, 'customers') === 'none' && botLevel_(ctx, 'cases') === 'none' ? { success: false } : handleGetCalendarEvents({ days: 2 });
-      if (ev.success) ov.events = ev.events.filter(function (e) { return String(e.Title).indexOf('[AOI客戶追蹤]') !== 0; }).slice(0, 10);
+      if (ctx.username) {
+      var ovEv = wsEventsFor_(ctx.username, today, addDaysStr(today, 1), 'all').filter(function (e) { return e.source !== 'followup'; });
+      if (ovEv.length) ov.events = ovEv.slice(0, 10).map(wsEventBrief_);
+      var ovTodo = wsTodosFor_(ctx.username, 'all', 'open').filter(function (t) { return t.dueDate && t.dueDate <= addDaysStr(today, 1); });
+      if (ovTodo.length) ov.todos = ovTodo.slice(0, 10).map(wsTodoBrief_);
+      }
     } catch (e) {
       // 沒有日曆權限就略過
     }
@@ -7768,6 +8381,9 @@ var BOT_STAFF_WRITES = {
   updateProduct: { block: 'products', label: '修改產品資料' },
   createInquiryDraft: { block: 'products', label: '建立詢價信 Gmail 草稿（不會寄出）' },
   saveCopyPost: { block: 'copy', label: '儲存文案草稿' },
+  addEvent: { block: '', label: '新增行事曆行程（自己的）' },
+  addTodo: { block: '', label: '新增工作清單項目（自己的）' },
+  completeTodo: { block: '', label: '完成 / 重開工作清單項目（自己的）' },
   remember: { block: '', label: '記住（長期記憶）' },
 };
 var BOT_PRICE_WRITES = ['addPriceRecord', 'createInquiryDraft']; // 管理員設定「助理不顯示價格」時，這些也不開放
@@ -7926,6 +8542,24 @@ function botWriteCheck_(ctx, w) {
     if (!String(cd.obj['SupplierContactEmail'] || '').trim()) throw new Error('「' + cd.obj['InternalModel'] + '」沒有填供應商 Email，沒辦法建立詢價信草稿');
     return { line: '✉️ 建立詢價信草稿（只存草稿、不寄出）：' + cd.obj['InternalModel'] + ' → ' + cd.obj['SupplierContactEmail'] + (s('quantity') ? '｜數量 ' + s('quantity') : '') };
   }
+  if (w.action === 'addEvent' || w.action === 'addTodo' || w.action === 'completeTodo') {
+    if (!ctx.username) throw new Error('行事曆與工作清單是每個帳號各自的，請先把你的 LINE 綁定到網站帳號');
+  }
+  if (w.action === 'addEvent') {
+    var ec = wsCleanEvent_({ title: s('title'), startDate: s('date'), startTime: s('time'), endDate: s('endDate'), endTime: s('endTime'), allDay: d.allDay === true, location: s('location'), notes: s('notes') });
+    return { line: '📅 新增行程：' + ec.startDate + (ec.allDay ? '（全天）' : ' ' + ec.startTime + '–' + ec.endTime) + ' ' + ec.title + (ec.location ? '＠' + ec.location : '') + (d.shareAll === true ? '｜分享給全部同事（只能看）' : '') };
+  }
+  if (w.action === 'addTodo') {
+    var tc = wsCleanTodo_({ title: s('title'), notes: s('notes'), dueDate: s('dueDate'), priority: s('priority') });
+    return { line: '✅ 新增工作：' + tc.title + (tc.dueDate ? '｜期限 ' + tc.dueDate : '') + '｜' + tc.priority + (d.shareAll === true ? '｜分享給全部同事（只能看）' : '') };
+  }
+  if (w.action === 'completeTodo') {
+    var ct = wsFindById_(SHEET_TODOS, d.id);
+    if (!ct) throw new Error('找不到工作 #' + d.id);
+    if (String(ct.row['Owner']) !== ctx.username) throw new Error('這不是你的工作，只有擁有者可以改');
+    var tto = d.reopen === true ? 'todo' : 'done';
+    return { line: (tto === 'done' ? '☑️ 完成工作：' : '↩️ 重開工作：') + ct.row['Title'] };
+  }
   if (w.action === 'saveCopyPost') {
     if (!s('content') && !s('topic')) throw new Error('主題與內文至少要填一個');
     if (s('platform') && COPY_PLATFORMS.indexOf(s('platform')) < 0) throw new Error('平台只能是：' + COPY_PLATFORMS.join('、'));
@@ -7974,13 +8608,14 @@ function botWriteRun_(ctx, w) {
   var d = w.data || {};
   var s = function (k) { return String(d[k] == null ? '' : d[k]).trim(); };
   var user = botUserFor_(ctx);
+  WS_ACTOR_ = ctx.username || '';
   if (w.action === 'remember') {
     botMemoryWrite_(ctx, { mode: 'add', scope: d.scope === 'all' ? 'all' : 'user', category: s('category'), content: s('content'), importance: d.importance });
     return { action: w.action, ok: true };
   }
   if (w.action === 'addMemo') {
     var today = todayStr();
-    appendObjectRow(SHEET_MEMOS, { Owner: ctx.username || user.username, OwnerName: user.displayName, Title: s('title'), Content: s('content'), Shared: d.shared === true ? '是' : '', CreatedDate: today, LastUpdated: today });
+    appendObjectRow(SHEET_MEMOS, { Owner: ctx.username || user.username, OwnerName: user.displayName, Title: s('title'), Content: s('content'), Shared: d.shared === true ? '是' : '', ShareMode: d.shared === true ? 'all' : 'self', ShareWith: '[]', CreatedDate: today, LastUpdated: today });
     return { action: w.action, ok: true };
   }
   if (w.action === 'logFollowUp') {
@@ -8067,6 +8702,21 @@ function botWriteRun_(ctx, w) {
     var r11 = handleCreateGmailDraft({ _user: user, to: ip['SupplierContactEmail'], subject: tx.subject, body: tx.body });
     if (!r11.success) throw new Error(r11.message);
     return { action: w.action, ok: true, draftUrl: r11.draftUrl };
+  }
+  if (w.action === 'addEvent') {
+    var er = handleCalSaveEvent({ _user: user, title: s('title'), startDate: s('date'), startTime: s('time'), endDate: s('endDate'), endTime: s('endTime'), allDay: d.allDay === true, location: s('location'), notes: s('notes'), shareMode: d.shareAll === true ? 'all' : 'self' });
+    if (!er.success) throw new Error(er.message);
+    return { action: w.action, ok: true, id: er.id };
+  }
+  if (w.action === 'addTodo') {
+    var tr = handleTodoSave({ _user: user, title: s('title'), notes: s('notes'), dueDate: s('dueDate'), priority: s('priority'), shareMode: d.shareAll === true ? 'all' : 'self' });
+    if (!tr.success) throw new Error(tr.message);
+    return { action: w.action, ok: true, id: tr.id };
+  }
+  if (w.action === 'completeTodo') {
+    var cr = handleTodoSetStatus({ _user: user, id: d.id, status: d.reopen === true ? 'todo' : 'done' });
+    if (!cr.success) throw new Error(cr.message);
+    return { action: w.action, ok: true };
   }
   if (w.action === 'saveCopyPost') {
     var post = { platform: s('platform') || 'Threads', topic: s('topic'), keywords: s('keywords'), tone: s('tone'), content: s('content'), status: s('scheduledFor') ? 'scheduled' : 'draft', scheduled_for: s('scheduledFor') };
