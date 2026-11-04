@@ -54,7 +54,8 @@
  *                    （Role 決定權限，見 PERMISSIONS：admin 可以做任何事／sales 業務／fae 工程）
  *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
  *   Shortcuts     - Username, Title, Url, OpenOnStart, SortOrder（每人自己的首頁「常用網站」）
- *   Memos         - Owner, OwnerName, Title, Content, Shared, CreatedDate, LastUpdated（備忘錄，預設只有自己看，Shared=是 全站可看）
+ *   Memos         - Owner, OwnerName, Title, Content, Shared, CreatedDate, LastUpdated, LinkType, LinkId, NeedBlock（備忘錄，預設只有自己看，Shared=是 全站可看；
+ *                    機器人通知 Owner=SYSTEM、LinkType=csHandoff 等，NeedBlock=bot 表示只有有「BOT 設定」權限的人看得到，刪除通知 = 恢復機器人）
  *   GigE / USB3 / FA鏡頭 / 遠心鏡頭 - 【舊分頁，已停用】選型計算改讀 Products；setup 會把這些分頁裡的資料併進 Products（只補空欄位），之後可自行刪除
  *   Software      - Name（案件「軟體名稱」下拉選單的選項，公司準系統只有幾套；新名稱在案件頁會詢問是否新增）
  *   Config        - Key, Value
@@ -258,7 +259,7 @@ SCHEMA[SHEET_CONFIG] = ['Key', 'Value'];
 SCHEMA[SHEET_SOFTWARE] = ['Name'];
 SCHEMA[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 SCHEMA[SHEET_SHORTCUTS] = ['Username', 'Title', 'Url', 'OpenOnStart', 'SortOrder'];
-SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated'];
+SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated', 'LinkType', 'LinkId', 'NeedBlock'];
 SCHEMA[SHEET_DEVICES] = ['DeviceId', 'Username', 'DeviceLabel', 'TokenHash', 'CreatedDate', 'LastSeenDate', 'LoginTime', 'LastSeenTime'];
 
 /**
@@ -576,13 +577,37 @@ function repairPhoneColumns_(log) {
  * 第一次會跳出授權視窗，全部同意即可。可以重複執行，不會刪資料，只會補缺的東西。
  * 完成後看下方「執行紀錄」，會列出做了什麼，以及第一次建立的管理員帳號密碼。
  */
+/** 核心資料表 + 選用模組（Bot.gs、Copy.gs，沒貼上就略過）的資料表欄位。 */
+function allSchemas_() {
+  var schema = Object.assign({}, SCHEMA);
+  var text = Object.assign({}, TEXT_COLUMNS);
+  var mods = [];
+  if (typeof botSchema_ === 'function') mods.push(botSchema_());
+  if (typeof copySchema_ === 'function') mods.push(copySchema_());
+  mods.forEach(function (m) {
+    Object.assign(schema, m.schema || {});
+    Object.keys(m.text || {}).forEach(function (k) {
+      text[k] = m.text[k];
+    });
+  });
+  return { schema: schema, text: text };
+}
+
 function setup() {
   var log = [];
   var ss = getDb_(true, log);
 
-  Object.keys(SCHEMA).forEach(function (name) {
-    ensureSheet_(ss, name, SCHEMA[name], TEXT_COLUMNS[name] || [], log);
+  var all = allSchemas_();
+  Object.keys(all.schema).forEach(function (name) {
+    ensureSheet_(ss, name, all.schema[name], all.text[name] || [], log);
   });
+  if (typeof botSetup_ === 'function') {
+    try {
+      botSetup_(log);
+    } catch (e) {
+      log.push('BOT 設定初始化失敗：' + e.message);
+    }
+  }
 
   try {
     repairPhoneColumns_(log);
@@ -877,6 +902,12 @@ function ensureRows_(sheet, lastNeededRow) {
   if (lastNeededRow > max) sheet.insertRowsAfter(max, Math.max(100, lastNeededRow - max));
 }
 
+/** 這個分頁要強制純文字的欄位（核心分頁 + 選用模組的分頁）。 */
+function textColsFor_(sheetName) {
+  if (TEXT_COLUMNS[sheetName]) return TEXT_COLUMNS[sheetName];
+  return allSchemas_().text[sheetName] || [];
+}
+
 function appendObjectRow(sheetName, obj) {
   return withLock_(function () {
     var sheet = getSheet(sheetName);
@@ -887,7 +918,7 @@ function appendObjectRow(sheetName, obj) {
     // 電話、編號這類文字欄位要先把儲存格設成「純文字」再寫入，不然 0912... 會被 Sheets 當數字吃掉開頭的 0
     var target = sheet.getLastRow() + 1;
     ensureRows_(sheet, target);
-    (TEXT_COLUMNS[sheetName] || []).forEach(function (c) {
+    textColsFor_(sheetName).forEach(function (c) {
       var i = header.indexOf(c);
       if (i > -1) sheet.getRange(target, i + 1).setNumberFormat('@');
     });
@@ -900,7 +931,7 @@ function appendObjectRow(sheetName, obj) {
 function updateRowFields(sheetName, rowNum, fields) {
   var sheet = getSheet(sheetName);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var textCols = TEXT_COLUMNS[sheetName] || [];
+  var textCols = textColsFor_(sheetName);
   Object.keys(fields || {}).forEach(function (key) {
     var col = header.indexOf(key);
     if (col < 0) return;
@@ -4710,14 +4741,19 @@ function handleSaveShortcuts(body) {
 function handleGetMemos(body) {
   var me = body._user.username;
   var rows = [];
+  var access = accessOf_(findUserRow_(me));
   sheetToObjects(SHEET_MEMOS).rows.forEach(function (r, i) {
     var mine = r['Owner'] === me;
     if (!mine && r['Shared'] !== '是') return;
+    var need = String(r['NeedBlock'] || '');
+    if (need && !mine && access.blocks[need] === 'none') return; // 機器人通知只有有「BOT 設定」權限的人看得到
     rows.push({
       RowIndex: i + 2,
       Title: r['Title'],
       Content: r['Content'],
       Shared: r['Shared'] === '是',
+      LinkType: r['LinkType'] || '',
+      CanManage: mine || access.isAdmin || (!!need && access.blocks[need] === 'edit'),
       OwnerName: r['OwnerName'] || r['Owner'],
       IsMine: mine,
       CreatedDate: r['CreatedDate'],
@@ -4753,7 +4789,9 @@ function checkMemoOwner_(body) {
   var memo = readRowAsObject(SHEET_MEMOS, rowNum);
   var user = findUserRow_(body._user.username);
   var isAdmin = user && user['Role'] === 'admin';
-  if (memo['Owner'] !== body._user.username && !isAdmin) throw new Error('只有備忘錄的建立者可以修改或刪除');
+  var need = String(memo['NeedBlock'] || '');
+  var canManageSystem = !!need && accessOf_(user).blocks[need] === 'edit'; // 機器人通知：有「BOT 設定」編輯權限的人可以處理
+  if (memo['Owner'] !== body._user.username && !isAdmin && !canManageSystem) throw new Error('只有備忘錄的建立者可以修改或刪除');
   return rowNum;
 }
 
@@ -4770,7 +4808,16 @@ function handleUpdateMemo(body) {
 
 function handleDeleteMemo(body) {
   var rowNum = checkMemoOwner_(body);
+  var memo = readRowAsObject(SHEET_MEMOS, rowNum);
   getSheet(SHEET_MEMOS).deleteRow(rowNum);
+  // 「客人找真人」通知被處理掉 = 小編處理完了，機器人恢復回覆這位客人
+  if (memo['LinkType'] === 'csHandoff' && memo['LinkId'] && typeof csResume_ === 'function') {
+    try {
+      csResume_(String(memo['LinkId']));
+    } catch (e) {
+      // 恢復失敗不影響刪除
+    }
+  }
   return { success: true };
 }
 
