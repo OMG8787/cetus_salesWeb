@@ -5721,7 +5721,11 @@ var SHEET_BOT_MSG = 'BotMessages';
 var BOT_SECRET_PROP = 'BOT_SECRET'; // 舊版共用金鑰（只讀，重新產生金鑰時會自動拆成下面兩把）
 var BOT_CS_SECRET_PROP = 'BOT_CS_SECRET'; // 客服機器人專用：只能呼叫客服的操作
 var BOT_STAFF_SECRET_PROP = 'BOT_STAFF_SECRET'; // 員工助理專用：只能呼叫員工助理的操作
-var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csWidget'];
+var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csWidget'];
+var SHEET_BOT_VEC = 'BotVectors';
+var BOT_VEC_DIM = 256; // 向量維度（Gemini / OpenAI 都支援縮小維度；256 維兼顧準確度與試算表容量）
+var BOT_EMBED_MODELS = { gemini: 'gemini-embedding-001', openai: 'text-embedding-3-small' };
+var BOT_SEARCH_MODES = ['vector', 'meta_vector', 'meta', 'both'];
 // 客服機器人（對外）能看到的產品欄位白名單：底價、供應商、備註永遠不在裡面
 var BOT_CS_PRODUCT_FIELDS = [
   ['SupplierModel', '原廠型號'], ['Category', '類別'], ['Brand', '品牌'], ['Interface', '介面'], ['Resolution', '解析度'], ['PixelSize', '像元尺寸 µm'], ['SensorSize', '靶面'],
@@ -5759,10 +5763,11 @@ function botSchema_() {
   var base = {
     schema: {
       BotConfig: ['Key', 'Value'],
-      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt'],
+      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes'],
+      BotVectors: ['ID', 'Model', 'Vec'],
       BotMessages: ['ID', 'Time', 'Channel', 'UserId', 'Name', 'Role', 'Text', 'Topic'],
     },
-    text: { BotMessages: ['Time', 'UserId'], BotKnowledge: [] },
+    text: { BotMessages: ['Time', 'UserId'], BotKnowledge: [], BotVectors: [] },
   };
   return botMerge_(base, typeof botStaffSchema_ === 'function' ? botStaffSchema_() : null);
 }
@@ -5781,7 +5786,7 @@ function botPerms_() {
     botGetSettings: ['bot', 'r'], botKbList: ['bot', 'r'], botConversations: ['bot', 'r'], botThread: ['bot', 'r'],
     botSaveSettings: ['bot', 'w'], botSaveAi: ['bot', 'w'], botTestAi: ['bot', 'w'], botKbSave: ['bot', 'w'], botKbImport: ['bot', 'w'],
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
-    botKbDelete: ['bot', 'd'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'],
+    botKbDelete: ['bot', 'd'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -5811,6 +5816,7 @@ function botRoutes_() {
     botTestToken: { auth: true, fn: handleBotTestToken },
     botClear: { auth: true, fn: handleBotClear },
     botCsPreview: { auth: true, fn: handleBotCsPreview },
+    botKbEmbed: { auth: true, fn: handleBotKbEmbed },
   };
   if (typeof botStaffRoutes_ === 'function') botMergePerms_(base, botStaffRoutes_());
   return base;
@@ -6146,6 +6152,7 @@ function handleBotApi(body) {
     var data;
     if (op === 'pushTargets' && typeof botPushTargets_ === 'function') data = botPushTargets_();
     else if (op === 'csKnowledge') data = csKnowledge_();
+    else if (op === 'csVectors') data = csVectors_(body);
     else if (op === 'csWidget') data = csWidgetConfig_();
     else {
       var id = String(body.lineUserId || '');
@@ -6174,6 +6181,174 @@ function botLearnUrl_(url) {
   var g = botCfg_('general', {}) || {};
   g.botUrl = url;
   botCfgSet_('general', g);
+}
+
+// ------------------------------------------------------------
+// 知識庫搜尋流程設定、embedding（向量）計算與儲存
+// ------------------------------------------------------------
+/** 搜尋流程：mode = vector 直接向量（預設）/ meta_vector 先用大分類主題備註縮小範圍再向量 / meta 只用大分類主題備註 / both 兩種都做，結果一致才回答；threshold = 向量相似度閥值。 */
+function botSearchCfg_() {
+  var s = botCfg_('search', {}) || {};
+  var th = Number(s.threshold);
+  return {
+    mode: BOT_SEARCH_MODES.indexOf(s.mode) > -1 ? s.mode : 'vector',
+    threshold: s.threshold === '' || s.threshold == null || isNaN(th) ? 0.6 : Math.min(1, Math.max(0, Math.round(th * 100) / 100)),
+    topK: botInt_(s.topK, 1, 15, 6),
+    embedProvider: s.embedProvider === 'gemini' || s.embedProvider === 'openai' ? s.embedProvider : 'auto',
+  };
+}
+
+/** 用哪一組 AI 金鑰算向量（Gemini 或 OpenAI 相容；Claude 沒有 embedding）。找不到回傳 null。 */
+function botEmbedCfg_() {
+  var want = botSearchCfg_().embedProvider;
+  var list = botAiList_();
+  var pick = null;
+  (want === 'auto' ? ['gemini', 'openai'] : [want]).forEach(function (p) {
+    if (!pick) pick = list.filter(function (m) { return m.provider === p; })[0] || null;
+  });
+  if (!pick) return null;
+  var model = BOT_EMBED_MODELS[pick.provider];
+  return { provider: pick.provider, apiKey: pick.apiKey, endpoint: pick.endpoint, model: model, dim: BOT_VEC_DIM, key: pick.provider + ':' + model + ':' + BOT_VEC_DIM };
+}
+
+function botNormVec_(v) {
+  var n = 0;
+  v.forEach(function (x) { n += x * x; });
+  n = Math.sqrt(n) || 1;
+  return v.map(function (x) { return Math.round((x / n) * 10000) / 10000; });
+}
+
+/** 一批文字 → 向量（已正規化，內積 = 餘弦相似度）。kind = 'doc' 文件 / 'query' 查詢。失敗丟出錯誤（金鑰會被遮掉）。 */
+function botEmbed_(cfg, texts, kind) {
+  var out = [];
+  var base = String(cfg.endpoint).replace(/\/+$/, '');
+  for (var i = 0; i < texts.length; i += 50) {
+    var part = texts.slice(i, i + 50).map(function (t) { return String(t).slice(0, 6000) || ' '; });
+    var url, headers, payload, pick;
+    if (cfg.provider === 'openai') {
+      url = base + '/embeddings';
+      headers = { Authorization: 'Bearer ' + cfg.apiKey };
+      payload = { model: cfg.model, input: part, dimensions: cfg.dim };
+      pick = function (b) { return (b.data || []).map(function (d) { return d.embedding; }); };
+    } else {
+      url = base + '/models/' + cfg.model + ':batchEmbedContents';
+      headers = { 'x-goog-api-key': cfg.apiKey };
+      payload = {
+        requests: part.map(function (t) {
+          return { model: 'models/' + cfg.model, content: { parts: [{ text: t }] }, taskType: kind === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT', outputDimensionality: cfg.dim };
+        }),
+      };
+      pick = function (b) { return (b.embeddings || []).map(function (d) { return d.values; }); };
+    }
+    var res;
+    try {
+      res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', headers: headers, muteHttpExceptions: true, payload: JSON.stringify(payload) });
+    } catch (e) {
+      throw new Error('無法連線到 embedding 服務，請確認網路與 Endpoint');
+    }
+    var body = {};
+    try {
+      body = JSON.parse(res.getContentText() || '{}');
+    } catch (e) {
+      // 非 JSON
+    }
+    var code = res.getResponseCode();
+    if (code < 200 || code >= 300) {
+      var err = body.error;
+      var msg = (err && (err.message || (typeof err === 'string' ? err : ''))) || 'HTTP ' + code;
+      throw new Error('embedding 服務錯誤（' + cfg.model + '）：' + String(msg).split(cfg.apiKey).join('••••').slice(0, 300));
+    }
+    var vecs = pick(body);
+    if (vecs.length !== part.length) throw new Error('embedding 回傳數量不對（要 ' + part.length + ' 個，收到 ' + vecs.length + ' 個）');
+    vecs.forEach(function (v) { out.push(botNormVec_(v)); });
+  }
+  return out;
+}
+
+function botKbEmbedText_(r) {
+  return [r.BigCategory, r.Topic, r.Title, r.Question, r.Content, r.Notes].map(function (x) { return String(x || '').trim(); }).filter(Boolean).join('\n');
+}
+
+function botVecRows_() {
+  return sheetToObjects(SHEET_BOT_VEC).rows.map(function (r, i) {
+    return { RowIndex: i + 2, id: Number(r['ID']) || 0, model: String(r['Model'] || ''), vec: String(r['Vec'] || '') };
+  });
+}
+
+/** 寫入 / 更新向量。items = [{ id, model, vec:[數字] }] */
+function botVecUpsert_(items) {
+  if (!items.length) return;
+  withLock_(function () {
+    var sheet = getSheet(SHEET_BOT_VEC);
+    var rowOf = {};
+    botVecRows_().forEach(function (v) { rowOf[v.id] = v.RowIndex; });
+    var fresh = [];
+    items.forEach(function (it) {
+      var cell = [it.model, JSON.stringify(it.vec)];
+      if (rowOf[it.id]) sheet.getRange(rowOf[it.id], 2, 1, 2).setValues([cell]);
+      else fresh.push([it.id, cell[0], cell[1]]);
+    });
+    if (fresh.length) {
+      var start = sheet.getLastRow() + 1;
+      ensureRows_(sheet, start + fresh.length - 1);
+      sheet.getRange(start, 1, fresh.length, 3).setValues(fresh);
+    }
+  });
+}
+
+function botVecDelete_(ids) {
+  var want = {};
+  ids.forEach(function (i) { want[Number(i)] = true; });
+  withLock_(function () {
+    var sheet = getSheet(SHEET_BOT_VEC);
+    botVecRows_().sort(function (a, b) { return b.RowIndex - a.RowIndex; }).forEach(function (v) {
+      if (want[v.id]) sheet.deleteRow(v.RowIndex);
+    });
+  });
+}
+
+/** 為還沒有向量（或向量是用別的模型算的）的知識庫項目算向量，每次最多 40 筆；前端一直呼叫到 done。force = 全部重算（用 offset 分批）。 */
+function handleBotKbEmbed(body) {
+  var cfg = botEmbedCfg_();
+  if (!cfg) return { success: false, message: '沒有可用的 embedding 模型：請到「AI 模型」設定 Gemini 或 OpenAI 的 API Key（Claude 沒有 embedding 功能）' };
+  var rows = botKbRows_().filter(function (r) { return botKbEmbedText_(r); });
+  var have = {};
+  botVecRows_().forEach(function (v) { have[v.id] = v.model; });
+  var force = body.force === true;
+  var list = force ? rows : rows.filter(function (r) { return have[r.ID] !== cfg.key; });
+  var start = force ? Math.max(0, Number(body.offset) || 0) : 0;
+  var batch = list.slice(start, start + 40);
+  if (batch.length) {
+    try {
+      var vecs = botEmbed_(cfg, batch.map(botKbEmbedText_), 'doc');
+      botVecUpsert_(batch.map(function (r, i) { return { id: r.ID, model: cfg.key, vec: vecs[i] }; }));
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  }
+  var next = start + batch.length;
+  return { success: true, embedded: batch.length, next: next, total: list.length, remaining: Math.max(0, list.length - next), done: next >= list.length, model: cfg.key };
+}
+
+/** 知識庫向量（給機器人伺服器分頁取用）：只回傳目前這個 embedding 模型算的、且對應項目還在的。 */
+function csVectors_(req) {
+  var cfg = botEmbedCfg_();
+  if (!cfg) return { model: '', items: [], total: 0, next: 0 };
+  var alive = {};
+  botKbRows_().forEach(function (r) { if (r.IsActive) alive[r.ID] = true; });
+  var all = botVecRows_().filter(function (v) { return v.model === cfg.key && alive[v.id]; });
+  var after = Math.max(0, Number(req.after) || 0);
+  var limit = Math.min(500, Math.max(1, Number(req.limit) || 300));
+  var page = all.slice(after, after + limit).map(function (v) {
+    var arr = [];
+    try {
+      arr = JSON.parse(v.vec);
+    } catch (e) {
+      arr = [];
+    }
+    return { id: 'k' + v.id, v: arr };
+  });
+  return { model: cfg.key, items: page, total: all.length, next: after + page.length };
 }
 
 // ------------------------------------------------------------
@@ -6242,6 +6417,8 @@ function csStart_(id, req) {
     handoffText: cs.handoffText,
     ai: ais.length ? ais[0] : null,
     aiFallback: ais.slice(1),
+    search: botSearchCfg_(),
+    embedAi: botEmbedCfg_(),
     history: botCacheGet_(csHistKey_(id)) || [],
     known: !!botCache_().get('csname:' + id),
     paused: !!botCache_().get('cspause:' + id),
@@ -6459,6 +6636,10 @@ function csKnowledge_() {
         id: 'k' + k['ID'],
         source: k['Type'] === 'doc' ? '文件' : '常見問題',
         title: text(k['Title']) || text(k['Question']),
+        category: text(k['BigCategory']),
+        topic: text(k['Topic']),
+        notes: text(k['Notes']),
+        tags: text(k['Tags']),
         text: [k['Question'] ? '問：' + text(k['Question']) : '', k['Question'] ? '答：' + text(k['Content']) : text(k['Content']), k['Tags'] ? '關鍵字：' + text(k['Tags']) : ''].filter(Boolean).join('\n'),
       });
     });
@@ -6540,6 +6721,8 @@ function handleBotGetSettings(body) {
       staff: { has: !!botKey_('staff'), hint: botKeyHint_('staff'), shared: botKeyShared_('staff') },
     },
     csProductFields: BOT_CS_PRODUCT_FIELDS,
+    search: botSearchCfg_(),
+    embed: (function () { var c = botEmbedCfg_(); return c ? { provider: c.provider, model: c.model, dim: c.dim } : null; })(),
     gasUrl: url,
     kbCount: kbCount,
     pauses: csPauseList_(),
@@ -6561,6 +6744,10 @@ function handleBotSaveSettings(body) {
       }
       var clean = botCsConfig_(stored);
       botCfgSet_('cs', botCsStored_(clean));
+    }
+    if (body.search) {
+      var sc = body.search;
+      botCfgSet_('search', { mode: sc.mode, threshold: sc.threshold, topK: sc.topK, embedProvider: sc.embedProvider });
     }
     if (body.general) {
       var g = botCfg_('general', {}) || {};
@@ -6647,12 +6834,24 @@ function botKbRows_() {
       Source: String(r['Source'] || ''),
       IsActive: !(r['IsActive'] === false || String(r['IsActive']).toUpperCase() === 'FALSE'),
       UpdatedAt: String(r['UpdatedAt'] || ''),
+      BigCategory: String(r['BigCategory'] || ''),
+      Topic: String(r['Topic'] || ''),
+      Notes: String(r['Notes'] || ''),
     };
   });
 }
 
 function handleBotKbList(body) {
-  return { success: true, items: botKbRows_() };
+  var cfg = botEmbedCfg_();
+  var have = {};
+  botVecRows_().forEach(function (v) { have[v.id] = v.model; });
+  var items = botKbRows_().map(function (r) {
+    r.HasVector = !!cfg && have[r.ID] === cfg.key;
+    return r;
+  });
+  var cats = {};
+  items.forEach(function (r) { if (r.BigCategory) cats[r.BigCategory] = (cats[r.BigCategory] || 0) + 1; });
+  return { success: true, items: items, embed: cfg ? { provider: cfg.provider, model: cfg.model, dim: cfg.dim } : null, categories: Object.keys(cats).sort(), pendingVectors: cfg ? items.filter(function (r) { return !r.HasVector && botKbEmbedText_(r); }).length : 0 };
 }
 
 function botNextKbId_() {
@@ -6672,16 +6871,32 @@ function handleBotKbSave(body) {
   if (!content) return { success: false, message: '請填內容 / 答案' };
   if (content.length > 20000) return { success: false, message: '內容太長了（上限 20000 字），長文件請用「文件」匯入，會自動切成小段' };
   return withLock_(function () {
-    var fields = { Type: type, Title: title || (type === 'qa' ? question.slice(0, 40) : content.slice(0, 20)), Question: type === 'qa' ? question : '', Content: content, Tags: String(body.tags || '').trim(), Source: String(body.source || ''), IsActive: body.isActive === false ? false : true, UpdatedAt: botNow_() };
+    var fields = { Type: type, Title: title || (type === 'qa' ? question.slice(0, 40) : content.slice(0, 20)), Question: type === 'qa' ? question : '', Content: content, Tags: String(body.tags || '').trim(), Source: String(body.source || ''), IsActive: body.isActive === false ? false : true, UpdatedAt: botNow_(), BigCategory: botClip_(body.bigCategory, 40), Topic: botClip_(body.topic, 60), Notes: String(body.notes || '').trim().slice(0, 1000) };
+    var id;
     if (body.rowIndex) {
       var sheet = getSheet(SHEET_BOT_KB);
       var rowNum = Number(body.rowIndex);
       if (!(rowNum >= 2 && rowNum <= sheet.getLastRow()) || Number(sheet.getRange(rowNum, 1).getValue()) !== Number(body.id)) return { success: false, message: '這筆資料已經被修改或刪除，請重新整理後再試' };
       updateRowFields(SHEET_BOT_KB, rowNum, fields);
+      id = Number(body.id);
     } else {
-      appendObjectRow(SHEET_BOT_KB, Object.assign({ ID: botNextKbId_() }, fields));
+      id = botNextKbId_();
+      appendObjectRow(SHEET_BOT_KB, Object.assign({ ID: id }, fields));
     }
-    return { success: true };
+    // 順便算這一筆的向量（失敗不影響儲存；之後可以按「重新計算向量」補上）
+    var embedded = false;
+    var embedError = '';
+    var ecfg = botEmbedCfg_();
+    if (ecfg) {
+      try {
+        var v = botEmbed_(ecfg, [botKbEmbedText_(Object.assign({ ID: id }, fields))], 'doc');
+        botVecUpsert_([{ id: id, model: ecfg.key, vec: v[0] }]);
+        embedded = true;
+      } catch (e) {
+        embedError = e.message;
+      }
+    }
+    return { success: true, id: id, embedded: embedded, embedError: embedError };
   });
 }
 
@@ -6699,7 +6914,7 @@ function handleBotKbImport(body) {
     rows.forEach(function (r) {
       var content = String(r.content || '').trim().slice(0, 20000);
       if (!content) return;
-      var o = { ID: id++, Type: 'doc', Title: String(r.title || '').trim().slice(0, 120) || content.slice(0, 20), Question: '', Content: content, Tags: String(r.tags || ''), Source: String(r.source || '').slice(0, 120), IsActive: true, UpdatedAt: t };
+      var o = { ID: id++, Type: 'doc', Title: String(r.title || '').trim().slice(0, 120) || content.slice(0, 20), Question: '', Content: content, Tags: String(r.tags || ''), Source: String(r.source || '').slice(0, 120), IsActive: true, UpdatedAt: t, BigCategory: botClip_(r.bigCategory || body.bigCategory, 40), Topic: botClip_(r.topic || body.topic, 60), Notes: String(r.notes || body.notes || '').trim().slice(0, 1000) };
       values.push(header.map(function (h) { return o.hasOwnProperty(h) ? o[h] : ''; }));
     });
     if (!values.length) return { success: false, message: '沒有可匯入的內容' };
@@ -6722,12 +6937,15 @@ function handleBotKbDelete(body) {
     (body.ids || []).forEach(function (x) { ids[String(x)] = true; });
     var source = body.source ? String(body.source) : '';
     var n = 0;
+    var gone = [];
     for (var i = data.length - 1; i >= 1; i--) {
       if (ids[String(data[i][idCol])] || (source && String(data[i][srcCol]) === source)) {
+        gone.push(Number(data[i][idCol]));
         sheet.deleteRow(i + 1);
         n++;
       }
     }
+    if (gone.length) botVecDelete_(gone);
     return { success: true, deleted: n };
   });
 }

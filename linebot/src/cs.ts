@@ -1,9 +1,9 @@
-import { generate, type Tool, type Turn } from "./ai.js";
+import { embed, generate, type Tool, type Turn } from "./ai.js";
 import { cleanReply, processEvents } from "./common.js";
-import { gas, type CsInfo, type CsStyle, type CsTopic } from "./gas.js";
+import { gas, type CsInfo, type CsStyle, type CsTopic, type EmbedConfig } from "./gas.js";
 import { choicesTool, humanPause } from "./human.js";
 import { channels, getProfile, replyText, showLoading, type LineEvent } from "./line.js";
-import { formatHits, KnowledgeIndex } from "./rag.js";
+import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, searchKnowledge, type Hit, type SearchConfig, type SearchResult } from "./rag.js";
 import { nowLocal } from "./time.js";
 
 // 客服機器人（對外 LINE 官方帳號 + 網站右下角客服視窗，同一套邏輯）：任何人都能問
@@ -35,9 +35,34 @@ let cached: { at: number; index: KnowledgeIndex } | null = null;
 /** 知識庫（同一個執行個體內快取 5 分鐘；後台改了最多 5 分鐘後生效） */
 export async function knowledge(force = false): Promise<KnowledgeIndex> {
   if (!force && cached && Date.now() - cached.at < KNOWLEDGE_TTL_MS) return cached.index;
-  const index = new KnowledgeIndex(await gas.csKnowledge());
+  const chunks = await gas.csKnowledge();
+  const index = new KnowledgeIndex(chunks, await loadVectors(chunks));
   cached = { at: Date.now(), index };
   return index;
+}
+
+/** 知識庫向量（分頁取）。取不到（舊版管理系統、還沒算向量）就是空的，檢索會自動退回關鍵字。 */
+async function loadVectors(chunks: { id: string }[]): Promise<Map<string, number[]>> {
+  const map = new Map<string, number[]>();
+  const alive = new Set(chunks.map((c) => c.id));
+  try {
+    let after = 0;
+    for (let page = 0; page < 40; page++) {
+      const r = await gas.csVectors(after, 300);
+      for (const item of r.items) if (alive.has(item.id) && item.v.length) map.set(item.id, item.v);
+      if (!r.items.length || r.next >= r.total) break;
+      after = r.next;
+    }
+  } catch (error) {
+    console.warn("取得知識庫向量失敗，改用關鍵字檢索", (error as Error).message);
+  }
+  return map;
+}
+
+/** 依 BOT 設定的搜尋流程找知識庫（問題轉向量失敗會自動退回關鍵字，不會讓客人沒有回覆） */
+export async function runSearch(index: KnowledgeIndex, query: string, search: SearchConfig | undefined, embedAi: EmbedConfig | null | undefined): Promise<SearchResult> {
+  const cfg = { ...DEFAULT_SEARCH, ...search };
+  return searchKnowledge(index, query, cfg, embedAi ? async (q) => (await embed(embedAi, [q], "query"))[0] : undefined);
 }
 
 export function resetKnowledgeCache(): void {
@@ -127,12 +152,12 @@ function transferTool(info: CsInfo, handed: { topic: string | null }): Tool {
 }
 
 /** 再找一次知識庫的工具 */
-export function searchTool(index: KnowledgeIndex): Tool {
+export function searchTool(run: (query: string) => Promise<Hit[]>): Tool {
   return {
     name: "search_knowledge",
-    description: "用其他關鍵字再找一次參考資料（產品與規格、常見問題、文件、公司資訊）",
-    parameters: { type: "object", properties: { query: { type: "string", description: "關鍵字" } }, required: ["query"] },
-    handler: async (a) => formatHits(index.search(String(a.query ?? ""), TOP_K)) || "沒有找到相關資料",
+    description: "用其他關鍵字或換個說法再找一次參考資料（產品與規格、常見問題、文件、公司資訊）",
+    parameters: { type: "object", properties: { query: { type: "string", description: "關鍵字或完整的問題" } }, required: ["query"] },
+    handler: async (a) => formatHits(await run(String(a.query ?? ""))) || "沒有找到相關資料",
   };
 }
 
@@ -143,9 +168,11 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const handed: { topic: string | null } = { topic: null };
   // 檢索時連同上一個問題一起找（「那另一款呢？」這種接續問題）
   const lastUser = [...history].reverse().find((h) => h.u)?.t ?? "";
-  const hits = index.search(`${text} ${text} ${lastUser}`, TOP_K);
+  const query = text.length < 10 && lastUser ? `${lastUser} ${text}` : text;
+  const search = { ...DEFAULT_SEARCH, ...info.search, topK: info.search?.topK ?? TOP_K };
+  const hits = (await runSearch(index, query, search, info.embedAi)).hits;
 
-  const tools: Tool[] = [searchTool(index), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
+  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
   if (info.topics?.length || info.unsure === "handoff") tools.push(transferTool(info, handed));
 
   const turns: Turn[] = [...history.map((h) => ({ isUser: h.u, text: h.t })), { isUser: true, text }];

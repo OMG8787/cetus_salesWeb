@@ -5,6 +5,8 @@
 let botData = null; // botGetSettings 的回傳
 let kbItems = null;
 let kbLoaded = false;
+let kbEmbed = null;
+let kbPending = 0;
 let curTab = 'overview';
 let selectedConv = null; // 後台對話列表選到的客人
 let talkTimer = null;
@@ -284,8 +286,13 @@ async function loadKb() {
     return;
   }
   kbItems = r.items;
+  kbEmbed = r.embed;
+  kbPending = r.pendingVectors || 0;
   kbLoaded = true;
+  $('kb-cats').innerHTML = (r.categories || []).map((c) => `<option value="${htmlEsc(c)}"></option>`).join('');
   renderKb();
+  renderVecStatus();
+  fillSearch();
 }
 
 function kbSnippet(t, n) {
@@ -310,9 +317,9 @@ function renderKb() {
   const argOf = (v) => `decodeURIComponent('${encodeURIComponent(v)}')`;
   let html = '';
   if (faqs.length) {
-    html += '<table class="bot-table"><thead><tr><th>常見問題</th><th>答案</th><th>關鍵字</th><th>啟用</th><th></th></tr></thead><tbody>';
+    html += '<table class="bot-table"><thead><tr><th>常見問題</th><th>答案</th><th>分類 / 主題</th><th>向量</th><th>啟用</th><th></th></tr></thead><tbody>';
     faqs.forEach((k) => {
-      html += `<tr class="${k.IsActive ? '' : 'off'}"><td><b>${htmlEsc(k.Question || k.Title)}</b></td><td>${htmlEsc(kbSnippet(k.Content, 120))}</td><td>${htmlEsc(k.Tags)}</td>
+      html += `<tr class="${k.IsActive ? '' : 'off'}"><td><b>${htmlEsc(k.Question || k.Title)}</b></td><td>${htmlEsc(kbSnippet(k.Content, 120))}${k.Notes ? `<div class="calc-hint">📝 ${htmlEsc(kbSnippet(k.Notes, 60))}</div>` : ''}</td><td>${htmlEsc([k.BigCategory, k.Topic].filter(Boolean).join(' / '))}${k.Tags ? `<div class="calc-hint">${htmlEsc(k.Tags)}</div>` : ''}</td><td>${k.HasVector ? '✓' : kbEmbed ? '<span style="color:#c0392b;">—</span>' : ''}</td>
         <td><input type="checkbox" class="bot-write" ${k.IsActive ? 'checked' : ''} ${readOnly() ? 'disabled' : ''} onchange="toggleKbActive(${k.ID}, this.checked)" /></td>
         <td class="nowrap"><button type="button" class="btn-mini bot-write" onclick="openFaqModal(${k.ID})">編輯</button> <button type="button" class="btn-mini" onclick="deleteBotItem(${k.ID})">刪除</button></td></tr>`;
     });
@@ -351,6 +358,9 @@ function openFaqModal(id) {
   setVal('faq-question', k ? k.Question : '');
   setVal('faq-content', k ? k.Content : '');
   setVal('faq-tags', k ? k.Tags : '');
+  setVal('faq-cat', k ? k.BigCategory : '');
+  setVal('faq-topic', k ? k.Topic : '');
+  setVal('faq-notes', k ? k.Notes : '');
   $('faq-active').checked = k ? k.IsActive : true;
   $('faq-modal').style.display = 'flex';
 }
@@ -363,12 +373,13 @@ async function saveFaq() {
   const id = Number($('faq-modal').dataset.id) || 0;
   const k = id ? kbItems.find((x) => x.ID === id) : null;
   const isDoc = k && k.Type === 'doc';
-  const body = { type: isDoc ? 'doc' : 'qa', question: val('faq-question').trim(), content: val('faq-content').trim(), tags: val('faq-tags').trim(), isActive: $('faq-active').checked };
+  const body = { type: isDoc ? 'doc' : 'qa', question: val('faq-question').trim(), content: val('faq-content').trim(), tags: val('faq-tags').trim(), bigCategory: val('faq-cat').trim(), topic: val('faq-topic').trim(), notes: val('faq-notes').trim(), isActive: $('faq-active').checked };
   if (!isDoc && !body.question) return alert('請填問題');
   if (!body.content) return alert('請填答案 / 內容');
   if (k) Object.assign(body, { rowIndex: k.RowIndex, id: k.ID, title: k.Title, source: k.Source });
   const r = await callApi('botKbSave', body);
   if (!r.success) return alert(r.message);
+  if (r.embedError) alert('已儲存，但向量計算失敗：' + r.embedError + '\n之後可以按「補算還沒有向量的」重試。');
   closeModal('faq-modal');
   loadKb();
 }
@@ -490,13 +501,14 @@ async function importDoc() {
   let done = 0;
   for (let i = 0; i < chunks.length; i += 200) {
     const part = chunks.slice(i, i + 200).map((c, j) => ({ title: `${name}（${i + j + 1}/${chunks.length}）`, content: c, source: name }));
-    const r = await callApi('botKbImport', { rows: part });
+    const r = await callApi('botKbImport', { rows: part, bigCategory: val('doc-cat').trim(), topic: val('doc-topic').trim(), notes: val('doc-notes').trim() });
     if (!r.success) return alert(`匯入到第 ${done} 段時失敗：${r.message}`);
     done += r.count;
   }
   closeModal('doc-modal');
-  alert(`已匯入 ${done} 段`);
-  loadKb();
+  alert(`已匯入 ${done} 段` + (kbEmbed ? '，接著計算向量…' : ''));
+  await loadKb();
+  if (kbEmbed) embedAll(false);
 }
 
 // ------------------------------------------------------------
@@ -595,6 +607,91 @@ async function testCall(body) {
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j.error || '機器人伺服器回應錯誤（' + res.status + '）');
   return j;
+}
+
+// ------------------------------------------------------------
+// 搜尋流程、向量與搜尋測試
+// ------------------------------------------------------------
+function renderVecStatus() {
+  if (!botData) return;
+  const total = kbItems ? kbItems.length : 0;
+  $('vec-status').innerHTML = kbEmbed
+    ? `向量模型：<b>${htmlEsc(kbEmbed.provider)} / ${htmlEsc(kbEmbed.model)}</b>（${kbEmbed.dim} 維）。已有向量 ${total - kbPending} / ${total} 筆${kbPending ? `，<span style="color:#c0392b;">還有 ${kbPending} 筆沒有向量</span>` : ' ✓'}。`
+    : '<span style="color:#c0392b;">⚠️ 還沒有可用的 embedding 模型</span>：到「🧠 AI 模型」新增 Gemini 或 OpenAI 相容的 API Key 後，這裡才能計算向量；目前機器人用關鍵字檢索。';
+}
+
+function fillSearch() {
+  const s = (botData && botData.search) || { mode: 'vector', threshold: 0.6, topK: 6, embedProvider: 'auto' };
+  setVal('sr-mode', s.mode);
+  setVal('sr-threshold', s.threshold);
+  $('sr-th-val').textContent = Number(s.threshold).toFixed(2);
+  setVal('sr-topk', s.topK);
+  setVal('sr-provider', s.embedProvider || 'auto');
+}
+
+async function saveSearch() {
+  if (readOnly()) return;
+  const r = await callApi('botSaveSettings', { search: { mode: val('sr-mode'), threshold: Number(val('sr-threshold')), topK: Number(val('sr-topk')), embedProvider: val('sr-provider') } });
+  $('sr-msg').textContent = r.success ? '✓ 已儲存（最多 5 分鐘後生效）' : '失敗：' + (r.message || '');
+  if (r.success) {
+    await loadAll(true);
+    await loadKb();
+  }
+}
+
+/** 計算向量：一次 40 筆，一直呼叫到完成。force = 全部重算。 */
+async function embedAll(force) {
+  if (readOnly()) return;
+  if (force && !confirm('全部重新計算向量？知識庫很大時需要一點時間，過程中機器人仍會照常運作。')) return;
+  let offset = 0;
+  let done = false;
+  let count = 0;
+  while (!done) {
+    $('vec-msg').textContent = count ? `計算中…已完成 ${count} 筆` : '計算中…';
+    const r = await callApi('botKbEmbed', { force: !!force, offset }, { silent: true });
+    if (!r.success) {
+      $('vec-msg').innerHTML = `<span style="color:#c0392b;">${htmlEsc(r.message || '失敗')}</span>`;
+      return;
+    }
+    count += r.embedded;
+    offset = r.next;
+    done = r.done;
+  }
+  $('vec-msg').textContent = `✓ 完成（本次計算 ${count} 筆）`;
+  await loadKb();
+}
+
+async function searchCall(body) {
+  const t = await getTestToken();
+  const res = await fetch(t.url + '/api/search', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ ts: t.ts, sig: t.sig, testId: t.testId }, body)) });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || '機器人伺服器回應錯誤（' + res.status + '）');
+  return j;
+}
+
+async function searchTest() {
+  const q = val('sr-q').trim();
+  if (!q) return;
+  $('sr-result').innerHTML = '<div class="calc-hint">搜尋中…</div>';
+  try {
+    const j = await searchCall({ q, threshold: Number(val('sr-threshold')), topK: Number(val('sr-topk')) });
+    const names = { vector: '直接向量', meta_vector: '先中繼再向量', meta: '只用中繼資料', both: '兩種一致' };
+    $('sr-result').innerHTML =
+      `<div class="calc-hint" style="margin:6px 0;">知識庫 ${j.chunks} 段（有向量 ${j.withVectors} 段）${j.hasEmbedding ? '' : '；<span style="color:#c0392b;">沒有 embedding 模型</span>'}；測試用閥值 ${j.threshold}。目前設定的流程：<b>${htmlEsc(names[j.current])}</b></div>` +
+      Object.keys(j.modes)
+        .map((m) => {
+          const x = j.modes[m];
+          const rows = x.hits.length
+            ? x.hits.map((h) => `<tr><td class="nowrap">${h.score}</td><td>${htmlEsc(h.by)}</td><td><b>${htmlEsc(h.title)}</b><div class="calc-hint">${htmlEsc([h.source, h.category, h.topic].filter(Boolean).join(' / '))}</div></td><td>${htmlEsc(h.preview)}</td></tr>`).join('')
+            : '<tr><td colspan="4" class="calc-hint">沒有找到（客人會被請去轉真人，或依「不確定時」處理）</td></tr>';
+          return `<details class="bot-doc" ${m === j.current ? 'open' : ''}><summary><b>${htmlEsc(names[m])}</b>${m === j.current ? ' ✓目前設定' : ''} <span class="calc-hint">找到 ${x.hits.length} 段${x.used !== m ? '（實際用了：' + htmlEsc(x.used) + '）' : ''}</span></summary>
+            <div class="calc-hint">${x.trace.map(htmlEsc).join('<br>')}</div>
+            <table class="bot-table"><thead><tr><th>分數</th><th>方式</th><th>段落</th><th>內容</th></tr></thead><tbody>${rows}</tbody></table></details>`;
+        })
+        .join('');
+  } catch (e) {
+    $('sr-result').innerHTML = `<span style="color:#c0392b;">${htmlEsc(e.message || e)}</span>`;
+  }
 }
 
 async function sendTest(textArg) {

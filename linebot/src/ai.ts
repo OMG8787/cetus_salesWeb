@@ -1,4 +1,4 @@
-import type { AiConfig } from "./gas.js";
+import type { AiConfig, EmbedConfig } from "./gas.js";
 
 // 呼叫 AI（Gemini / Claude / OpenAI 相容），支援工具呼叫（function calling）
 // 金鑰與模型由網站「BOT 管理」設定，每則訊息從管理系統取得
@@ -218,4 +218,39 @@ export async function generate(request: AiRequest): Promise<string> {
     }
   }
   throw lastError;
+}
+
+// ------------------------------------------------------------
+// 向量（embedding）：問題與知識庫段落轉成向量，做語意檢索
+// ------------------------------------------------------------
+const normalize = (v: number[]): number[] => {
+  const n = Math.sqrt(v.reduce((a, x) => a + x * x, 0)) || 1;
+  return v.map((x) => x / n);
+};
+
+/** 一批文字轉向量（已正規化，內積即餘弦相似度）。kind：doc = 文件段落、query = 使用者的問題。失敗丟出 AiError（金鑰會遮掉）。 */
+export async function embed(cfg: EmbedConfig, texts: string[], kind: "doc" | "query" = "query"): Promise<number[][]> {
+  const base = cfg.endpoint.replace(/\/+$/, "");
+  const input = texts.map((t) => t.slice(0, 6000) || " ");
+  let url: string;
+  let init: RequestInit;
+  if (cfg.provider === "openai") {
+    url = `${base}/embeddings`;
+    init = { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` }, body: JSON.stringify({ model: cfg.model, input, dimensions: cfg.dim }) };
+  } else {
+    url = `${base}/models/${cfg.model}:batchEmbedContents`;
+    init = {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": cfg.apiKey },
+      body: JSON.stringify({
+        requests: input.map((t) => ({ model: `models/${cfg.model}`, content: { parts: [{ text: t }] }, taskType: kind === "query" ? "RETRIEVAL_QUERY" : "RETRIEVAL_DOCUMENT", outputDimensionality: cfg.dim })),
+      }),
+    };
+  }
+  const { status, text } = await fetchAi(url, init);
+  if (status < 200 || status >= 300) throw new AiError(`embedding 錯誤 ${status}：${hideKey(text, cfg.apiKey).slice(0, 300)}`);
+  const body = JSON.parse(text) as { data?: { embedding: number[] }[]; embeddings?: { values: number[] }[] };
+  const vectors = cfg.provider === "openai" ? (body.data ?? []).map((d) => d.embedding) : (body.embeddings ?? []).map((d) => d.values);
+  if (vectors.length !== input.length) throw new AiError("embedding 回傳數量不對");
+  return vectors.map(normalize);
 }

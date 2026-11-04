@@ -74,6 +74,10 @@ export interface CsInfo {
   /** 常用按鈕（歡迎詞下方；buttonsAlways = 每則回覆都附上） */
   buttons?: string[];
   buttonsAlways?: boolean;
+  /** 知識庫搜尋流程與向量閥值 */
+  search?: SearchSettings;
+  /** 算向量的模型（沒有 = 沒辦法用向量，退回關鍵字） */
+  embedAi?: EmbedConfig | null;
 }
 
 /** 知識庫的一段（RAG 檢索單位） */
@@ -82,6 +86,29 @@ export interface KnowledgeChunk {
   source: string;
   title: string;
   text: string;
+  /** 大分類、主題、備註（備註是寫給 AI 看的分流提示）、關鍵字：用來先分流再檢索 */
+  category?: string;
+  topic?: string;
+  notes?: string;
+  tags?: string;
+}
+
+/** 算向量（embedding）用的模型與金鑰（管理系統從 AI 設定裡挑 Gemini 或 OpenAI 相容的那一組） */
+export interface EmbedConfig {
+  provider: "gemini" | "openai";
+  apiKey: string;
+  endpoint: string;
+  model: string;
+  dim: number;
+  /** 向量是用哪個模型算的（provider:model:dim）；跟知識庫向量不同代表要重算 */
+  key: string;
+}
+
+export interface SearchSettings {
+  mode: "vector" | "meta_vector" | "meta" | "both";
+  threshold: number;
+  topK: number;
+  embedProvider?: string;
 }
 
 /** 網站客服視窗的公開設定 */
@@ -201,6 +228,10 @@ export const gas = {
   },
   csKnowledge(): Promise<KnowledgeChunk[]> {
     return post<KnowledgeChunk[]>({ op: "csKnowledge" });
+  },
+  /** 知識庫向量（分頁取用） */
+  csVectors(after = 0, limit = 300): Promise<{ model: string; items: { id: string; v: number[] }[]; total: number; next: number }> {
+    return post({ op: "csVectors", after, limit });
   },
   /** 網站客服視窗的公開設定 */
   csWidget(): Promise<WidgetConfig> {

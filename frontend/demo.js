@@ -177,7 +177,7 @@ function demoBotApi(action, params, db) {
         success: true, cs: demoBotCs(b), general: b.general, ai: masked(),
         aiProviders: { gemini: { name: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' }, claude: { name: 'Claude', endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5' }, openai: { name: 'OpenAI 相容', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' } },
         aiUsing: b.ai.length ? { source: 'bot', name: b.ai[0].provider, model: b.ai[0].model || 'default', count: b.ai.length } : null,
-        keys: { cs: { has: !!b.key, hint: b.key ? '••••' + b.key.slice(-4) : '', shared: false }, staff: { has: !!b.staffKey, hint: b.staffKey ? '••••' + b.staffKey.slice(-4) : '', shared: false } }, csProductFields: DEMO_CS_FIELDS, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
+        search: b.search || { mode: 'vector', threshold: 0.6, topK: 6, embedProvider: 'auto' }, keys: { cs: { has: !!b.key, hint: b.key ? '••••' + b.key.slice(-4) : '', shared: false }, staff: { has: !!b.staffKey, hint: b.staffKey ? '••••' + b.staffKey.slice(-4) : '', shared: false } }, csProductFields: DEMO_CS_FIELDS, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
       };
     case 'botSaveSettings': {
       if (params.cs) {
@@ -186,6 +186,7 @@ function demoBotApi(action, params, db) {
         b.cs = Object.assign({}, b.cs, params.cs, { topics: t });
       }
       if (params.general) b.general = Object.assign({}, b.general, params.general);
+      if (params.search) b.search = Object.assign({ mode: 'vector', threshold: 0.6, topK: 6, embedProvider: 'auto' }, b.search, params.search);
       save();
       return { success: true };
     }
@@ -197,9 +198,13 @@ function demoBotApi(action, params, db) {
     case 'botTestAi':
       return b.ai[params.index || 0] ? { success: true, reply: '成功', ms: 321, model: b.ai[params.index || 0].model || 'default', provider: b.ai[params.index || 0].provider } : { success: false, message: '沒有這個模型' };
     case 'botKbList':
-      return { success: true, items: b.kb.map((k, i) => Object.assign({ RowIndex: i + 2 }, k)) };
+      return { success: true, items: b.kb.map((k, i) => Object.assign({ RowIndex: i + 2, BigCategory: '', Topic: '', Notes: '', HasVector: false }, k)), embed: b.ai.some((m) => m.provider !== 'claude') ? { provider: 'gemini', model: 'gemini-embedding-001', dim: 256 } : null, categories: [...new Set(b.kb.map((k) => k.BigCategory).filter(Boolean))], pendingVectors: b.kb.filter((k) => !k.HasVector).length };
+    case 'botKbEmbed':
+      b.kb.forEach((k) => (k.HasVector = true));
+      save();
+      return { success: true, embedded: 0, next: 0, total: 0, remaining: 0, done: true };
     case 'botKbSave': {
-      const row = { ID: params.id || (b.kb.reduce((m, k) => Math.max(m, k.ID), 0) + 1), Type: params.type, Title: params.title || String(params.question || params.content).slice(0, 40), Question: params.question || '', Content: params.content, Tags: params.tags || '', Source: params.source || '', IsActive: params.isActive !== false, UpdatedAt: nowStr() };
+      const row = { BigCategory: params.bigCategory || '', Topic: params.topic || '', Notes: params.notes || '', HasVector: false, ID: params.id || (b.kb.reduce((m, k) => Math.max(m, k.ID), 0) + 1), Type: params.type, Title: params.title || String(params.question || params.content).slice(0, 40), Question: params.question || '', Content: params.content, Tags: params.tags || '', Source: params.source || '', IsActive: params.isActive !== false, UpdatedAt: nowStr() };
       const idx = b.kb.findIndex((k) => k.ID === params.id);
       if (idx > -1) b.kb[idx] = row;
       else b.kb.push(row);
@@ -893,6 +898,7 @@ function handleDemoApi(action, params) {
     case 'botKbDelete':
     case 'botGenKey':
     case 'botRevealKey':
+    case 'botKbEmbed':
     case 'botCsPreview':
     case 'botConversations':
     case 'botThread':

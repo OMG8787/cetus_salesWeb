@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261104h"></script>
+<script src="theme.js?v=20261104i"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261104h" />
-<link rel="stylesheet" href="dark.css?v=20261104h" />
+<link rel="stylesheet" href="style.css?v=20261104i" />
+<link rel="stylesheet" href="dark.css?v=20261104i" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -221,8 +221,41 @@
           <button type="button" class="bot-write btn-secondary" onclick="openDocModal()">＋ 文件（貼上 / 上傳）</button>
         </div>
       </div>
-      <div class="calc-hint">常見問題：一問一答，最準確。文件：貼上或上傳 txt / md / csv / json / html / PDF，系統會自動切成小段，客人問到相關內容才會用到。後台修改最多 5 分鐘後生效。</div>
+      <div class="calc-hint">常見問題：一問一答，最準確。文件：貼上或上傳 txt / md / csv / json / html / PDF，系統會自動切成小段，客人問到相關內容才會用到。後台修改最多 5 分鐘後生效。<br>
+        每一筆都可以填<b>大分類、主題</b>與<b>備註</b>（備註是寫給 AI 看的提示，例如「客人問打光、照明時使用」），機器人會依搜尋流程先分流再找答案。</div>
       <div id="kb-list"></div>
+    </div>
+
+    <div class="panel">
+      <h3 class="bot-h">🧭 搜尋流程與向量</h3>
+      <div class="calc-hint" style="line-height:1.8;">向量 = 把每一筆知識和客人的問題都轉成一串數字，用語意相似度找答案（需要 Gemini 或 OpenAI 相容的 API Key；Claude 沒有這個功能）。新增 / 修改知識時會自動計算。</div>
+      <div id="vec-status" class="calc-hint" style="margin:6px 0;"></div>
+      <div class="bot-row">
+        <button type="button" class="bot-write btn-secondary" onclick="embedAll(false)">⚡ 補算還沒有向量的</button>
+        <button type="button" class="bot-write btn-secondary" onclick="embedAll(true)">🔄 全部重新計算</button>
+        <span id="vec-msg" class="calc-hint"></span>
+      </div>
+      <label>搜尋流程</label>
+      <select id="sr-mode">
+        <option value="vector">直接向量（預設）</option>
+        <option value="meta_vector">先用大分類 / 主題 / 備註縮小範圍，再向量</option>
+        <option value="meta">只用大分類 / 主題 / 備註（不用向量）</option>
+        <option value="both">兩種都做，結果一致才回答</option>
+      </select>
+      <div class="bot-grid">
+        <div><label>向量分數閥值：<b id="sr-th-val">0.60</b>（低於這個分數的段落不採用；越高越嚴格）</label>
+          <input type="range" id="sr-threshold" min="0" max="1" step="0.01" value="0.6" oninput="$('sr-th-val').textContent = Number(this.value).toFixed(2)" /></div>
+        <div><label>最多採用幾段</label><input type="number" id="sr-topk" min="1" max="15" value="6" /></div>
+      </div>
+      <label>向量用哪家的模型</label>
+      <select id="sr-provider"><option value="auto">自動（優先 Gemini，其次 OpenAI 相容）</option><option value="gemini">Gemini</option><option value="openai">OpenAI 相容</option></select>
+      <div class="calc-hint">找不到達到閥值的段落時，機器人會依「客服設定」的「不確定時」處理（請客人轉真人或直接轉給專人）。向量不能用時會自動退回關鍵字檢索，不會讓客人沒有回覆。</div>
+      <div class="bot-row"><button type="button" class="bot-write" onclick="saveSearch()">💾 儲存搜尋設定</button><span id="sr-msg" class="calc-hint"></span></div>
+      <hr style="border:0;border-top:1px solid #dde5f0;margin:12px 0;" />
+      <b>🔎 搜尋測試</b>
+      <div class="calc-hint">輸入一個客人可能問的問題，四種流程各跑一次，看找到哪些段落與分數；可以拉閥值試試（只影響這次測試，要套用請按上面的儲存）。</div>
+      <div class="bot-row"><input id="sr-q" placeholder="例如：我想問光源怎麼打" style="flex:1;min-width:220px;margin:0;" onkeydown="if(event.key==='Enter')searchTest()" /><button type="button" class="btn-secondary" onclick="searchTest()">測試</button></div>
+      <div id="sr-result"></div>
     </div>
   </div>
 
@@ -479,6 +512,13 @@
     <textarea id="faq-content" rows="6" maxlength="20000"></textarea>
     <label>關鍵字（選填，以空白分隔；幫助搜尋命中）</label>
     <input id="faq-tags" maxlength="200" />
+    <div class="bot-grid">
+      <div><label>大分類（例如：光源、相機、公司）</label><input id="faq-cat" list="kb-cats" maxlength="40" /></div>
+      <div><label>主題（例如：環形光源、選型）</label><input id="faq-topic" maxlength="60" /></div>
+    </div>
+    <datalist id="kb-cats"></datalist>
+    <label>備註（寫給 AI 看的分流提示，例如「客人問打光、照明時使用」；客人看不到）</label>
+    <textarea id="faq-notes" rows="2" maxlength="1000"></textarea>
     <label class="bot-check"><input type="checkbox" id="faq-active" checked /> 啟用（沒勾 = 機器人不會用到這一筆）</label>
     <div style="margin-top:10px;"><button type="button" onclick="saveFaq()">儲存</button></div>
   </div>
@@ -490,6 +530,12 @@
     <div class="modal-header"><h3 style="margin:0;">匯入文件</h3><button type="button" onclick="closeModal('doc-modal')">關閉</button></div>
     <label>文件名稱</label>
     <input id="doc-name" maxlength="100" placeholder="例如：AOI 檢測服務介紹" />
+    <div class="bot-grid">
+      <div><label>大分類（選填，整份文件共用）</label><input id="doc-cat" list="kb-cats" maxlength="40" /></div>
+      <div><label>主題（選填）</label><input id="doc-topic" maxlength="60" /></div>
+    </div>
+    <label>備註（選填，寫給 AI 看的分流提示）</label>
+    <input id="doc-notes" maxlength="500" />
     <label>上傳檔案（txt / md / csv / json / html / PDF，可選）</label>
     <input type="file" id="doc-file" accept=".txt,.md,.csv,.json,.html,.htm,.pdf,text/*" onchange="onDocFile(this)" />
     <label>內容（貼上，或上傳後自動帶入，可以修改）</label>
@@ -502,11 +548,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261104h"></script>
-<script src="demo.js?v=20261104h"></script>
-<script src="common.js?v=20261104h"></script>
-<script src="assistant.js?v=20261104h"></script>
-<script src="bot.js?v=20261104h"></script>
-<script src="botstaff.js?v=20261104h"></script>
+<script src="config.js?v=20261104i"></script>
+<script src="demo.js?v=20261104i"></script>
+<script src="common.js?v=20261104i"></script>
+<script src="assistant.js?v=20261104i"></script>
+<script src="bot.js?v=20261104i"></script>
+<script src="botstaff.js?v=20261104i"></script>
 </body>
 </html>
