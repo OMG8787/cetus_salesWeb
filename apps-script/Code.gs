@@ -5721,7 +5721,7 @@ var SHEET_BOT_MSG = 'BotMessages';
 var BOT_SECRET_PROP = 'BOT_SECRET'; // 舊版共用金鑰（只讀，重新產生金鑰時會自動拆成下面兩把）
 var BOT_CS_SECRET_PROP = 'BOT_CS_SECRET'; // 客服機器人專用：只能呼叫客服的操作
 var BOT_STAFF_SECRET_PROP = 'BOT_STAFF_SECRET'; // 員工助理專用：只能呼叫員工助理的操作
-var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csWidget'];
+var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget'];
 var SHEET_BOT_VEC = 'BotVectors';
 var BOT_VEC_DIM = 256; // 向量維度（Gemini / OpenAI 都支援縮小維度；256 維兼顧準確度與試算表容量）
 var BOT_EMBED_MODELS = { gemini: 'gemini-embedding-001', openai: 'text-embedding-3-small' };
@@ -6153,6 +6153,7 @@ function handleBotApi(body) {
     if (op === 'pushTargets' && typeof botPushTargets_ === 'function') data = botPushTargets_();
     else if (op === 'csKnowledge') data = csKnowledge_();
     else if (op === 'csVectors') data = csVectors_(body);
+    else if (op === 'csCalcCatalog') data = csCalcCatalog_();
     else if (op === 'csWidget') data = csWidgetConfig_();
     else {
       var id = String(body.lineUserId || '');
@@ -6328,6 +6329,60 @@ function handleBotKbEmbed(body) {
   }
   var next = start + batch.length;
   return { success: true, embedded: batch.length, next: next, total: list.length, remaining: Math.max(0, list.length - next), done: next >= list.length, model: cfg.key };
+}
+
+/**
+ * 選型計算用的相機 / 鏡頭型錄（結構化，不含任何價格、供應商、備註）：
+ *   cameras  GigE / USB3 相機（有解析度與像素尺寸才算）
+ *   fa       FA 定焦鏡頭（有焦距）
+ *   tele     遠心鏡頭（有放大倍率）
+ * categories = 只開放的產品類別（客服機器人用，空 = 全部）
+ */
+function botCalcCatalog_(categories) {
+  var want = (categories || []).map(function (c) { return String(c).toLowerCase(); });
+  var cams = [];
+  var fa = [];
+  var tele = [];
+  var t = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  readProductsLite_().rows.forEach(function (r) {
+    var cat = t(r['Category']);
+    if (cat !== '相機' && cat !== '鏡頭') return;
+    if (want.length && want.indexOf(cat.toLowerCase()) < 0) return;
+    var name = t(r['InternalModel']) || t(r['SupplierModel']);
+    if (!name) return;
+    var iface = t(r['Interface']);
+    var brand = t(r['Brand']);
+    if (cat === '相機') {
+      var isUsb = /usb/i.test(iface);
+      if (!/gige/i.test(iface) && !isUsb) return;
+      if (isUsb && /usb\s*2/i.test(iface) && !/3/.test(iface)) return;
+      var parts = t(r['Resolution']).toUpperCase().split(/X|\*|×/);
+      var resW = parseInt(parts[0], 10);
+      var resH = parseInt(parts[1], 10);
+      if (!(resW > 0) || !(resH > 0)) return;
+      var rawPix = t(r['PixelSize']);
+      var pm = rawPix.match(/([0-9.]+)\s*[*xX×]\s*([0-9.]+)/);
+      var single = rawPix.match(/([0-9.]+)/);
+      var pixelW = pm ? parseFloat(pm[1]) : single ? parseFloat(single[1]) : 0;
+      var pixelH = pm ? parseFloat(pm[2]) : pixelW;
+      if (!(pixelW > 0)) return;
+      cams.push({ name: name, brand: brand, resW: resW, resH: resH, pixelW: pixelW, pixelH: pixelH, size: t(r['SensorSize']), iface: isUsb ? 'USB3.0' : 'GigE', fps: parseFloat(t(r['FPS'])) || 0, mp: (resW * resH) / 1e6 });
+      return;
+    }
+    var mag = parseFloat(hwNum_(r['Magnification']));
+    var f = parseFloat(hwNum_(r['FocalLength']));
+    if (mag > 0) tele.push({ name: name, brand: brand, mag: mag, wd: t(r['WD']), dof: t(r['DOF']), sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']) });
+    else if (f > 0) fa.push({ name: name, brand: brand, f: f, sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']), focusWd: parseFloat(hwNum_(r['FocusWD'])) || 0 });
+  });
+  return { cameras: cams, fa: fa, tele: tele };
+}
+
+/** 客服機器人用：產品來源有開才給；只含管理員開放的產品類別。 */
+function csCalcCatalog_() {
+  var cs = botSettings_();
+  if (!cs.sources.products) return { cameras: [], fa: [], tele: [] };
+  var cats = String(cs.sources.productCategories || '').split(/[,，、\n]+/).map(function (c) { return c.trim(); }).filter(Boolean);
+  return botCalcCatalog_(cats);
 }
 
 /** 知識庫向量（給機器人伺服器分頁取用）：只回傳目前這個 embedding 模型算的、且對應項目還在的。 */
@@ -7118,7 +7173,7 @@ function botSetup_(log) {
 var SHEET_BOT_MEMBERS = 'BotMembers';
 var SHEET_BOT_MEMORY = 'BotMemory';
 
-var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'logs', 'memos', 'calendar'];
+var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'logs', 'memos', 'calendar', 'calcCatalog'];
 var BOT_STAFF_STATUS = { PENDING: '待開通', ACTIVE: '已開通', OFF: '停用' };
 var BOT_PENDING_SECONDS = 900;
 var BOT_CASE_STATUSES = ['需求單已發出', '評估單已發出', '已結案'];
@@ -7551,6 +7606,11 @@ function botStaffCall_(ctx, action, params) {
         return o;
       }),
     };
+  }
+
+  if (action === 'calcCatalog') {
+    botNeed_(ctx, 'products', 'view');
+    return botCalcCatalog_(null);
   }
 
   if (action === 'logs') {

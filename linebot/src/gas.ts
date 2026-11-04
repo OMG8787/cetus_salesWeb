@@ -233,6 +233,10 @@ export const gas = {
   csVectors(after = 0, limit = 300): Promise<{ model: string; items: { id: string; v: number[] }[]; total: number; next: number }> {
     return post({ op: "csVectors", after, limit });
   },
+  /** 選型計算用的相機 / 鏡頭型錄（不含價格；客服要產品來源有開才有資料） */
+  csCalcCatalog(): Promise<import("./calc.js").Catalog> {
+    return post({ op: "csCalcCatalog" });
+  },
   /** 網站客服視窗的公開設定 */
   csWidget(): Promise<WidgetConfig> {
     return post<WidgetConfig>({ op: "csWidget" });

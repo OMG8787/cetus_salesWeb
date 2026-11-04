@@ -1,4 +1,6 @@
 import { generate, type Tool, type Turn } from "./ai.js";
+import { calcTool, CALC_RULES } from "./calc-tool.js";
+import type { Catalog } from "./calc.js";
 import { cleanReply, processEvents } from "./common.js";
 import { GasError, gas, type StaffInfo, type StaffWrite } from "./gas.js";
 import { choicesTool } from "./human.js";
@@ -74,6 +76,7 @@ export function staffSystemPrompt(info: StaffInfo): string {
     `4. 日期：同事說「明天」「下週三」這類相對日期，請依今天（${t.date}，星期${t.weekday}）換算成 YYYY-MM-DD 再使用，並在回覆裡寫出換算後的日期讓他核對。`,
     "5. 回覆會顯示在聊天視窗：不要用 Markdown（不要用 **粗體**、# 標題、表格），條列用「・」，盡量簡短。",
     "6. 同事的問題模稜兩可（例如有好幾家名稱相近的客戶）時不要猜，用 offer_choices 給選項按鈕並用一句話反問。",
+    (info.blocks?.products ?? "none") !== "none" ? CALC_RULES : "",
     info.memory?.enabled
       ? "7. 同事要你「記住」某件事（稱呼、習慣、公司規定…）時用 remember 工具；要你忘掉時用 forget_memory。只記對之後的對話有用、不會很快過期的事，不要記客戶機密或密碼。"
       : "",
@@ -166,6 +169,7 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
     );
   }
   if (lv("products") !== "none") {
+    tools.push(calcTool(async () => (await gas.staffCall(uid, "calcCatalog")) as Catalog));
     tools.push({
       name: "search_products",
       description: "查產品資料庫（型號、品牌、規格、介面、解析度…）；有權限的人才看得到供應商與參考底價，絕對不要把底價告訴客戶。",

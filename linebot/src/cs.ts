@@ -1,4 +1,5 @@
 import { embed, generate, type Tool, type Turn } from "./ai.js";
+import { calcTool, CALC_RULES } from "./calc-tool.js";
 import { cleanReply, processEvents } from "./common.js";
 import { gas, type CsInfo, type CsStyle, type CsTopic, type EmbedConfig } from "./gas.js";
 import { choicesTool, humanPause } from "./human.js";
@@ -59,6 +60,18 @@ async function loadVectors(chunks: { id: string }[]): Promise<Map<string, number
   return map;
 }
 
+let catalogCache: { at: number; value: Promise<import("./calc.js").Catalog> } | null = null;
+/** 選型計算用的型錄（客服版：不含價格；同一個執行個體內快取 5 分鐘） */
+function catalogOnce(): Promise<import("./calc.js").Catalog> {
+  if (catalogCache && Date.now() - catalogCache.at < KNOWLEDGE_TTL_MS) return catalogCache.value;
+  const value = gas.csCalcCatalog();
+  value.catch(() => {
+    catalogCache = null;
+  });
+  catalogCache = { at: Date.now(), value };
+  return value;
+}
+
 /** 依 BOT 設定的搜尋流程找知識庫（問題轉向量失敗會自動退回關鍵字，不會讓客人沒有回覆） */
 export async function runSearch(index: KnowledgeIndex, query: string, search: SearchConfig | undefined, embedAi: EmbedConfig | null | undefined): Promise<SearchResult> {
   const cfg = { ...DEFAULT_SEARCH, ...search };
@@ -67,6 +80,7 @@ export async function runSearch(index: KnowledgeIndex, query: string, search: Se
 
 export function resetKnowledgeCache(): void {
   cached = null;
+  catalogCache = null;
 }
 
 const squash = (s: string) => s.toLowerCase().replace(/\s+/g, "");
@@ -121,6 +135,7 @@ export function csSystemPrompt(info: CsInfo, references: string): string {
     `4. 回覆會顯示在聊天視窗：不要用 Markdown（不要用 **粗體**、# 標題、表格），用「・」條列，${EMOJIS[st.emoji] ?? EMOJIS.some}，盡量 ${st.maxLines} 行以內。`,
     `5. 報價、價格、折扣、交期、下訂、退換貨、客訴或客人要找人時，請他輸入「${call}」，由專人處理；你不能報價，也不要說出任何價格或金額。`,
     "6. 客人的問題模稜兩可（沒說哪個產品、哪個應用）時不要猜，用 offer_choices 給選項按鈕並用一句話反問。",
+    CALC_RULES,
     topics.length
       ? `7. 以下問題不要自己回答，一律呼叫 transfer_to_human（topic 填問題類型）交給專人，就算參考資料裡有答案也一樣（這條優先於其他規則）：${topics.map((x) => x.name).join("、")}。`
       : "",
@@ -172,7 +187,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const search = { ...DEFAULT_SEARCH, ...info.search, topK: info.search?.topK ?? TOP_K };
   const hits = (await runSearch(index, query, search, info.embedAi)).hits;
 
-  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
+  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits), calcTool(catalogOnce), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
   if (info.topics?.length || info.unsure === "handoff") tools.push(transferTool(info, handed));
 
   const turns: Turn[] = [...history.map((h) => ({ isUser: h.u, text: h.t })), { isUser: true, text }];
