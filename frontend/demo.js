@@ -134,6 +134,136 @@ function demoSaveCustomer(db, params) {
   return { success: true, customer: Object.assign({ RowIndex: idx }, cust), log, changes: lines, keptOldContact: keptOld };
 }
 
+// ---- 示範模式的 BOT 設定（資料存在本機）----
+const DEMO_BOT_TOPICS = [
+  { key: 'price', name: '價格 / 報價', words: '多少錢 價格 價錢 售價 報價 費用 幾元 優惠 折扣 特價 便宜 預算', ask: '為了加快報價，請先留下以下資料：\n・公司名稱與聯絡人\n・電話或 Email\n・需要的產品型號 / 數量，或應用說明' },
+  { key: 'order', name: '訂購 / 下單', words: '訂購 下單 訂貨 我要買 怎麼買 想買 購買 採購', ask: '為了加快處理，請先留下以下資料：\n・公司名稱與聯絡人\n・電話\n・想訂購的品項與數量\n・希望交期' },
+  { key: 'sample', name: '樣品測試 / 專案評估', words: '樣品 打樣 測試 評估 專案 客製 驗證 試用 借測', ask: '請先留下您的需求，FAE 會更快回覆您：\n・公司名稱與聯絡人、電話\n・產品應用與待測物件\n・檢測需求（要抓什麼缺陷、精度、速度）' },
+  { key: 'shipping', name: '運費 / 交期', words: '運費 配送 寄送 出貨 物流 到貨 交期 現貨 缺貨', ask: '' },
+  { key: 'complaint', name: '客訴 / 退換貨 / 維修', words: '退貨 退款 換貨 客訴 投訴 故障 維修 壞掉 保固 RMA 不良', ask: '' },
+];
+
+function demoBotState(db) {
+  if (!db.bot) {
+    db.bot = {
+      cs: { enabled: false, welcome: '', prompt: '', handoffText: '', sources: { qa: true, products: false, brand: true, productLimit: 1500 }, brandInfo: '', replyWhen: 'always', hours: { enabled: false, days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00', offText: '' }, handoffWords: '真人 客服人員 小編 專人 人工 業務', pauseMinutes: 30, topics: {}, customWords: '', customAsk: '', customAskPos: 'after', topicText: '', unsure: 'ask', style: { tone: 'friendly', address: '您', emoji: 'some', maxLines: 5 }, buttons: '', buttonsAlways: false, web: { enabled: false, title: '線上客服', subtitle: '有任何問題都可以問我', color: '#2c5aa0', position: 'right', autoOpen: false, allowedOrigins: '' } },
+      general: { replyDelay: 2, botUrl: '', brand: '鑫堡股份有限公司', memory: { turns: 10, hours: 6, chars: 600 } },
+      ai: [], kb: [], messages: [], pauses: [], key: '',
+    };
+  }
+  return db.bot;
+}
+
+function demoBotCs(b) {
+  const cs = JSON.parse(JSON.stringify(b.cs));
+  const stored = cs.topics || {};
+  cs.topics = DEMO_BOT_TOPICS.map((t) => {
+    const v = stored[t.key] || {};
+    return { key: t.key, name: t.name, on: v.on === true, words: String(v.words || '').trim() || t.words, defaultWords: t.words, ask: v.ask === undefined ? t.ask : v.ask, defaultAsk: t.ask, askPos: v.askPos === 'before' ? 'before' : 'after' };
+  });
+  return cs;
+}
+
+function demoBotApi(action, params, db) {
+  const b = demoBotState(db);
+  const save = () => saveDemoDB(db);
+  const nowStr = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const masked = () => b.ai.map((m) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, hasKey: !!m.apiKey, keyHint: '••••' + String(m.apiKey).slice(-4), defaultModel: '' }));
+  switch (action) {
+    case 'botGetSettings':
+      return {
+        success: true, cs: demoBotCs(b), general: b.general, ai: masked(),
+        aiProviders: { gemini: { name: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' }, claude: { name: 'Claude', endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5' }, openai: { name: 'OpenAI 相容', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' } },
+        aiUsing: b.ai.length ? { source: 'bot', name: b.ai[0].provider, model: b.ai[0].model || 'default', count: b.ai.length } : null,
+        keyHint: b.key ? '••••' + b.key.slice(-4) : '', hasKey: !!b.key, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
+      };
+    case 'botSaveSettings': {
+      if (params.cs) {
+        const t = {};
+        (params.cs.topics || []).forEach((x) => (t[x.key] = { on: x.on === true, words: x.words, ask: x.ask, askPos: x.askPos }));
+        b.cs = Object.assign({}, b.cs, params.cs, { topics: t });
+      }
+      if (params.general) b.general = Object.assign({}, b.general, params.general);
+      save();
+      return { success: true };
+    }
+    case 'botSaveAi': {
+      b.ai = (params.models || []).map((m, i) => ({ provider: m.provider, model: m.model, endpoint: m.endpoint, apiKey: m.apiKey || (b.ai[i] && b.ai[i].apiKey) || '' })).filter((m) => m.apiKey);
+      save();
+      return { success: true, ai: masked() };
+    }
+    case 'botTestAi':
+      return b.ai[params.index || 0] ? { success: true, reply: '成功', ms: 321, model: b.ai[params.index || 0].model || 'default', provider: b.ai[params.index || 0].provider } : { success: false, message: '沒有這個模型' };
+    case 'botKbList':
+      return { success: true, items: b.kb.map((k, i) => Object.assign({ RowIndex: i + 2 }, k)) };
+    case 'botKbSave': {
+      const row = { ID: params.id || (b.kb.reduce((m, k) => Math.max(m, k.ID), 0) + 1), Type: params.type, Title: params.title || String(params.question || params.content).slice(0, 40), Question: params.question || '', Content: params.content, Tags: params.tags || '', Source: params.source || '', IsActive: params.isActive !== false, UpdatedAt: nowStr() };
+      const idx = b.kb.findIndex((k) => k.ID === params.id);
+      if (idx > -1) b.kb[idx] = row;
+      else b.kb.push(row);
+      save();
+      return { success: true };
+    }
+    case 'botKbImport': {
+      let id = b.kb.reduce((m, k) => Math.max(m, k.ID), 0);
+      (params.rows || []).forEach((r) => b.kb.push({ ID: ++id, Type: 'doc', Title: r.title, Question: '', Content: r.content, Tags: '', Source: r.source || '', IsActive: true, UpdatedAt: nowStr() }));
+      save();
+      return { success: true, count: (params.rows || []).length };
+    }
+    case 'botKbDelete': {
+      const before = b.kb.length;
+      b.kb = b.kb.filter((k) => !(params.ids || []).includes(k.ID) && !(params.source && k.Source === params.source));
+      save();
+      return { success: true, deleted: before - b.kb.length };
+    }
+    case 'botGenKey':
+      b.key = Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+      save();
+      return { success: true, key: b.key, keyHint: '••••' + b.key.slice(-4) };
+    case 'botRevealKey':
+      return b.key ? { success: true, key: b.key } : { success: false, message: '還沒有產生 Bot 金鑰' };
+    case 'botConversations': {
+      const groups = {};
+      b.messages.forEach((m) => {
+        const g = (groups[m.UserId] = groups[m.UserId] || { id: m.UserId, name: m.Name, channel: m.Channel, count: 0, lastAt: '', lastText: '', lastRole: '', topic: '' });
+        g.count++;
+        g.lastAt = m.Time;
+        g.lastText = m.Text.slice(0, 80);
+        g.lastRole = m.Role;
+        if (m.Name) g.name = m.Name;
+      });
+      const paused = {};
+      b.pauses.forEach((p) => (paused[p.id] = true));
+      const list = Object.values(groups).map((g) => Object.assign(g, { paused: !!paused[g.id] })).sort((x, y) => String(y.lastAt).localeCompare(String(x.lastAt)));
+      return { success: true, conversations: list, pauses: b.pauses, total: b.messages.length, max: 4000 };
+    }
+    case 'botThread':
+      return { success: true, messages: b.messages.filter((m) => m.UserId === params.userId).map((m) => ({ id: m.ID, time: m.Time, channel: m.Channel, name: m.Name, role: m.Role, text: m.Text, topic: '' })), paused: b.pauses.some((p) => p.id === params.userId) };
+    case 'botHumanReply':
+      if (params.userId.charAt(0) !== 'V') return { success: false, message: 'LINE 客人請到 LINE 官方帳號後台回覆' };
+      b.messages.push({ ID: b.messages.length + 1, Time: nowStr(), Channel: 'web', UserId: params.userId, Name: '', Role: 'human', Text: params.text });
+      save();
+      return { success: true };
+    case 'botResume':
+      b.pauses = b.pauses.filter((p) => p.id !== params.userId);
+      save();
+      return { success: true, pauses: b.pauses };
+    case 'botTestToken':
+      return { success: false, message: '示範模式沒有機器人伺服器，無法測試聊天' };
+    case 'botClear': {
+      const o = params.options || {};
+      const counts = { messages: o.messages ? b.messages.length : 0, memos: 0, pauses: b.pauses.length };
+      if (!params.dryRun) {
+        if (o.messages) b.messages = [];
+        if (o.pauses) b.pauses = [];
+        save();
+      }
+      return { success: true, dryRun: !!params.dryRun, counts };
+    }
+  }
+  return null;
+}
+
 function demoAdminAccess() {
   const blocks = {};
   ['products', 'cases', 'customers', 'files', 'copy', 'bot'].forEach((b) => (blocks[b] = 'edit'));
@@ -542,6 +672,24 @@ function handleDemoApi(action, params) {
     }
 
     // ---------------- 帳號管理（示範模式：0000 帳號視同 admin，其他帳號存在本機） ----------------
+    case 'botGetSettings':
+    case 'botSaveSettings':
+    case 'botSaveAi':
+    case 'botTestAi':
+    case 'botKbList':
+    case 'botKbSave':
+    case 'botKbImport':
+    case 'botKbDelete':
+    case 'botGenKey':
+    case 'botRevealKey':
+    case 'botConversations':
+    case 'botThread':
+    case 'botHumanReply':
+    case 'botResume':
+    case 'botTestToken':
+    case 'botClear':
+      return demoBotApi(action, params, db);
+
     case 'getUsers': {
       db.users = db.users || [];
       const labels = { admin: '系統管理員', editor: '編輯者', viewer: '查看', limited: '特定', sales: '業務（舊角色）', fae: '工程（舊角色）' };
