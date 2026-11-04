@@ -28,7 +28,8 @@
     const r = await callApi('botAssistInfo', {}, { silent: true });
     let result;
     if (r && r.success) result = { enabled: !!r.enabled, reason: r.reason || '' };
-    else result = { enabled: false, reason: '管理系統還沒有安裝員工助理（Apps Script 要貼上最新的 Code.gs、Bot.gs、BotStaff.gs，執行 setup 並重新部署）' };
+    else if (r && r.message) result = { enabled: false, reason: '管理系統回報錯誤「' + r.message + '」。通常是 Apps Script 的 Code.gs、Bot.gs、BotStaff.gs 版本不一致：請三個檔案都貼成最新版，執行 setup 並重新部署新版本' };
+    else result = { enabled: false, reason: '連不上管理系統，請檢查網路後再試' };
     store(INFO_KEY, { at: Date.now(), info: result });
     return result;
   }
@@ -75,7 +76,9 @@ ${where}後，這裡就可以用聊天查客戶、案件、行程，或記錄追
     text = String(text || '').trim();
     if (!text || busy) return;
     if (!info.enabled) {
-      log.push({ role: 'bot', text: offMessage() });
+      const msg = offMessage();
+      if (!log.length || log[log.length - 1].text !== msg) log.push({ role: 'bot', text: msg });
+      box.querySelector('.as-input').value = '';
       return render();
     }
     log.push({ role: 'user', text });
