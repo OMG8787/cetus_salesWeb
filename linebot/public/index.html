@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AOI 客服機器人</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f4f6f8; --fg: #222; --muted: #667; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1b2229; --fg: #eee; --muted: #aab; } }
+    body { margin: 0; padding: 40px 16px; background: var(--bg); color: var(--fg); font-family: system-ui, "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+    main { max-width: 600px; margin: 0 auto; line-height: 1.7; }
+    code { font-size: .9em; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🤖 AOI 客服機器人</h1>
+    <p>這是管理系統的機器人伺服器：</p>
+    <ul>
+      <li>客服 LINE Webhook：<code>/api/cs</code>（<a href="/api/cs">檢查設定</a>）</li>
+      <li>網站客服視窗：在網頁加一行 <code>&lt;script src="https://你的網域/widget.js" defer&gt;&lt;/script&gt;</code></li>
+      <li>員工助理 LINE Webhook：<code>/api/line</code></li>
+    </ul>
+    <p class="muted">設定都在網站「BOT 設定」頁。</p>
+  </main>
+</body>
+</html>

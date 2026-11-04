@@ -397,6 +397,7 @@ function handleBotApi(body) {
       else if (op === 'csForget') data = csForget_(id);
       else if (op === 'csHandoff') data = csHandoff_(id, body);
       else if (op === 'csMessages') data = csMessages_(id, body);
+      else if (op === 'csThread') data = csThread_(id, body);
       else return fail('未知的 Bot 操作：' + op);
     }
     return { success: true, data: data };
@@ -515,6 +516,8 @@ function csRemember_(id, req) {
 
 function csForget_(id) {
   botCacheRemove_([csHistKey_(id)]);
+  // 對話紀錄裡記一筆「重新開始」：網站視窗重新整理後不再顯示這之前的對話
+  if (id.charAt(0) !== 'T') botLogTurns_(id.charAt(0) === 'V' ? 'web' : 'line', id, '', [{ role: 'reset', text: '（客人重新開始對話）' }], '');
   return csResume_(id);
 }
 
@@ -604,6 +607,28 @@ function csHandoff_(id, req) {
     NeedBlock: 'bot',
   });
   return true;
+}
+
+/**
+ * 網站訪客視窗用：這位訪客的對話（只算最後一次「重新開始」之後的）。
+ * after = 最後一則的編號：只回比它新的（輪詢小編的回覆）；不帶 = 最近 40 則（重新整理後還原）。
+ */
+function csThread_(id, req) {
+  var after = Number(req.after) || 0;
+  var sheet = getSheet(SHEET_BOT_MSG);
+  var last = sheet.getLastRow();
+  var rows = [];
+  if (last >= 2) {
+    var from = Math.max(2, last - 400);
+    sheet.getRange(from, 1, last - from + 1, 8).getValues().forEach(function (r) {
+      if (String(r[3]) !== id) return;
+      if (r[5] === 'reset') rows = [];
+      else rows.push({ id: Number(r[0]), role: String(r[5]) === 'human' ? 'human' : String(r[5]) === 'bot' ? 'bot' : 'user', text: String(r[6]) });
+    });
+  }
+  if (after > 0) rows = rows.filter(function (m) { return m.id > after; });
+  else rows = rows.slice(-40);
+  return { messages: rows, paused: !!botCache_().get('cspause:' + id) };
 }
 
 /** 網站訪客視窗輪詢：小編（真人）在後台回覆的訊息，以及現在是不是小編接手中。 */
