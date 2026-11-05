@@ -296,7 +296,7 @@ node apps-script/tests/run-all.js     # 後端 Code.gs：權限、資料隔離�
 cd linebot && npm run typecheck && npm test   # 機器人伺服器：檢索 / 向量、選型計算、客服與員工助理流程
 ```
 
-目前結果：後端 13 個檔案 711 項檢查、機器人伺服器 68 組測試，全部通過；選型計算另與網站 `calc.js` 逐項比對（`linebot/test/calc-compare.ts`）。畫面部分用無頭 Chrome 在示範模式（`DEMO_MODE = true`）逐頁操作驗證（行事曆 / 工作清單 / 分享 / 群組 / BOT 設定 / 文案 / 助理浮窗，含深色模式）。
+目前結果：後端 14 個檔案 739 項檢查、機器人伺服器 68 組測試，全部通過；選型計算另與網站 `calc.js` 逐項比對（`linebot/test/calc-compare.ts`）。畫面部分用無頭 Chrome 在示範模式（`DEMO_MODE = true`）逐頁操作驗證（行事曆 / 工作清單 / 分享 / 群組 / BOT 設定 / 文案 / 助理浮窗，含深色模式）。
 
 **更新到新版的步驟**：① 備份試算表 → ② 把最新 `apps-script/Code.gs` 整份貼進 Apps Script（專案只有這一個檔案）→ ③ 執行 `setup` → ④ 部署 → 管理部署作業 → 新版本 → ⑤ 前端推到 GitHub Pages（自動）→ ⑥ 機器人伺服器（`linebot/`）重新部署到 Vercel（若是用上傳資料夾建立的專案，要重新上傳；用 GitHub 連線的會自動更新）。
 

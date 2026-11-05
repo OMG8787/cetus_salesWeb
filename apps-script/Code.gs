@@ -6382,7 +6382,7 @@ function botSchema_() {
   var base = {
     schema: {
       BotConfig: ['Key', 'Value'],
-      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes', 'Audience'],
+      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes', 'Audience', 'Overlap', 'ChunkSize', 'SortOrder', 'FileName'],
       BotVectors: ['ID', 'Model', 'Vec'],
       BotMessages: ['ID', 'Time', 'Channel', 'UserId', 'Name', 'Role', 'Text', 'Topic'],
     },
@@ -6405,7 +6405,7 @@ function botPerms_() {
     botGetSettings: ['bot', 'r'], botKbList: ['bot', 'r'], botConversations: ['bot', 'r'], botThread: ['bot', 'r'],
     botSaveSettings: ['bot', 'w'], botSaveAi: ['bot', 'w'], botTestAi: ['bot', 'w'], botKbSave: ['bot', 'w'], botKbImport: ['bot', 'w'],
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
-    botKbDelete: ['bot', 'd'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
+    botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -6427,6 +6427,8 @@ function botRoutes_() {
     botKbImport: { auth: true, fn: handleBotKbImport },
     botKbDelete: { auth: true, fn: handleBotKbDelete },
     botKbSetAudience: { auth: true, fn: handleBotKbSetAudience },
+    botKbDocSave: { auth: true, fn: handleBotKbDocSave },
+    botKbAiSplit: { auth: true, fn: handleBotKbAiSplit },
     botGenKey: { auth: true, fn: handleBotGenKey },
     botRevealKey: { auth: true, fn: handleBotRevealKey },
     botConversations: { auth: true, fn: handleBotConversations },
@@ -7475,6 +7477,7 @@ function handleBotGetSettings(body) {
     general: { replyDelay: gen.replyDelay, botUrl: gen.botUrl, brand: csBrand_(), memory: gen.memory },
     ai: botMaskedAi_(),
     aiFeatures: BOT_AI_FEATURES,
+    aiSystem: !!PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY'),
     aiAssign: botAiAssign_(),
     aiRounds: botAiRounds_(),
     aiProviders: BOT_AI_PROVIDERS,
@@ -7609,6 +7612,10 @@ function botKbRows_() {
       Topic: String(r['Topic'] || ''),
       Notes: String(r['Notes'] || ''),
       Audience: String(r['Audience'] || ''),
+      Overlap: Number(r['Overlap']) || 0,
+      ChunkSize: r['ChunkSize'] === '' || r['ChunkSize'] == null ? '' : Number(r['ChunkSize']) || '',
+      SortOrder: Number(r['SortOrder']) || 0,
+      FileName: String(r['FileName'] || ''),
     };
   });
 }
@@ -7666,6 +7673,92 @@ function handleBotKbList(body) {
   return { success: true, items: items, embed: cfg ? { provider: cfg.provider, model: cfg.model, dim: cfg.dim } : null, categories: Object.keys(cats).sort(), pendingVectors: cfg ? items.filter(function (r) { return !r.HasVector && botKbEmbedText_(r); }).length : 0 };
 }
 
+var BOT_KB_SPLIT_MAX = 120000;
+var BOT_KB_SPLIT_PROMPT = [
+  '你是文件整理員，要把一份文件切成適合「向量搜尋」的段落：每一段要能單獨被看懂、只講一個主題。',
+  '文件已經切成編號的句子（[編號] 句子；⏎ 代表換行）。請先讀完整份文件，再決定每一段從第幾句開始。',
+  '規則：',
+  '1. 每段大約 {target} 字，可以在 {min}～{max} 字之間調整，以「主題完整」優先。',
+  '2. 不要把同一個重點、同一張表格、同一組條列、問題和它的答案拆到兩段。',
+  '3. 第一段一定從 1 開始，start 要由小到大，不能跳號重複。',
+  '4. 每段給一個 4～12 字的小標，說明這段在講什麼（例如：保險金額、保險期間）。',
+  '只輸出 JSON，不要其他文字：{"chunks":[{"start":1,"title":"小標"},{"start":8,"title":"小標"}]}',
+].join('\n');
+
+/** 文件切成句子（句號、問號、驚嘆號、分號、換行後切開；太長的句子再硬切），接起來 = 原文。 */
+function botKbUnits_(text, maxLen) {
+  var out = [];
+  var cur = '';
+  for (var i = 0; i < text.length; i++) {
+    var ch = text.charAt(i);
+    cur += ch;
+    var end = /[。！？!?；;\n]/.test(ch) && !/[。！？!?；;\n」』）)]/.test(text.charAt(i + 1) || '');
+    if (end || cur.length >= maxLen) {
+      out.push(cur);
+      cur = '';
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/**
+ * 讓 AI 來切文件：先把文件切成編號的句子，AI 讀過整份文件後只回傳「每一段從第幾句開始」與小標（不重寫內容，原文不會被改）。
+ * { text, target 每段大約幾字, profile 用哪一組 AI（空白 = 整個系統那組；sys = 系統共用 Gemini；數字 = 清單第幾組，從 0 開始）, model 指定模型（空白 = 那組設定的模型） }
+ * → { chunks: [{ text, title }], model, name, units }；段落接起來 = 原文。費用記在選的那組金鑰，不備援。
+ */
+function handleBotKbAiSplit(body) {
+  var text = String(body.text || '').replace(/\r/g, '').trim();
+  if (!text) return { success: false, message: '請先貼上文件內容' };
+  if (text.length > BOT_KB_SPLIT_MAX) return { success: false, message: '文件太長（超過 ' + BOT_KB_SPLIT_MAX + ' 字），請分成幾份文件' };
+  var target = botInt_(body.target, 100, 3000, 500);
+  var pick = body.profile === undefined || body.profile === null ? '' : String(body.profile);
+  var ai = null;
+  if (pick === '') ai = botAiList_('all')[0] || null;
+  else if (pick === 'sys') ai = botAiList_().filter(function (m) { return m.source === 'system'; })[0] || null;
+  else ai = botAiStored_()[Number(pick)] || null;
+  if (!ai) return { success: false, message: '找不到這組 AI，或還沒有設定 AI：請到「AI 模型」新增' };
+  var model = String(body.model || '').trim().slice(0, 100);
+  if (model && !/^[\w.:\/@-]+$/.test(model)) return { success: false, message: '模型名稱格式不正確' };
+  var use = { provider: ai.provider, apiKey: ai.apiKey, endpoint: ai.endpoint, model: model || ai.model };
+  var units = botKbUnits_(text, Math.max(60, Math.floor(target / 2)));
+  var listing = units.map(function (u, i) { return '[' + (i + 1) + '] ' + u.replace(/\n/g, '⏎'); }).join('\n');
+  var system = BOT_KB_SPLIT_PROMPT.replace('{target}', target).replace('{min}', Math.round(target * 0.5)).replace('{max}', Math.round(target * 1.5));
+  var reply;
+  try {
+    reply = botCallAi_(use, system, [{ role: 'user', text: listing }], { maxTokens: 8192 });
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  var res = null;
+  try {
+    var m = String(reply).match(/\{[\s\S]*\}/);
+    res = JSON.parse(m ? m[0] : '');
+  } catch (e2) {
+    res = null;
+  }
+  var list = res && Array.isArray(res.chunks) ? res.chunks : null;
+  if (!list || !list.length) return { success: false, message: 'AI 回覆的格式不對（' + use.model + '），請再試一次，或取消勾選改用一般切段' };
+  // 整理起點：整數、由小到大、第一段從 1 開始；不合理的丟掉
+  var starts = [];
+  var titles = [];
+  list.forEach(function (c) {
+    var n = Math.round(Number(c && c.start));
+    if (!(n >= 1 && n <= units.length) || (starts.length && n <= starts[starts.length - 1])) return;
+    starts.push(n);
+    titles.push(botClip_(c.title, 20));
+  });
+  if (!starts.length) return { success: false, message: 'AI 回覆的段落編號不對，請再試一次，或取消勾選改用一般切段' };
+  if (starts[0] !== 1) {
+    starts.unshift(1);
+    titles.unshift('');
+  }
+  var chunks = starts.map(function (st, i) {
+    return { text: units.slice(st - 1, (starts[i + 1] || units.length + 1) - 1).join(''), title: titles[i] };
+  }).filter(function (c) { return c.text; });
+  return { success: true, chunks: chunks, model: use.model, name: ai.source === 'system' ? '系統共用' : ai.name || '', units: units.length };
+}
+
 function botNextKbId_() {
   var max = 0;
   sheetToObjects(SHEET_BOT_KB).rows.forEach(function (r) {
@@ -7710,6 +7803,70 @@ function handleBotKbSave(body) {
       }
     }
     return { success: true, id: id, embedded: embedded, embedError: embedError };
+  });
+}
+
+/**
+ * 儲存一份文件（新增或整份重建）：chunks = [{ title(小標), content, overlap }] 前端已經切好段（一般切段或「讓 AI 來切」）。
+ * key = 這份文件的代號（編輯既有文件時帶；沒帶就是新文件）：同一個 key 的舊段落會先整份刪掉（連同向量）再寫入新的。
+ * 段落標題 = 文件名稱（第幾段/共幾段）｜小標；content 開頭的 overlap 個字是上一段結尾（接回原文時要去掉）。
+ */
+function handleBotKbDocSave(body) {
+  var title = String(body.title || '').trim().slice(0, 100);
+  if (!title) return { success: false, message: '請填文件名稱' };
+  var chunks = (Array.isArray(body.chunks) ? body.chunks : []).map(function (c) {
+    return { content: String((c && c.content) || '').trim().slice(0, 20000), overlap: Math.max(0, Number(c && c.overlap) || 0), title: botClip_(c && c.title, 40) };
+  }).filter(function (c) { return c.content; });
+  if (!chunks.length) return { success: false, message: '沒有可儲存的內容' };
+  if (chunks.length > 1000) return { success: false, message: '這份文件太大了（超過 1000 段），請拆成幾份再儲存' };
+  var size = botInt_(body.chunkSize, 100, 3000, 500);
+  var key = String(body.key || '').trim().slice(0, 80) || 'doc-' + Date.now();
+  return withLock_(function () {
+    // 舊段落（同一份文件）整份刪掉
+    var sheet = getSheet(SHEET_BOT_KB);
+    var gone = [];
+    botKbRows_().filter(function (r) {
+      return r.Type === 'doc' && (r.FileName === key || (!r.FileName && r.Source === key));
+    }).sort(function (a, b) { return b.RowIndex - a.RowIndex; }).forEach(function (r) {
+      gone.push(r.ID);
+      sheet.deleteRow(r.RowIndex);
+    });
+    if (gone.length) botVecDelete_(gone);
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var id = botNextKbId_();
+    var t = botNow_();
+    var n = chunks.length;
+    var rows = chunks.map(function (c, i) {
+      var o = {
+        ID: id + i, Type: 'doc',
+        Title: c.title ? title + '（' + (i + 1) + '/' + n + '）｜' + c.title : n > 1 ? title + '（' + (i + 1) + '/' + n + '）' : title,
+        Question: '', Content: c.content, Tags: String(body.tags || '').trim().slice(0, 200), Source: title, IsActive: body.isActive === false ? false : true, UpdatedAt: t,
+        BigCategory: botClip_(body.bigCategory, 40), Topic: botClip_(body.topic, 60), Notes: String(body.notes || '').trim().slice(0, 1000),
+        Audience: botKbAudStore_(body.audience), Overlap: c.overlap, ChunkSize: size, SortOrder: i + 1, FileName: key,
+      };
+      return o;
+    });
+    var values = rows.map(function (o) { return header.map(function (h) { return o.hasOwnProperty(h) ? o[h] : ''; }); });
+    var start = sheet.getLastRow() + 1;
+    ensureRows_(sheet, start + values.length - 1);
+    sheet.getRange(start, 1, values.length, header.length).setValues(values);
+    // 順便算向量（失敗不影響儲存；之後可以按「補算還沒有向量的」）
+    var embedded = 0;
+    var embedError = '';
+    var ecfg = botEmbedCfg_();
+    if (ecfg && rows.length <= 150) {
+      try {
+        for (var i = 0; i < rows.length; i += 50) {
+          var part = rows.slice(i, i + 50);
+          var vecs = botEmbed_(ecfg, part.map(botKbEmbedText_), 'doc');
+          botVecUpsert_(part.map(function (o, j) { return { id: o.ID, model: ecfg.key, vec: vecs[j] }; }));
+          embedded += part.length;
+        }
+      } catch (e) {
+        embedError = e.message;
+      }
+    }
+    return { success: true, key: key, count: rows.length, embedded: embedded, embedError: embedError };
   });
 }
 
