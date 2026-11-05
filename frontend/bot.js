@@ -1290,9 +1290,17 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.bot-tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('cs-hours-enabled').addEventListener('change', toggleHoursBox);
   await loadAll();
-  const first = (location.hash || '').replace('#', '');
-  if (first && document.querySelector(`.bot-tab[data-tab="${first}"]`)) showTab(first);
+  gotoHash();
+  window.addEventListener('hashchange', gotoHash);
 });
+
+/** 網址 #talk、#leads 切到該分頁；#talk:客人編號 = 右下角「客人等待回覆」提醒的「前往回覆」，直接打開那位客人的對話。 */
+function gotoHash() {
+  const [first, convId] = (location.hash || '').replace('#', '').split(':');
+  if (!first || !document.querySelector(`.bot-tab[data-tab="${first}"]`)) return;
+  showTab(first);
+  if (first === 'talk' && /^[A-Za-z0-9_-]{6,80}$/.test(convId || '')) openThread(convId);
+}
 
 window.refreshPageData = async () => {
   await loadAll(true);

@@ -80,6 +80,6 @@ export function cardIntakeReply(added: { id: number; name?: string; title?: stri
     `📇 讀到 ${added.length} 張名片，已放進收件匣：`,
     ...lines,
     "",
-    `📥 收件匣待整理共 ${pending} 張${batchNote ? `（註記：${batchNote}）` : ""}。可以繼續傳照片；傳完說「整理名片」，我會整理成客戶資料給你確認。`,
+    `📥 收件匣待整理共 ${pending} 張${batchNote ? `（註記：${batchNote}）` : ""}。可以繼續傳照片；傳完到網站的「名片客戶專區」核對（辨識錯的可以自己編輯），再逐張「登入成客戶 / 建立案件」；也可以對我說「整理名片」，我整批整理給你確認。`,
   ].join("\n");
 }

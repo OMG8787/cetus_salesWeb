@@ -231,3 +231,19 @@ html[data-theme="dark"] .bot-table th, html[data-theme="dark"] .bot-table td { b
 /* 列印：一律淺色，不印出切換按鈕 */
 @media print { .theme-btn { display: none !important; } 
 }
+
+/* 客人待回覆提醒 */
+html[data-theme="dark"] .al-card { background: #222a34; border-color: #6b5a2e; color: #e5e7eb; }
+html[data-theme="dark"] .al-card.urgent { border-color: #7a3b34; }
+html[data-theme="dark"] .al-title { color: #f1f3f5; }
+html[data-theme="dark"] .al-text { color: #cfd6df; }
+html[data-theme="dark"] .al-btns button { background: #1d232b; color: #8db8f5; border-color: #4a78c0; }
+
+/* 名片客戶專區 */
+html[data-theme="dark"] .nc-scroll { background: #1d232b; border-color: #323b48; }
+html[data-theme="dark"] .nc-table th, html[data-theme="dark"] .nc-table th.nc-act { background: #222a34; color: #e5e7eb; }
+html[data-theme="dark"] .nc-table td { border-color: #323b48; }
+html[data-theme="dark"] .nc-table .nc-act { background: #1d232b; border-color: #323b48; }
+html[data-theme="dark"] .nc-badge { background: #4a3a14; color: #f0c36d; }
+html[data-theme="dark"] .nc-badge.ok { background: #1c3a26; color: #7fd49a; }
+html[data-theme="dark"] .nc-hint { color: #8db8f5; }

@@ -693,3 +693,44 @@ header, .tabs { position: relative; z-index: 300; }
 .bot-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .bot-table th, .bot-table td { border-bottom: 1px solid #e3e8ef; padding: 6px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
 .bot-table td:nth-child(6) { white-space: normal; min-width: 160px; }
+
+/* ---- 客人待回覆提醒（每頁右下角，alerts.js） ---- */
+.al-dock { position: fixed; right: 18px; bottom: 84px; z-index: 950; width: 330px; max-width: calc(100vw - 36px); max-height: calc(100vh - 120px); overflow-y: auto; font-size: 14px; display: flex; flex-direction: column; gap: 8px; }
+.al-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; background: #c0392b; color: #fff; border-radius: 8px; padding: 6px 10px; font-weight: bold; box-shadow: 0 3px 12px rgba(0,0,0,.3); }
+.al-head button { background: rgba(255,255,255,.18); border: 0; color: #fff; border-radius: 4px; cursor: pointer; margin: 0 0 0 4px; padding: 2px 8px; font-size: 13px; }
+.al-card { background: #fff; border: 1px solid #f0c36d; border-left: 5px solid #e6a23c; border-radius: 8px; padding: 8px 10px; box-shadow: 0 3px 12px rgba(0,0,0,.25); }
+.al-card.urgent { border-color: #e5a29a; border-left-color: #c0392b; }
+.al-title { font-weight: bold; color: #333; word-break: break-word; }
+.al-wait { font-size: 12px; color: #b9770e; margin: 2px 0; }
+.al-card.urgent .al-wait { color: #c0392b; font-weight: bold; }
+.al-text { color: #444; word-break: break-word; }
+.al-hint { font-size: 12px; color: #889; margin-top: 2px; }
+.al-btns { display: flex; gap: 6px; margin-top: 6px; }
+.al-btns a.al-go, .al-btns button { flex: 1; text-align: center; text-decoration: none; padding: 5px 8px; border-radius: 5px; border: 1px solid #2c5aa0; background: #2c5aa0; color: #fff; cursor: pointer; font-size: 13px; margin: 0; }
+.al-btns button { background: #fff; color: #2c5aa0; }
+.al-btns button:disabled { opacity: .5; cursor: default; }
+.al-badge { align-self: flex-end; background: #e6a23c; color: #fff; border: 0; border-radius: 20px; padding: 8px 14px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 12px rgba(0,0,0,.3); margin: 0; }
+.al-badge.urgent { background: #c0392b; }
+.shake { animation: al-shake .6s ease 2; }
+@keyframes al-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { .shake { animation: none; } }
+
+/* ---- 名片客戶專區（namecards.html） ---- */
+.nc-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.nc-bar input { flex: 1; min-width: 200px; max-width: 360px; margin: 0; }
+.nc-bar select { margin: 0; }
+.nc-scroll { overflow-x: auto; border: 1px solid #dde3ec; border-radius: 6px; background: #fff; }
+.nc-table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; }
+.nc-table th, .nc-table td { white-space: nowrap; vertical-align: top; font-size: 13px; padding: 6px 8px; border-bottom: 1px solid #eef0f4; }
+.nc-table th { background: #f3f6fb; position: sticky; top: 0; }
+.nc-table td.nc-note { white-space: normal; min-width: 120px; max-width: 220px; }
+.nc-table td.nc-small { font-size: 12px; color: #889; }
+.nc-table .nc-act { position: sticky; right: 0; background: #fff; border-left: 1px solid #dde3ec; white-space: normal; min-width: 150px; }
+.nc-table th.nc-act { background: #f3f6fb; }
+.nc-table .nc-act button { margin: 0 4px 4px 0; }
+.nc-table .nc-act .nc-primary { background: #2c5aa0; }
+.nc-table .nc-act .nc-danger { background: #c0392b; }
+.nc-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: #fdf3dc; color: #b9770e; }
+.nc-badge.ok { background: #e3f4e8; color: #1e6b34; }
+.nc-warn { color: #c0392b; font-size: 12px; margin-top: 2px; }
+.nc-hint { color: #2c5aa0; font-size: 12px; margin-top: 2px; white-space: normal; max-width: 160px; }

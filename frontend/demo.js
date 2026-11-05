@@ -262,6 +262,38 @@ function demoBotApi(action, params, db) {
       b.leads = (b.leads || []).filter((l) => !(params.ids || []).includes(l.id));
       save();
       return { success: true, deleted: 1 };
+    case 'getNameCards':
+    case 'cardUpdate':
+    case 'cardToCustomer':
+    case 'cardDelete': {
+      // 示範：兩張名片，可以編輯 / 登入 / 刪除
+      b.nameCards = b.nameCards || [
+        { id: 1, status: 'pending', time: nowStr(), batch: '示範展會', confidence: 'high', name: '王小明', title: '採購經理', company: '示範科技股份有限公司', phone: '0912-345-678', companyPhone: '02-2299-5111', fax: '', email: 'ming@example.com', address: '新北市新莊區五權一路13號', taxId: '', website: 'www.example.com', note: '', result: '' },
+        { id: 2, status: 'pending', time: nowStr(), batch: '示範展會', confidence: 'low', name: '陳小姐', title: '', company: '', phone: '0922-111-222', companyPhone: '', fax: '', email: '', address: '', taxId: '', website: '', note: '', result: '' },
+      ];
+      const card = b.nameCards.find((c) => c.id === Number(params.id));
+      if (action !== 'getNameCards' && !card) return { success: false, message: '找不到這張名片' };
+      if (action === 'cardUpdate') Object.assign(card, params.fields || {});
+      if (action === 'cardDelete') b.nameCards = b.nameCards.filter((c) => c !== card);
+      if (action === 'cardToCustomer') {
+        if (params.company) card.company = params.company;
+        if (!card.company) return { success: false, needCompany: true, message: '名片上沒有公司名稱' };
+        card.status = 'saved';
+        card.result = '新增客戶 ' + card.company;
+        save();
+        return { success: true, kind: 'newCustomer', company: card.company, result: card.result };
+      }
+      save();
+      return { success: true, cards: b.nameCards, pending: b.nameCards.filter((c) => c.status === 'pending').length, saved: b.nameCards.filter((c) => c.status === 'saved').length };
+    }
+    case 'botAlerts':
+    case 'botAlertAck': {
+      // 示範：有一位 LINE 客人在等專人，按「我已處理」就消失
+      b.alerts = b.alerts || [{ type: 'csHandoff', id: 'Udemo0000001', channel: 'line', title: '🛎️ 客人找真人：陳先生（示範）', content: '客人說：我想問 AOI 相機的報價，請專人聯絡我', at: Date.now() - 3 * 60000 }];
+      if (action === 'botAlertAck') b.alerts = b.alerts.filter((a) => !(a.type === params.type && a.id === params.id));
+      save();
+      return { success: true, alerts: b.alerts, canAck: true, now: Date.now() };
+    }
     case 'botKbImport': {
       let id = b.kb.reduce((m, k) => Math.max(m, k.ID), 0);
       (params.rows || []).forEach((r) => b.kb.push({ ID: ++id, Type: 'doc', Title: r.title, Question: '', Content: r.content, Tags: '', Source: r.source || '', IsActive: true, UpdatedAt: nowStr(), audience: (params.audience || ['cs', 'staff']).filter((x) => x === 'cs' || x === 'staff') }));
@@ -1134,6 +1166,12 @@ function handleDemoApi(action, params) {
     case 'botKbImageUpload':
     case 'botLeads':
     case 'botLeadDelete':
+    case 'botAlerts':
+    case 'botAlertAck':
+    case 'getNameCards':
+    case 'cardUpdate':
+    case 'cardToCustomer':
+    case 'cardDelete':
     case 'botKbDelete':
     case 'botGenKey':
     case 'botRevealKey':

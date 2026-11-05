@@ -61,7 +61,8 @@
  *   Favorites     - Username, InternalModel（每人自己的「常用型號」）
  *   Shortcuts     - Username, Title, Url, OpenOnStart, SortOrder（每人自己的首頁「常用網站」）
  *   Memos         - Owner, OwnerName, Title, Content, Shared, CreatedDate, LastUpdated, LinkType, LinkId, NeedBlock（備忘錄，預設只有自己看，Shared=是 全站可看；
- *                    機器人通知 Owner=SYSTEM、LinkType=csHandoff 等，NeedBlock=bot 表示只有有「BOT 設定」權限的人看得到，刪除通知 = 恢復機器人）
+ *                    機器人通知 Owner=SYSTEM、LinkType=csHandoff 等，NeedBlock=bot 表示只有有「BOT 設定」權限的人看得到，刪除通知 = 恢復機器人；
+ *                    CreatedAt = 通知產生的時間（毫秒）、AckBy / AckAt = 誰、何時回覆或處理了（沒填 = 每頁右下角會一直跳提醒）
  *   GigE / USB3 / FA鏡頭 / 遠心鏡頭 - 【舊分頁，已停用】選型計算改讀 Products；setup 會把這些分頁裡的資料併進 Products（只補空欄位），之後可自行刪除
  *   Software      - Name（案件「軟體名稱」下拉選單的選項，公司準系統只有幾套；新名稱在案件頁會詢問是否新增）
  *   Config        - Key, Value
@@ -285,7 +286,7 @@ SCHEMA[SHEET_CONFIG] = ['Key', 'Value'];
 SCHEMA[SHEET_SOFTWARE] = ['Name'];
 SCHEMA[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 SCHEMA[SHEET_SHORTCUTS] = ['Username', 'Title', 'Url', 'OpenOnStart', 'SortOrder'];
-SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated', 'LinkType', 'LinkId', 'NeedBlock', 'ShareMode', 'ShareWith'];
+SCHEMA[SHEET_MEMOS] = ['Owner', 'OwnerName', 'Title', 'Content', 'Shared', 'CreatedDate', 'LastUpdated', 'LinkType', 'LinkId', 'NeedBlock', 'ShareMode', 'ShareWith', 'CreatedAt', 'AckBy', 'AckAt'];
 SCHEMA[SHEET_CAL] = ['ID', 'Owner', 'Title', 'StartDate', 'StartTime', 'EndDate', 'EndTime', 'AllDay', 'Location', 'Notes', 'ShareMode', 'ShareWith', 'Source', 'RefKey', 'CreatedAt', 'UpdatedAt'];
 SCHEMA[SHEET_TODOS] = ['ID', 'Owner', 'Title', 'Notes', 'DueDate', 'Priority', 'Status', 'ShareMode', 'ShareWith', 'CreatedAt', 'UpdatedAt', 'DoneAt'];
 SCHEMA[SHEET_GROUPS] = ['ID', 'Name', 'Members', 'CreatedBy'];
@@ -4876,6 +4877,7 @@ function handleDeleteMemo(body) {
   var rowNum = checkMemoOwner_(body);
   var memo = readRowAsObject(SHEET_MEMOS, rowNum);
   getSheet(SHEET_MEMOS).deleteRow(rowNum);
+  if (typeof botAlertsBust_ === 'function') botAlertsBust_(); // 通知被刪掉 → 右下角提醒也跟著消失
   // 「客人找真人」通知被處理掉 = 小編處理完了，機器人恢復回覆這位客人
   if (memo['LinkType'] === 'csHandoff' && memo['LinkId'] && typeof csResume_ === 'function') {
     try {
@@ -6410,6 +6412,8 @@ function botPerms_() {
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
     botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
     botKbImageUpload: ['bot', 'w'], botLeads: ['bot', 'r'], botLeadDelete: ['bot', 'd'],
+    botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'],
+    getNameCards: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardDelete: ['customers', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -6446,6 +6450,12 @@ function botRoutes_() {
     botKbImageUpload: { auth: true, fn: handleBotKbImageUpload },
     botLeads: { auth: true, fn: handleBotLeads },
     botLeadDelete: { auth: true, fn: handleBotLeadDelete },
+    botAlerts: { auth: true, fn: handleBotAlerts },
+    botAlertAck: { auth: true, fn: handleBotAlertAck },
+    getNameCards: { auth: true, fn: handleGetNameCards },
+    cardUpdate: { auth: true, fn: handleCardUpdate },
+    cardToCustomer: { auth: true, fn: handleCardToCustomer },
+    cardDelete: { auth: true, fn: handleCardDelete },
   };
   if (typeof botStaffRoutes_ === 'function') botMergePerms_(base, botStaffRoutes_());
   return base;
@@ -7303,7 +7313,9 @@ function csHandoff_(id, req) {
     LinkType: 'csHandoff',
     LinkId: id,
     NeedBlock: 'bot',
+    CreatedAt: Date.now(),
   });
+  botAlertsBust_();
   return true;
 }
 
@@ -7344,7 +7356,9 @@ function csLead_(id, req) {
       LinkType: 'csLead',
       LinkId: id,
       NeedBlock: 'bot',
+      CreatedAt: Date.now(),
     });
+    botAlertsBust_();
   }
   return true;
 }
@@ -8190,12 +8204,78 @@ function handleBotHumanReply(body) {
   var m = botGeneral_().memory;
   var list = (botCacheGet_(csHistKey_(id)) || []).concat([{ u: false, t: '（小編）' + text.slice(0, m.chars) }]).slice(-m.turns);
   botCachePut_(csHistKey_(id), list, m.hours * 3600);
+  botAlertAck_('csHandoff', id, botAlertWho_(body)); // 有人回覆了 → 這位訪客的右下角提醒停止
   return { success: true };
 }
 
 function handleBotResume(body) {
-  csResume_(String(body.userId || ''));
+  var id = String(body.userId || '');
+  csResume_(id);
+  botAlertAck_('csHandoff', id, botAlertWho_(body)); // 按「恢復機器人」= 已經處理
   return { success: true, pauses: csPauseList_() };
+}
+
+// ---- 待回覆提醒：每頁右下角持續跳通知，直到有人回覆 / 處理 ----
+// 通知來源 = 首頁備忘錄裡的機器人通知（客人找真人 csHandoff、新的聯繫名單 csLead）；備忘錄的 AckAt 有值 = 已經有人處理，不再提醒。
+// 網站訪客：小編在「BOT 設定」回覆（botHumanReply）或按「恢復機器人」就自動停止；LINE 客人是在 LINE 官方帳號後台回覆，系統看不到，所以由同事按「我已處理」。
+var BOT_ALERT_TYPES = ['csHandoff', 'csLead'];
+
+function botAlertWho_(body) {
+  var u = (body && body._user) || {};
+  return String(u.displayName || u.username || '');
+}
+
+function botAlertsBust_() {
+  botCacheRemove_(['botalerts']);
+}
+
+/** 還沒有人處理的通知（同一位客人同一種通知只留最新一則）；快取 20 秒，有新通知 / 有人處理時立刻清掉。沒有建立時間的舊通知不提醒，避免上線當天一次跳出一堆。 */
+function botAlertsPending_() {
+  var cached = botCacheGet_('botalerts');
+  if (cached) return cached;
+  var latest = {};
+  sheetToObjects(SHEET_MEMOS).rows.forEach(function (r) {
+    var type = String(r['LinkType'] || '');
+    var at = Number(r['CreatedAt']) || 0;
+    if (BOT_ALERT_TYPES.indexOf(type) < 0 || r['AckAt'] || !at) return;
+    var id = String(r['LinkId'] || '');
+    var key = type + ':' + id;
+    if (latest[key] && latest[key].at > at) return;
+    latest[key] = { type: type, id: id, channel: id.charAt(0) === 'V' ? 'web' : 'line', title: String(r['Title'] || ''), content: String(r['Content'] || '').slice(0, 400), at: at };
+  });
+  var list = Object.keys(latest).map(function (k) { return latest[k]; }).sort(function (a, b) { return a.at - b.at; }).slice(-30);
+  botCachePut_('botalerts', list, 20);
+  return list;
+}
+
+/** 把某位客人的通知標成「已有人處理」。type 空白 = 全部種類。回傳處理了幾則。 */
+function botAlertAck_(type, id, who) {
+  if (!id) return 0;
+  var n = 0;
+  withLock_(function () {
+    sheetToObjects(SHEET_MEMOS).rows.forEach(function (r, i) {
+      var t = String(r['LinkType'] || '');
+      if (BOT_ALERT_TYPES.indexOf(t) < 0 || r['AckAt'] || String(r['LinkId'] || '') !== id || (type && t !== type)) return;
+      updateRowFields(SHEET_MEMOS, i + 2, { AckBy: who || '', AckAt: Date.now() });
+      n++;
+    });
+  });
+  if (n) botAlertsBust_();
+  return n;
+}
+
+function botAlertCanAck_(body) {
+  var a = accessOf_(findUserRow_(body._user.username));
+  return !!(a.isAdmin || a.blocks.bot === 'edit');
+}
+
+function handleBotAlerts(body) {
+  return { success: true, alerts: botAlertsPending_(), canAck: botAlertCanAck_(body), now: Date.now() };
+}
+
+function handleBotAlertAck(body) {
+  botAlertAck_(String(body.type || ''), String(body.id || ''), botAlertWho_(body));
+  return { success: true, alerts: botAlertsPending_(), canAck: true, now: Date.now() };
 }
 
 /** 後台「測試聊天」用：簽一個 5 分鐘有效的權杖給 linebot（用 Bot 金鑰簽，瀏覽器看不到金鑰）。 */
@@ -8238,6 +8318,7 @@ function handleBotClear(body) {
   return withLock_(function () {
     for (var a = delRows.length - 1; a >= 0; a--) sheet.deleteRow(delRows[a]);
     for (var b = memoRows.length - 1; b >= 0; b--) memoSheet.deleteRow(memoRows[b]);
+    if (memoRows.length) botAlertsBust_();
     if (opts.history) {
       if (target) botCacheRemove_([csHistKey_(target)]);
       else PropertiesService.getScriptProperties().setProperty(BOT_GEN_PROP, String(botHistGen_() + 1));
@@ -9686,6 +9767,108 @@ function botCardsRun_(ctx, w, user) {
   });
   if (done.failed.length) throw new Error('有 ' + done.failed.length + ' 張存入失敗（' + done.failed.join('；') + '）；已成功的 ' + (done.newCustomers + done.contacts) + ' 張不會重複存入');
   return { action: w.action, ok: true, newCustomers: done.newCustomers, contactsAdded: done.contacts, skipped: done.skipped };
+}
+
+// ------------------------------------------------------------
+// 名片客戶專區（網頁 nameCards.html）：同一個收件匣（BotCards）的網頁版，每個人看自己的名片。
+// 列表一次看完整欄位 → 編輯修正 → 登入成客戶（公司已是客戶就新增為聯絡窗口）/ 建立案件 / 新增聯繫行事曆 / 刪除。
+// LINE 傳來的名片要先把 LINE 綁定到網站帳號（BOT 設定 → 員工助理），名片才會歸到這個帳號底下。
+// ------------------------------------------------------------
+function nameCardMine_(body, id) {
+  var me = body._user.username;
+  var card = botCardRows_().filter(function (c) { return c.owner === me && c.id === Number(id); })[0];
+  if (!card) throw new Error('找不到這張名片（可能已經被刪除）');
+  return card;
+}
+
+function nameCardOut_(c, customerNames) {
+  var o = { id: c.id, status: c.status, time: c.time, batch: c.batch, confidence: c.confidence, result: c.result };
+  Object.keys(BOT_CARD_FIELDS).forEach(function (k) { o[k] = c[k]; });
+  if (c.company) o.existingCustomer = customerNames[normCompanyName_(c.company)] || '';
+  return o;
+}
+
+function handleGetNameCards(body) {
+  var me = body._user.username;
+  var names = {};
+  sheetToObjects(SHEET_CUSTOMERS).rows.forEach(function (r) { names[normCompanyName_(r['CompanyName'])] = String(r['CompanyName']); });
+  var rows = botCardRows_().filter(function (c) { return c.owner === me && (c.status === 'pending' || c.status === 'saved'); });
+  rows.sort(function (a, b) { return b.id - a.id; });
+  return {
+    success: true,
+    pending: rows.filter(function (c) { return c.status === 'pending'; }).length,
+    saved: rows.filter(function (c) { return c.status === 'saved'; }).length,
+    cards: rows.slice(0, 300).map(function (c) { return nameCardOut_(c, names); }),
+  };
+}
+
+/** 手動修正名片欄位（辨識錯的地方）。只改這張名片的紀錄，不會動已經登入的客戶資料。 */
+function handleCardUpdate(body) {
+  return withLock_(function () {
+    var card;
+    try {
+      card = nameCardMine_(body, body.id);
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    if (card.status !== 'pending' && card.status !== 'saved') return { success: false, message: '這張名片已經不在專區裡了' };
+    var f = body.fields || {};
+    var patch = {};
+    Object.keys(BOT_CARD_FIELDS).forEach(function (k) {
+      if (f[k] === undefined || f[k] === null) return;
+      var v = botCardClean_(f, k, k === 'note' || k === 'address' ? 200 : 80);
+      if (k === 'email') v = v.toLowerCase();
+      patch[BOT_CARD_FIELDS[k]] = v;
+    });
+    if (!Object.keys(patch).length) return { success: false, message: '沒有要修改的欄位' };
+    var merged = { name: card.name, company: card.company, phone: card.phone, email: card.email };
+    Object.keys(BOT_CARD_FIELDS).forEach(function (k) { if (patch[BOT_CARD_FIELDS[k]] !== undefined) merged[k] = patch[BOT_CARD_FIELDS[k]]; });
+    if (!merged.name && !merged.company && !merged.phone && !merged.email) return { success: false, message: '姓名、公司、電話、Email 至少要留一項' };
+    patch.Confidence = 'edited';
+    updateRowFields(SHEET_BOT_CARDS, card.RowIndex, patch);
+    return { success: true };
+  });
+}
+
+/** 登入成客戶：公司還不是客戶 → 新增客戶；已經是客戶 → 新增為聯絡窗口。回傳這次做了什麼，前端據此提示。 */
+function handleCardToCustomer(body) {
+  var card;
+  try {
+    card = nameCardMine_(body, body.id);
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  if (card.status === 'saved') return { success: false, message: '這張名片已經登入過了（' + card.result + '）' };
+  if (card.status !== 'pending') return { success: false, message: '這張名片已經不在專區裡了' };
+  var ov = {};
+  if (body.company) ov.company = String(body.company);
+  var ovAll = {};
+  ovAll[card.id] = ov;
+  var plan = botCardPlan_([card], ovAll, body.category)[0];
+  if (plan.kind === 'skip') {
+    return { success: false, needCompany: !botCardMerge_(card, ov).company, message: plan.text.replace(/^[⚠️・\s]+#\d+\s*/, '') };
+  }
+  var ctx = { ownerKey: body._user.username };
+  try {
+    botCardsRun_(ctx, { action: 'saveCards', data: { ids: [card.id], overrides: ovAll, category: body.category } }, body._user);
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  var after = nameCardMine_(body, card.id);
+  return { success: true, kind: plan.kind, company: after.company, result: after.result };
+}
+
+function handleCardDelete(body) {
+  return withLock_(function () {
+    var card;
+    try {
+      card = nameCardMine_(body, body.id);
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    getSheet(SHEET_BOT_CARDS).deleteRow(card.RowIndex);
+    return { success: true };
+  });
 }
 
 // ------------------------------------------------------------
