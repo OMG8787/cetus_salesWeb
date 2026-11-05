@@ -212,11 +212,12 @@ function demoBotApi(action, params, db) {
       return {
         success: true, cs: demoBotCs(b), general: b.general, ai: masked(),
         aiProviders: { gemini: { name: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' }, claude: { name: 'Claude', endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5' }, openai: { name: 'OpenAI 相容', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' } },
-        aiFeatures: { all: '整個系統', cs: 'LINE 機器人（含網站客服視窗）', copy: 'AI 文案', staff: '小助理（員工助理）', vector: '向量' }, aiRounds: b.aiRounds || 6,
+        aiFeatures: { all: '整個系統', cs: 'LINE 機器人（含網站客服視窗）', copy: 'AI 文案', staff: '小助理（員工助理）', vector: '向量', check: '回覆檢查（客服回覆前核對知識庫）' }, aiRounds: b.aiRounds || 6,
         aiUsing: b.ai.length ? { source: 'bot', name: b.ai[0].provider, model: b.ai[0].model || 'default', count: b.ai.length } : null,
         search: b.search || { mode: 'vector', threshold: 0.6, topK: 6, embedProvider: 'auto' }, keys: { cs: { has: !!b.key, hint: b.key ? '••••' + b.key.slice(-4) : '', shared: false }, staff: { has: !!b.staffKey, hint: b.staffKey ? '••••' + b.staffKey.slice(-4) : '', shared: false } }, csProductFields: DEMO_CS_FIELDS, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
       };
     case 'botSaveSettings': {
+      if (params.groundCheck !== undefined && !params.cs) b.cs = Object.assign({}, b.cs, { groundCheck: params.groundCheck === true });
       if (params.cs) {
         const t = {};
         (params.cs.topics || []).forEach((x) => (t[x.key] = { on: x.on === true, words: x.words, ask: x.ask, askPos: x.askPos }));

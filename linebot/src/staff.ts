@@ -51,10 +51,11 @@ export interface StaffInput {
 
 // 公司知識庫（客服機器人用的那份：常見問答、文件、公司資訊，含向量）：每位已開通的同事都能查；同一個執行個體內快取 5 分鐘
 const KB_TTL_MS = 5 * 60_000;
-let kbCache: { at: number; index: Promise<KnowledgeIndex> } | null = null;
+let kbCache: { at: number; index: Promise<KnowledgeIndex>; ver?: string } | null = null;
 
-function staffKnowledge(uid: string): Promise<KnowledgeIndex> {
-  if (kbCache && Date.now() - kbCache.at < KB_TTL_MS) return kbCache.index;
+/** 知識庫（5 分鐘快取；管理系統回傳的知識庫版本號變了就馬上重讀） */
+function staffKnowledge(uid: string, ver?: string): Promise<KnowledgeIndex> {
+  if (kbCache && Date.now() - kbCache.at < KB_TTL_MS && (!ver || kbCache.ver === ver)) return kbCache.index;
   const index = (async () => {
     const chunks = (await gas.staffCall(uid, "kbChunks")) as ConstructorParameters<typeof KnowledgeIndex>[0];
     const vectors = await loadVectorMap(chunks, (after, limit) => gas.staffCall(uid, "kbVectors", { after, limit }) as Promise<{ items: { id: string; v: number[] }[]; total: number; next: number }>);
@@ -63,7 +64,7 @@ function staffKnowledge(uid: string): Promise<KnowledgeIndex> {
   index.catch(() => {
     kbCache = null;
   });
-  kbCache = { at: Date.now(), index };
+  kbCache = { at: Date.now(), index, ver };
   return index;
 }
 
@@ -91,7 +92,7 @@ export function staffSystemPrompt(info: StaffInfo): string {
     blocks ? `這位同事的權限：${blocks}。` : "",
     "",
     "【規則】",
-    "0. 公司知識庫（客服機器人回答客人用的常見問答、文件、公司資訊）用 search_knowledge 查；客服只看得到知識庫，同事除了知識庫還能查客戶、案件、產品等（依權限）。",
+    "0. 公司知識庫（客服機器人回答客人用的常見問答、文件、公司資訊）用 search_knowledge 查；之前對話裡你自己說過的知識庫內容不算數（資料可能已經更新或刪除），每次都重新查；客服只看得到知識庫，同事除了知識庫還能查客戶、案件、產品等（依權限）。",
     "1. 客戶、案件、產品、行程等資料一律用工具查，不要憑印象回答，也不要編造任何客戶資料、電話、金額、規格、日期；工具查不到就老實說查不到。",
     w.some((x) => x.startsWith("delete"))
       ? "2. 沒有權限的資料，工具會回報沒有權限，照實告訴同事需要請管理員開放，不要想辦法繞過。刪除要特別小心：只能刪你有刪除工具的資料；先用查詢工具找到確切那一筆（不確定就問，不要猜）、跟同事講清楚會刪掉什麼與「無法復原」，再用刪除工具提出，同事按確認才會執行；一次只處理同事明確要求刪的東西。"
@@ -162,7 +163,7 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
       handler: async (a) => {
         try {
           await gas.staffAudit(uid, "read", `搜尋知識庫：${String(a.query ?? "").slice(0, 80)}`);
-          const index = await staffKnowledge(uid);
+          const index = await staffKnowledge(uid, info.kbVer);
           const search = { ...DEFAULT_SEARCH, ...info.search };
           const result = await searchKnowledge(index, String(a.query ?? ""), search, info.embedAi ? async (q) => (await embed(info.embedAi!, [q], "query"))[0] : undefined);
           return clip(formatHits(result.hits) || "知識庫裡沒有找到相關資料");

@@ -31,14 +31,17 @@ const TOP_K = 6;
 
 const ch = () => channels.cs;
 
-let cached: { at: number; index: KnowledgeIndex } | null = null;
+let cached: { at: number; index: KnowledgeIndex; ver?: string } | null = null;
 
-/** 知識庫（同一個執行個體內快取 5 分鐘；後台改了最多 5 分鐘後生效） */
-export async function knowledge(force = false): Promise<KnowledgeIndex> {
-  if (!force && cached && Date.now() - cached.at < KNOWLEDGE_TTL_MS) return cached.index;
+/**
+ * 知識庫（同一個執行個體內快取 5 分鐘）。管理系統每次回傳的設定都帶著「知識庫版本號」：
+ * 版本號變了（後台新增 / 修改 / 刪除知識）就馬上重讀，不用等快取過期，刪掉的資料不會再被找到。
+ */
+export async function knowledge(force = false, ver?: string): Promise<KnowledgeIndex> {
+  if (!force && cached && Date.now() - cached.at < KNOWLEDGE_TTL_MS && (!ver || cached.ver === ver)) return cached.index;
   const chunks = await gas.csKnowledge();
   const index = new KnowledgeIndex(chunks, await loadVectorMap(chunks, (after, limit) => gas.csVectors(after, limit)));
-  cached = { at: Date.now(), index };
+  cached = { at: Date.now(), index, ver };
   return index;
 }
 
@@ -112,7 +115,7 @@ export function csSystemPrompt(info: CsInfo, references: string): string {
     "",
     "【規則】",
     `1. 只能根據下面【參考資料】回答（產品與規格、常見問題、公司資訊）；資料裡沒有的，${unsure}，絕對不要自己編造規格、價格、庫存、交期、客戶名稱或承諾。`,
-    "2. 參考資料不夠時，可以用 search_knowledge 換個關鍵字再找一次。",
+    "2. 參考資料不夠時，可以用 search_knowledge 換個關鍵字再找一次。之前對話裡你自己說過的話不算參考資料（資料可能已經更新或刪除）：每次都只能根據這次的【參考資料】回答，這次找不到就當作沒有，不要沿用之前的回答。",
     "3. 不要提到「參考資料」「知識庫」「系統」這些字，像真人客服一樣自然回答。",
     `4. 回覆會顯示在聊天視窗：不要用 Markdown（不要用 **粗體**、# 標題、表格），用「・」條列，${EMOJIS[st.emoji] ?? EMOJIS.some}，盡量 ${st.maxLines} 行以內。`,
     `5. 報價、價格、折扣、交期、下訂、退換貨、客訴或客人要找人時，請他輸入「${call}」，由專人處理；你不能報價，也不要說出任何價格或金額。`,
@@ -149,18 +152,49 @@ function transferTool(info: CsInfo, handed: { topic: string | null }): Tool {
 }
 
 /** 再找一次知識庫的工具 */
-export function searchTool(run: (query: string) => Promise<Hit[]>): Tool {
+export function searchTool(run: (query: string) => Promise<Hit[]>, seen?: Hit[]): Tool {
   return {
     name: "search_knowledge",
     description: "用其他關鍵字或換個說法再找一次參考資料（產品與規格、常見問題、文件、公司資訊）",
     parameters: { type: "object", properties: { query: { type: "string", description: "關鍵字或完整的問題" } }, required: ["query"] },
-    handler: async (a) => formatHits(await run(String(a.query ?? ""))) || "沒有找到相關資料",
+    handler: async (a) => {
+      const hits = await run(String(a.query ?? ""));
+      seen?.push(...hits); // 給「回覆前檢查」一起看
+      return formatHits(hits) || "沒有找到相關資料";
+    },
   };
 }
 
+// ---- 回覆前檢查：回覆裡每個事實都要能在這次的參考資料找到根據（預設關閉，BOT 設定 → 總覽打開；出錯一律當作不通過）----
+const GROUND_PROMPT = [
+  "你是客服回覆的檢查員。檢查【回覆】裡提到的每一個事實（價格、金額、日期、時間、地點、數量、規定、規格、型號、做法、優惠、承諾）是否都能在【參考資料】找到根據。",
+  "【回覆】裡如果有「選型計算」的結果（需求像素、焦距、倍率、視野、建議的相機 / 鏡頭型號），那是系統計算工具算出來的，視為有根據。",
+  "打招呼、客套話、道歉、請客人留資料、建議找真人、反問釐清問題，不需要根據。換句話說、摘要都可以，只要意思跟參考資料一致。",
+  "只要有一個事實在參考資料裡找不到、或跟參考資料不一致，就不通過。【客人最近的問題】只用來理解接續的問題（例如「那另一款呢？」），不能當作根據。",
+  '只輸出 JSON，不要其他文字：{"ok":true} 或 {"ok":false,"reason":"哪一句沒有根據"}',
+].join("\n");
+
+export async function groundCheck(info: CsInfo, questions: string[], refs: string, reply: string): Promise<{ ok: boolean; reason: string }> {
+  try {
+    const out = await generate({
+      ai: info.checkAi ?? info.ai!,
+      fallback: info.aiFallback,
+      system: GROUND_PROMPT,
+      turns: [{ isUser: true, text: `【客人最近的問題】\n${questions.join("\n")}\n\n【參考資料】\n${refs || "（沒有找到相關資料）"}\n\n【回覆】\n${reply}` }],
+    });
+    const m = out.match(/\{[\s\S]*\}/);
+    if (!m) return { ok: false, reason: "檢查員的回覆看不懂" };
+    const j = JSON.parse(m[0]) as { ok?: unknown; reason?: unknown };
+    return { ok: j.ok === true, reason: String(j.reason ?? "") };
+  } catch (error) {
+    console.warn("回覆檢查失敗（當作不通過）", (error as Error).message);
+    return { ok: false, reason: "檢查失敗" };
+  }
+}
+
 /** 用知識庫回答一個問題：reply = 回覆、choices = 選項按鈕、handed = AI 判斷要交給真人（問題類型） */
-export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[]): Promise<{ reply: string; choices: string[]; handed: string | null }> {
-  const index = await knowledge();
+export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[]): Promise<{ reply: string; choices: string[]; handed: string | null; blocked?: string }> {
+  const index = await knowledge(false, info.kbVer);
   const choices: string[] = [];
   const handed: { topic: string | null } = { topic: null };
   // 檢索時連同上一個問題一起找（「那另一款呢？」這種接續問題）
@@ -169,7 +203,8 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const search = { ...DEFAULT_SEARCH, ...info.search, topK: info.search?.topK ?? TOP_K };
   const hits = (await runSearch(index, query, search, info.embedAi)).hits;
 
-  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits), calcTool(catalogOnce), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
+  const seen: Hit[] = [...hits];
+  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(catalogOnce), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
   if (info.topics?.length || info.unsure === "handoff") tools.push(transferTool(info, handed));
 
   const turns: Turn[] = [...history.map((h) => ({ isUser: h.u, text: h.t })), { isUser: true, text }];
@@ -180,6 +215,17 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   } catch (error) {
     console.error("客服 AI 回覆失敗", error);
     reply = `不好意思，系統忙碌中，請稍後再問一次，或輸入「${callWord(info)}」由專人回覆 🙏`;
+    return { reply, choices, handed: handed.topic };
+  }
+  // 回覆前檢查（沒開、或這則本來就要轉真人時不檢查）：沒有根據就不送出，改請客人找專人（或直接轉專人）
+  if (info.groundCheck && handed.topic === null) {
+    const questions = [...history.filter((h) => h.u).slice(-2).map((h) => h.t), text];
+    const check = await groundCheck(info, questions, formatHits(seen), reply);
+    if (!check.ok) {
+      console.warn("客服回覆沒有知識庫根據，已攔下", check.reason);
+      if (info.unsure === "handoff") return { reply, choices: [], handed: "知識庫找不到根據", blocked: check.reason };
+      return { reply: `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`, choices: [], handed: null, blocked: check.reason };
+    }
   }
   return { reply, choices, handed: handed.topic };
 }
@@ -244,10 +290,10 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   const topic = matchTopic(text, info.topics);
   if (topic) return handoff(topic.name);
 
-  const { reply, choices, handed } = await csAnswer(info, text, info.history);
+  const { reply, choices, handed, blocked } = await csAnswer(info, text, info.history);
   if (handed !== null) return handoff(handed);
 
-  await remember(reply);
+  await remember(reply, blocked ? "回覆檢查未通過" : ""); // 後台對話紀錄看得出哪些問題缺資料、需要補進知識庫
   return { silent: false, paused: false, reply, choices, handoff: null, info };
 }
 

@@ -51,6 +51,12 @@ export interface CsInfo {
   ai: AiConfig | null;
   /** 主要 AI 失敗時，依序改用這些 */
   aiFallback?: AiConfig[];
+  /** 知識庫版本號：變了就要重讀知識庫與向量（不用等快取過期） */
+  kbVer?: string;
+  /** 回覆前先檢查有沒有知識庫根據（預設關閉） */
+  groundCheck?: boolean;
+  /** 檢查用的 AI（沒指定 = 用 ai） */
+  checkAi?: AiConfig | null;
   history: { u: boolean; t: string }[];
   /** 已經知道客人的名稱（false = 記對話時順便帶上名稱） */
   known?: boolean;
@@ -165,6 +171,7 @@ export interface StaffInfo {
   /** 知識庫搜尋流程與向量模型（跟客服同一套） */
   search?: SearchSettings;
   embedAi?: EmbedConfig | null;
+  kbVer?: string;
   history?: { u: boolean; t: string }[];
   /** 這個人可以提出的寫入動作（addMemo、logFollowUp…） */
   writable?: string[];

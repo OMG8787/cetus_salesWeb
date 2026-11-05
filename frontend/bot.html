@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261105c"></script>
+<script src="theme.js?v=20261105d"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261105c" />
-<link rel="stylesheet" href="dark.css?v=20261105c" />
+<link rel="stylesheet" href="style.css?v=20261105d" />
+<link rel="stylesheet" href="dark.css?v=20261105d" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -89,6 +89,12 @@
     <div class="panel">
       <h3 style="margin-top:0;">設定進度</h3>
       <div id="ov-steps" class="bot-steps"></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;">🛡️ 回覆前檢查知識庫根據</h3>
+      <label class="bot-check"><input type="checkbox" id="ov-ground" onchange="saveGroundCheck()" /> <b>AI 回覆前先檢查有沒有知識庫的根據</b>（預設關閉）</label>
+      <div class="calc-hint" style="line-height:1.7;">打開後，客服機器人產生回覆後會再請 AI 當「檢查員」，核對回覆裡的每個事實（價格、規格、日期、規定、承諾…）是不是都能在這次的參考資料找到根據；<b>沒有根據就不送出</b>，改成請客人找專人（「客服設定」的「找不到答案時」若選直接轉專人，就直接轉專人）。檢查員出錯一律當作不通過，寧可不答也不亂答。<br>
+        代價：每則回覆會慢一點，也會多花一次 AI 的 token（可以到「🧠 AI 模型」勾選「回覆檢查」另外指定一組比較便宜、比較快的模型）。沒通過的問題會記在「對話與小編接手」的對話紀錄（主題「回覆檢查未通過」），可以看出哪些問題缺資料、該補進知識庫。<span id="ov-ground-msg"></span></div>
     </div>
     <div class="panel">
       <h3 style="margin-top:0;">運作方式</h3>
@@ -575,11 +581,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261105c"></script>
-<script src="demo.js?v=20261105c"></script>
-<script src="common.js?v=20261105c"></script>
-<script src="assistant.js?v=20261105c"></script>
-<script src="bot.js?v=20261105c"></script>
-<script src="botstaff.js?v=20261105c"></script>
+<script src="config.js?v=20261105d"></script>
+<script src="demo.js?v=20261105d"></script>
+<script src="common.js?v=20261105d"></script>
+<script src="assistant.js?v=20261105d"></script>
+<script src="bot.js?v=20261105d"></script>
+<script src="botstaff.js?v=20261105d"></script>
 </body>
 </html>

@@ -6342,6 +6342,7 @@ var BOT_CS_SECRET_PROP = 'BOT_CS_SECRET'; // 客服機器人專用：只能呼�
 var BOT_STAFF_SECRET_PROP = 'BOT_STAFF_SECRET'; // 員工助理專用：只能呼叫員工助理的操作
 var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget'];
 var SHEET_BOT_VEC = 'BotVectors';
+var BOT_KB_VER_PROP = 'BOT_KB_VER';
 var BOT_VEC_DIM = 256; // 向量維度（Gemini / OpenAI 都支援縮小維度；256 維兼顧準確度與試算表容量）
 var BOT_EMBED_MODELS = { gemini: 'gemini-embedding-001', openai: 'text-embedding-3-small' };
 var BOT_SEARCH_MODES = ['vector', 'meta_vector', 'meta', 'both'];
@@ -6456,6 +6457,23 @@ function botInt_(v, min, max, def) {
 function botClip_(v, n) {
   var t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
   return t.length > n ? t.slice(0, n) : t;
+}
+
+/** 知識庫版本號：知識、向量、客服來源設定、搜尋與 AI 設定有變就換一個新的；機器人每則訊息都會帶回來比對，變了就馬上重讀（不用等 5 分鐘快取）。 */
+function botKbVer_() {
+  try {
+    return PropertiesService.getScriptProperties().getProperty(BOT_KB_VER_PROP) || '0';
+  } catch (e) {
+    return '0';
+  }
+}
+
+function botKbBump_() {
+  try {
+    PropertiesService.getScriptProperties().setProperty(BOT_KB_VER_PROP, String(Date.now()));
+  } catch (e) {
+    // 換版本號失敗不影響儲存（最多就是機器人 5 分鐘後才更新）
+  }
 }
 
 function botNow_() {
@@ -6601,6 +6619,7 @@ function botCsConfig_(cs) {
     customAskPos: cs.customAskPos === 'before' ? 'before' : 'after',
     topicText: String(cs.topicText || ''),
     unsure: cs.unsure === 'handoff' ? 'handoff' : 'ask',
+    groundCheck: cs.groundCheck === true, // AI 回覆前先檢查有沒有知識庫根據（預設關閉；會多花一次 AI）
     style: {
       tone: BOT_TONES.indexOf(st.tone) >= 0 ? st.tone : 'friendly',
       address: String(st.address || '').trim() || '您',
@@ -6650,7 +6669,7 @@ function botSettings_() {
 // AI（依順序備援：第一個失敗就換下一個）
 // ------------------------------------------------------------
 /** 每組 AI 可以指定用在哪些功能（每個功能只會用一組；沒指定的功能用「整個系統」那組）。 */
-var BOT_AI_FEATURES = { all: '整個系統', cs: 'LINE 機器人（含網站客服視窗）', copy: 'AI 文案', staff: '小助理（員工助理）', vector: '向量' };
+var BOT_AI_FEATURES = { all: '整個系統', cs: 'LINE 機器人（含網站客服視窗）', copy: 'AI 文案', staff: '小助理（員工助理）', vector: '向量', check: '回覆檢查（客服回覆前核對知識庫）' };
 
 function botAiUses_(raw) {
   var seen = {};
@@ -6986,6 +7005,7 @@ function handleBotKbEmbed(body) {
       return { success: false, message: e.message };
     }
   }
+  botKbBump_(); // 向量有更新
   var next = start + batch.length;
   return { success: true, embedded: batch.length, next: next, total: list.length, remaining: Math.max(0, list.length - next), done: next >= list.length, model: cfg.key };
 }
@@ -7134,6 +7154,10 @@ function csStart_(id, req) {
     aiFallback: ais.slice(1),
     search: botSearchCfg_(),
     embedAi: botEmbedCfg_(),
+    kbVer: botKbVer_(),
+    groundCheck: cs.groundCheck === true,
+    // 回覆檢查另外指定了一組 AI 才用它；沒指定就用客服這一組
+    checkAi: botAiStored_().some(function (m) { return m.uses.indexOf('check') > -1; }) ? botAiList_('check')[0] || null : null,
     history: botCacheGet_(csHistKey_(id)) || [],
     known: !!botCache_().get('csname:' + id),
     paused: !!botCache_().get('cspause:' + id),
@@ -7497,6 +7521,7 @@ function handleBotGetSettings(body) {
 }
 
 function handleBotSaveSettings(body) {
+  botKbBump_(); // 客服可用來源 / 公司資訊 / 搜尋設定有變，機器人要重讀
   return withLock_(function () {
     if (body.cs) {
       var cs = body.cs;
@@ -7508,8 +7533,14 @@ function handleBotSaveSettings(body) {
           stored.topics[t.key] = { on: t.on === true, words: t.words, ask: t.ask, askPos: t.askPos };
         });
       }
+      if (stored.groundCheck === undefined) stored.groundCheck = (botCfg_('cs', {}) || {}).groundCheck === true; // 表單沒帶（例如只改別的設定）就沿用
       var clean = botCsConfig_(stored);
       botCfgSet_('cs', botCsStored_(clean));
+    }
+    if (body.groundCheck !== undefined && !body.cs) {
+      var curCs = botCfg_('cs', {}) || {};
+      curCs.groundCheck = body.groundCheck === true;
+      botCfgSet_('cs', curCs);
     }
     if (body.search) {
       var sc = body.search;
@@ -7556,6 +7587,7 @@ function handleBotSaveAi(body) {
     });
     var rounds = body.maxRounds !== undefined ? botInt_(body.maxRounds, 1, 12, 6) : botInt_(oldCfg.maxRounds, 1, 12, 6);
     botCfgSet_('ai', { models: models, maxRounds: rounds });
+    botKbBump_(); // 向量用哪組 AI 可能變了
     return { success: true, ai: botMaskedAi_(), aiAssign: botAiAssign_(), aiRounds: botAiRounds_() };
   });
 }
@@ -7646,6 +7678,7 @@ function handleBotKbSetAudience(body) {
   var ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(function (n) { return n > 0; });
   if (!ids.length) return { success: false, message: '沒有選任何項目' };
   var value = botKbAudStore_(body.audience || []);
+  botKbBump_();
   return withLock_(function () {
     var want = {};
     ids.forEach(function (i) { want[i] = true; });
@@ -7778,6 +7811,7 @@ function handleBotKbSave(body) {
   return withLock_(function () {
     var fields = { Type: type, Title: title || (type === 'qa' ? question.slice(0, 40) : content.slice(0, 20)), Question: type === 'qa' ? question : '', Content: content, Tags: String(body.tags || '').trim(), Source: String(body.source || ''), IsActive: body.isActive === false ? false : true, UpdatedAt: botNow_(), BigCategory: botClip_(body.bigCategory, 40), Topic: botClip_(body.topic, 60), Notes: String(body.notes || '').trim().slice(0, 1000) };
     if (body.audience !== undefined) fields.Audience = botKbAudStore_(body.audience); // 沒帶 = 修改時不動、新增時都開放
+    botKbBump_();
     var id;
     if (body.rowIndex) {
       var sheet = getSheet(SHEET_BOT_KB);
@@ -7821,6 +7855,7 @@ function handleBotKbDocSave(body) {
   if (chunks.length > 1000) return { success: false, message: '這份文件太大了（超過 1000 段），請拆成幾份再儲存' };
   var size = botInt_(body.chunkSize, 100, 3000, 500);
   var key = String(body.key || '').trim().slice(0, 80) || 'doc-' + Date.now();
+  botKbBump_();
   return withLock_(function () {
     // 舊段落（同一份文件）整份刪掉
     var sheet = getSheet(SHEET_BOT_KB);
@@ -7875,6 +7910,7 @@ function handleBotKbImport(body) {
   var rows = Array.isArray(body.rows) ? body.rows : [];
   if (!rows.length) return { success: false, message: '沒有要匯入的內容' };
   if (rows.length > 400) return { success: false, message: '一次最多匯入 400 段，請分批匯入' };
+  botKbBump_();
   return withLock_(function () {
     var sheet = getSheet(SHEET_BOT_KB);
     var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -7897,6 +7933,7 @@ function handleBotKbImport(body) {
 
 /** 刪除知識庫項目：ids = ID 陣列；或 source = 整份文件（同一個來源名稱的全部段落）。 */
 function handleBotKbDelete(body) {
+  botKbBump_();
   return withLock_(function () {
     var sheet = getSheet(SHEET_BOT_KB);
     var data = sheet.getDataRange().getValues();
@@ -8462,6 +8499,7 @@ function botStaffStart_(id, body) {
     aiFallback: ais.slice(1),
     search: botSearchCfg_(),
     embedAi: botEmbedCfg_(),
+    kbVer: botKbVer_(),
     history: botCacheGet_(botStaffHistKey_(id)) || [],
     writable: botWritableOps_(ctx),
     pending: pending ? pending.summary : '',

@@ -77,8 +77,18 @@ async function loadAll(silent) {
 // ------------------------------------------------------------
 // 總覽
 // ------------------------------------------------------------
+async function saveGroundCheck() {
+  if (readOnly()) return;
+  const on = $('ov-ground').checked;
+  const r = await callApi('botSaveSettings', { groundCheck: on });
+  $('ov-ground-msg').textContent = r.success ? (on ? '　✓ 已開啟（最多 5 分鐘生效）' : '　✓ 已關閉') : '　儲存失敗：' + (r.message || '');
+  if (r.success && botData) botData.cs.groundCheck = on;
+  setTimeout(() => ($('ov-ground-msg').textContent = ''), 4000);
+}
+
 function renderOverview() {
   const d = botData;
+  if ($('ov-ground')) $('ov-ground').checked = d.cs.groundCheck === true;
   const g = d.general || {};
   const steps = [
     { ok: !!d.aiUsing, title: 'AI 模型', text: d.aiUsing ? `使用 ${d.aiUsing.name} ${d.aiUsing.model}${d.aiUsing.count > 1 ? `（共 ${d.aiUsing.count} 個，依序備援）` : ''}` : '還沒有設定 AI 的 API Key', tab: 'ai' },
@@ -887,8 +897,8 @@ async function resetTest() {
 // AI 模型
 // ------------------------------------------------------------
 let aiRows = [];
-const AI_FEATURE_ORDER = ['all', 'cs', 'copy', 'staff', 'vector'];
-const AI_FEATURE_SHORT = { all: '整個系統', cs: 'LINE 機器人', copy: 'AI 文案', staff: '小助理', vector: '向量' };
+const AI_FEATURE_ORDER = ['all', 'cs', 'copy', 'staff', 'vector', 'check'];
+const AI_FEATURE_SHORT = { all: '整個系統', cs: 'LINE 機器人', copy: 'AI 文案', staff: '小助理', vector: '向量', check: '回覆檢查' };
 const blankAi = () => ({ provider: 'gemini', model: '', endpoint: '', name: '', uses: [], hasKey: false, keyHint: '', _edit: true });
 
 function fillAi() {
