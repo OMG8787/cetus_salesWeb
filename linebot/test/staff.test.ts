@@ -71,6 +71,7 @@ beforeEach(() => {
           if (state.stageError) return err(state.stageError);
           return ok({ token: "abcdef0123", summary: (body.ops as { action: string }[]).map((o) => `📝 ${o.action}`).join("\n") });
         case "commit": return ok({ summary: "📝 addMemo", count: 1, results: [{ action: "createCase", ok: true, caseId: "S-T-A-甲公司" }] });
+        case "audit": return ok(true);
         case "cancel": return ok(true);
         case "remember": return ok(2);
         case "forget": return ok(true);
@@ -492,4 +493,88 @@ test("沒有向量也能查知識庫（退回關鍵字）；提示詞說明知�
   assert.match(JSON.stringify(state.aiCalls[1].contents.at(-1)), /公司簡介內容/);
   assert.match(staffSystemPrompt(baseInfo()), /search_knowledge/);
   assert.match(staffSystemPrompt(baseInfo()), /客服只看得到知識庫/);
+});
+
+const delWritable = ["deleteCustomer", "deleteContact", "deleteCase", "deleteProduct", "deletePriceRecord", "deleteCopyPost", "deleteEvent", "deleteTodo", "deleteMemo"];
+
+test("刪除工具：只有「可以刪除」的成員才有（後端依網站帳號權限決定 writable）；提出後仍要本人確認", async () => {
+  // 沒有刪除權限：沒有任何刪除工具，提示詞說不能刪除
+  state.ai = () => text("ok");
+  await handleStaffEvent(evMsg("hi"));
+  assert.ok(!toolNames().some((n) => n.startsWith("delete_")), "沒有刪除權限 → 沒有刪除工具");
+  assert.match(staffSystemPrompt(baseInfo()), /你不能刪除任何資料/);
+
+  // 有刪除權限
+  state.info = { writable: [...allWritable, ...delWritable] };
+  state.aiCalls = [];
+  state.aiRound = 0;
+  await handleStaffEvent(evMsg("hi"));
+  const names = toolNames();
+  for (const n of ["delete_customer", "delete_contact", "delete_case", "delete_product", "delete_price_record", "delete_copy_post", "delete_event", "delete_todo", "delete_memo"]) assert.ok(names.includes(n), "缺 " + n);
+  const p = staffSystemPrompt(baseInfo({ writable: [...allWritable, ...delWritable] }));
+  assert.match(p, /刪除要特別小心/);
+  assert.match(p, /無法復原/);
+  assert.doesNotMatch(p, /你不能刪除任何資料/);
+  assert.match(p, /助理紀錄/);
+  assert.match(staffSystemPrompt(baseInfo()), /助理紀錄/, "兩種情況都告知所有動作會被記錄");
+
+  // 只開自己的項目
+  state.info = { writable: ["deleteEvent", "deleteTodo"] };
+  state.aiCalls = [];
+  state.aiRound = 0;
+  await handleStaffEvent(evMsg("hi"));
+  const only = toolNames().filter((n) => n.startsWith("delete_"));
+  assert.deepEqual(only.sort(), ["delete_event", "delete_todo"]);
+});
+
+test("刪除工具：欄位名稱對應、先 stage（還沒執行）", async () => {
+  state.info = { writable: [...allWritable, ...delWritable] };
+  const steps: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+    ["delete_customer", { company: "甲公司", force: true }, "deleteCustomer", { company: "甲公司", force: true }],
+    ["delete_customer", { company: "乙公司" }, "deleteCustomer", { company: "乙公司" }],
+    ["delete_contact", { company: "甲公司", contact_name: "李經理" }, "deleteContact", { company: "甲公司", contactName: "李經理" }],
+    ["delete_case", { case_id: "C-1" }, "deleteCase", { caseId: "C-1" }],
+    ["delete_product", { internal_model: "P-1" }, "deleteProduct", { internalModel: "P-1" }],
+    ["delete_price_record", { internal_model: "P-1", date: "2026-10-01", price: 120 }, "deletePriceRecord", { internalModel: "P-1", date: "2026-10-01", price: 120 }],
+    ["delete_copy_post", { id: 3 }, "deleteCopyPost", { id: 3 }],
+    ["delete_event", { id: 5 }, "deleteEvent", { id: 5 }],
+    ["delete_todo", { id: 6 }, "deleteTodo", { id: 6 }],
+    ["delete_memo", { ref: 12, title: "備忘" }, "deleteMemo", { rowIndex: 12, title: "備忘" }],
+  ];
+  for (const [tool, args, action, data] of steps) {
+    state.gas = [];
+    state.aiRound = 0;
+    state.ai = (round) => (round === 0 ? toolCall(tool, args) : text("已整理好，請確認"));
+    await handleStaffEvent(evMsg("刪"));
+    const op = (gasOps("stage")[0].ops as { action: string; data: Record<string, unknown> }[])[0];
+    assert.equal(op.action, action, tool);
+    assert.deepEqual(op.data, data, tool);
+    assert.equal(gasOps("commit").length, 0, tool + " 不能直接執行");
+  }
+});
+
+test("被後端擋下的刪除：錯誤原樣回給 AI，不暫存", async () => {
+  state.info = { writable: [...allWritable, ...delWritable] };
+  state.stageError = "刪除需要網站帳號有刪除權限（只有系統管理員），你的帳號不能用助理刪除這類資料";
+  state.ai = (round) => (round === 0 ? toolCall("delete_customer", { company: "甲公司" }) : text("抱歉，你的帳號沒有刪除權限"));
+  await handleStaffEvent(evMsg("刪掉甲公司"));
+  assert.match(JSON.stringify(state.aiCalls[1].contents.at(-1)), /刪除需要網站帳號有刪除權限/);
+  assert.equal(replyOf(), "抱歉，你的帳號沒有刪除權限");
+});
+
+test("助理紀錄：搜尋知識庫與選型計算由機器人伺服器回報給管理系統記錄", async () => {
+  state.info = {};
+  state.ai = (round) => (round === 0 ? toolCall("search_knowledge", { query: "環形光源" }) : round === 1 ? toolCall("calc_selection", { fov_a_mm: 100, fov_b_mm: 80, accuracy: 20, accuracy_unit: "um" }) : text("ok"));
+  await handleStaffEvent(evMsg("查"));
+  const audits = gasOps("audit").map((g) => String(g.text));
+  assert.ok(audits.some((t) => /搜尋知識庫：環形光源/.test(t)), audits.join("|"));
+  assert.ok(audits.some((t) => /選型計算：檢測範圍 100×80 mm/.test(t)), audits.join("|"));
+  assert.ok(gasOps("audit").every((g) => g.kind === "read" && String(g.lineUserId).startsWith("U")));
+  const { gas } = await import("../src/gas.js");
+  state.gas = [];
+  // 回報失敗不影響助理
+  const realFetch3 = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ success: false, message: "boom" }))) as typeof fetch;
+  await gas.staffAudit(U1, "read", "x");
+  globalThis.fetch = realFetch3;
 });

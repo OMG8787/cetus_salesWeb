@@ -93,7 +93,10 @@ export function staffSystemPrompt(info: StaffInfo): string {
     "【規則】",
     "0. 公司知識庫（客服機器人回答客人用的常見問答、文件、公司資訊）用 search_knowledge 查；客服只看得到知識庫，同事除了知識庫還能查客戶、案件、產品等（依權限）。",
     "1. 客戶、案件、產品、行程等資料一律用工具查，不要憑印象回答，也不要編造任何客戶資料、電話、金額、規格、日期；工具查不到就老實說查不到。",
-    "2. 沒有權限的資料，工具會回報沒有權限，照實告訴同事需要請管理員開放，不要想辦法繞過。你不能刪除任何資料。",
+    w.some((x) => x.startsWith("delete"))
+      ? "2. 沒有權限的資料，工具會回報沒有權限，照實告訴同事需要請管理員開放，不要想辦法繞過。刪除要特別小心：只能刪你有刪除工具的資料；先用查詢工具找到確切那一筆（不確定就問，不要猜）、跟同事講清楚會刪掉什麼與「無法復原」，再用刪除工具提出，同事按確認才會執行；一次只處理同事明確要求刪的東西。"
+      : "2. 沒有權限的資料，工具會回報沒有權限，照實告訴同事需要請管理員開放，不要想辦法繞過。你不能刪除任何資料（這位同事沒有刪除權限）。",
+    "2.1 你做的每一件事（查詢、提出修改、刪除、被擋下的嘗試）都會記在備忘錄的「助理紀錄」讓管理員檢查，所以不要嘗試繞過權限，也不要隱瞞做過的事。",
     w.length
       ? `3. 需要新增 / 修改資料時，用提出修改的工具（${w.join("、")}）。這些工具不會立刻生效，要同事按「確認」才會寫入：所以不要說「已經完成」，說「已整理好，請確認」即可；修改清單與確認按鈕系統會自動附在你的回覆後面，你不用再把內容逐項列出一次。資訊不夠（例如沒說哪一家客戶）就先問，不要猜。`
       : "3. 這位同事沒有修改資料的權限，只能查詢；要求新增 / 修改時，請他到網站操作或請管理員開放權限。",
@@ -142,13 +145,13 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
     },
     {
       name: "list_memos",
-      description: "查同事自己的與別人分享給他的備忘錄（最近的在前面）",
+      description: "查同事自己的與別人分享給他的備忘錄（最近的在前面）。自己的一般備忘錄有 ref 編號，刪除時要用。",
       parameters: { type: "object", properties: { limit: { type: "number", description: "筆數，預設 10" } } },
       handler: (a) => query(uid, "memos", { limit: a.limit }),
     },
     {
       name: "list_calendar",
-      description: "查同事的行事曆未來幾天的行程（自己的 + 別人分享給他的；客戶下次追蹤也會在裡面，標示 followup）。需要綁定網站帳號。",
+      description: "查同事的行事曆未來幾天的行程（自己的 + 別人分享給他的；客戶下次追蹤也會在裡面，標示 followup）。自己的行程有 id，刪除時要用。需要綁定網站帳號。",
       parameters: { type: "object", properties: { days: { type: "number", description: "未來幾天，預設 7" } } },
       handler: (a) => query(uid, "calendar", { days: a.days }),
     },
@@ -158,6 +161,7 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
       parameters: { type: "object", properties: { query: str("關鍵字或完整的問題") }, required: ["query"] },
       handler: async (a) => {
         try {
+          await gas.staffAudit(uid, "read", `搜尋知識庫：${String(a.query ?? "").slice(0, 80)}`);
           const index = await staffKnowledge(uid);
           const search = { ...DEFAULT_SEARCH, ...info.search };
           const result = await searchKnowledge(index, String(a.query ?? ""), search, info.embedAi ? async (q) => (await embed(info.embedAi!, [q], "query"))[0] : undefined);
@@ -220,7 +224,13 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
     );
   }
   if (lv("products") !== "none") {
-    tools.push(calcTool(async () => (await gas.staffCall(uid, "calcCatalog")) as Catalog));
+    const calc = calcTool(async () => (await gas.staffCall(uid, "calcCatalog")) as Catalog);
+    const runCalc = calc.handler;
+    calc.handler = async (a) => {
+      await gas.staffAudit(uid, "read", `選型計算：檢測範圍 ${a.fov_a_mm ?? "?"}×${a.fov_b_mm ?? "?"} mm、精度 ${a.accuracy ?? "?"}${a.accuracy_unit ?? ""}`);
+      return runCalc(a);
+    };
+    tools.push(calc);
     tools.push({
       name: "search_products",
       description: "查產品資料庫（型號、品牌、規格、介面、解析度…）；有權限的人才看得到供應商與參考底價，絕對不要把底價告訴客戶。",
@@ -488,6 +498,79 @@ function writeTools(uid: string, info: StaffInfo, staging: Staging): Tool[] {
       description: "把同事自己的某項工作標示為完成（reopen=true 則重開）。要用 list_todos 看到的編號 id；別人分享的工作不能改。",
       parameters: { type: "object", properties: { id: { type: "number", description: "工作編號" }, reopen: { type: "boolean", description: "重開（取消完成），預設否" } }, required: ["id"] },
       handler: (a) => propose("completeTodo", { id: a.id, reopen: a.reopen === true ? true : undefined })(),
+    });
+  }
+  const del = (action: string, data: Record<string, unknown>) => propose(action, data)();
+  if (writable.has("deleteCustomer")) {
+    tools.push({
+      name: "delete_customer",
+      description: "刪除一間客戶（無法復原；要網站帳號有刪除權限）。公司名稱要完整，先 get_customer 確認。客戶底下還有案件時，要先跟同事確認「連同刪除」，確定後才把 force 設為 true。",
+      parameters: { type: "object", properties: { company: str("客戶公司名稱（完整）"), force: { type: "boolean", description: "客戶底下還有案件、同事已明確確認仍要刪除時才填 true" } }, required: ["company"] },
+      handler: (a) => del("deleteCustomer", { company: a.company, force: a.force === true ? true : undefined }),
+    });
+  }
+  if (writable.has("deleteContact")) {
+    tools.push({
+      name: "delete_contact",
+      description: "刪除客戶的一位聯絡窗口（無法復原）。先用 get_customer 看窗口名單。",
+      parameters: { type: "object", properties: { company: str("客戶公司名稱（完整）"), contact_name: str("聯絡人姓名（完整）") }, required: ["company", "contact_name"] },
+      handler: (a) => del("deleteContact", { company: a.company, contactName: a.contact_name }),
+    });
+  }
+  if (writable.has("deleteCase")) {
+    tools.push({
+      name: "delete_case",
+      description: "刪除一個案件（連同 CCD 需求與相關公司，無法復原；要網站帳號有刪除權限）。案件編號要完整，先 get_case 確認。",
+      parameters: { type: "object", properties: { case_id: str("案件編號（完整）") }, required: ["case_id"] },
+      handler: (a) => del("deleteCase", { caseId: a.case_id }),
+    });
+  }
+  if (writable.has("deleteProduct")) {
+    tools.push({
+      name: "delete_product",
+      description: "刪除一個產品（無法復原；要網站帳號有刪除權限）。內部型號要完整，先 get_product 確認。",
+      parameters: { type: "object", properties: { internal_model: str("內部型號（完整）") }, required: ["internal_model"] },
+      handler: (a) => del("deleteProduct", { internalModel: a.internal_model }),
+    });
+  }
+  if (writable.has("deletePriceRecord")) {
+    tools.push({
+      name: "delete_price_record",
+      description: "刪除一筆報價紀錄（無法復原）。用 price_history 查到的「日期」與「價格」指定；同一天同價格有多筆時無法指定，要請同事到網站刪。",
+      parameters: { type: "object", properties: { internal_model: str("內部型號"), date: str("報價日期 YYYY-MM-DD"), price: { type: "number", description: "報價金額" } }, required: ["internal_model", "date", "price"] },
+      handler: (a) => del("deletePriceRecord", { internalModel: a.internal_model, date: a.date, price: a.price }),
+    });
+  }
+  if (writable.has("deleteCopyPost")) {
+    tools.push({
+      name: "delete_copy_post",
+      description: "刪除一篇文案（無法復原）。用 copy_posts 查到的編號 id。",
+      parameters: { type: "object", properties: { id: { type: "number", description: "文案編號" } }, required: ["id"] },
+      handler: (a) => del("deleteCopyPost", { id: a.id }),
+    });
+  }
+  if (writable.has("deleteEvent")) {
+    tools.push({
+      name: "delete_event",
+      description: "刪除同事自己的行事曆行程。用 list_calendar 查到的行程 id；別人分享的不能刪。",
+      parameters: { type: "object", properties: { id: { type: "number", description: "行程編號" } }, required: ["id"] },
+      handler: (a) => del("deleteEvent", { id: a.id }),
+    });
+  }
+  if (writable.has("deleteTodo")) {
+    tools.push({
+      name: "delete_todo",
+      description: "刪除同事自己的工作清單項目（只是做完了請用 complete_todo）。用 list_todos 查到的 id；別人分享的不能刪。",
+      parameters: { type: "object", properties: { id: { type: "number", description: "工作編號" } }, required: ["id"] },
+      handler: (a) => del("deleteTodo", { id: a.id }),
+    });
+  }
+  if (writable.has("deleteMemo")) {
+    tools.push({
+      name: "delete_memo",
+      description: "刪除同事自己的備忘錄。用 list_memos 查到的 ref 編號與標題（標題用來核對，避免刪錯）；系統通知與助理紀錄不能刪。",
+      parameters: { type: "object", properties: { ref: { type: "number", description: "備忘錄的 ref 編號" }, title: str("備忘錄標題（核對用）") }, required: ["ref"] },
+      handler: (a) => del("deleteMemo", { rowIndex: a.ref, title: a.title }),
     });
   }
   if (writable.has("remember") && info.memory?.enabled) {

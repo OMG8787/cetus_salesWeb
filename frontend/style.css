@@ -655,3 +655,4 @@ header, .tabs { position: relative; z-index: 300; }
 .bot-ai-card .bot-ai-no { display: inline-block; min-width: 22px; text-align: center; border: 1px solid #c9d1de; border-radius: 6px; padding: 0 6px; margin-right: 4px; font-size: 13px; }
 .bot-ai-uses { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 2px; }
 .bot-ai-edit { border-top: 1px dashed #d8dde6; margin-top: 8px; padding-top: 6px; }
+.bot-badge.aud-part { background: #fff3e0; color: #b45309; }

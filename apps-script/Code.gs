@@ -4849,6 +4849,7 @@ function checkMemoOwner_(body) {
   var isAdmin = user && user['Role'] === 'admin';
   var need = String(memo['NeedBlock'] || '');
   var canManageSystem = !!need && accessOf_(user).blocks[need] === 'edit'; // 機器人通知：有「BOT 設定」編輯權限的人可以處理
+  if (memo['LinkType'] === 'staffAudit' && !isAdmin) throw new Error('助理紀錄是稽核用的，只有系統管理員可以修改或刪除');
   if (memo['Owner'] !== body._user.username && !isAdmin && !canManageSystem) throw new Error('只有備忘錄的建立者可以修改或刪除');
   return rowNum;
 }
@@ -5090,7 +5091,7 @@ function wsEventsFor_(me, from, to, scope) {
 }
 
 function wsEventBrief_(e) {
-  return { date: e.startDate, endDate: e.endDate !== e.startDate ? e.endDate : undefined, time: e.allDay ? '全天' : e.startTime + '–' + e.endTime, title: e.title, location: e.location || undefined, from: e.isMine ? undefined : e.ownerName, followup: e.source === 'followup' ? true : undefined };
+  return { id: e.isMine ? e.id : undefined, date: e.startDate, endDate: e.endDate !== e.startDate ? e.endDate : undefined, time: e.allDay ? '全天' : e.startTime + '–' + e.endTime, title: e.title, location: e.location || undefined, from: e.isMine ? undefined : e.ownerName, followup: e.source === 'followup' ? true : undefined };
 }
 
 function wsRangeFrom_(body) {
@@ -6372,7 +6373,7 @@ var BOT_CS_TOPICS = [
   { key: 'shipping', name: '運費 / 交期', words: '運費 配送 寄送 出貨 物流 到貨 交期 現貨 缺貨' },
   { key: 'complaint', name: '客訴 / 退換貨 / 維修', words: '退貨 退款 換貨 客訴 投訴 故障 維修 壞掉 保固 RMA 不良' },
 ];
-var BOT_STAFF_OPS = ['start', 'call', 'stage', 'commit', 'cancel', 'remember', 'forget', 'unfollow', 'memory'];
+var BOT_STAFF_OPS = ['start', 'call', 'stage', 'commit', 'cancel', 'remember', 'forget', 'unfollow', 'memory', 'audit'];
 var BOT_HANDOFF_WORDS = '真人 客服人員 小編 專人 人工 業務';
 var BOT_TONES = ['friendly', 'formal', 'concise'];
 var BOT_EMOJI = ['many', 'some', 'none'];
@@ -6381,7 +6382,7 @@ function botSchema_() {
   var base = {
     schema: {
       BotConfig: ['Key', 'Value'],
-      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes'],
+      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes', 'Audience'],
       BotVectors: ['ID', 'Model', 'Vec'],
       BotMessages: ['ID', 'Time', 'Channel', 'UserId', 'Name', 'Role', 'Text', 'Topic'],
     },
@@ -6404,7 +6405,7 @@ function botPerms_() {
     botGetSettings: ['bot', 'r'], botKbList: ['bot', 'r'], botConversations: ['bot', 'r'], botThread: ['bot', 'r'],
     botSaveSettings: ['bot', 'w'], botSaveAi: ['bot', 'w'], botTestAi: ['bot', 'w'], botKbSave: ['bot', 'w'], botKbImport: ['bot', 'w'],
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
-    botKbDelete: ['bot', 'd'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
+    botKbDelete: ['bot', 'd'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -6425,6 +6426,7 @@ function botRoutes_() {
     botKbSave: { auth: true, fn: handleBotKbSave },
     botKbImport: { auth: true, fn: handleBotKbImport },
     botKbDelete: { auth: true, fn: handleBotKbDelete },
+    botKbSetAudience: { auth: true, fn: handleBotKbSetAudience },
     botGenKey: { auth: true, fn: handleBotGenKey },
     botRevealKey: { auth: true, fn: handleBotRevealKey },
     botConversations: { auth: true, fn: handleBotConversations },
@@ -7041,11 +7043,12 @@ function csCalcCatalog_() {
 }
 
 /** 知識庫向量（給機器人伺服器分頁取用）：只回傳目前這個 embedding 模型算的、且對應項目還在的。 */
-function csVectors_(req) {
+function csVectors_(req, who) {
+  who = who === 'staff' ? 'staff' : 'cs';
   var cfg = botEmbedCfg_();
   if (!cfg) return { model: '', items: [], total: 0, next: 0 };
   var alive = {};
-  botKbRows_().forEach(function (r) { if (r.IsActive) alive[r.ID] = true; });
+  botKbRows_().forEach(function (r) { if (r.IsActive && botKbAud_(r.Audience)[who]) alive[r.ID] = true; });
   var all = botVecRows_().filter(function (v) { return v.model === cfg.key && alive[v.id]; });
   var after = Math.max(0, Number(req.after) || 0);
   var limit = Math.min(500, Math.max(1, Number(req.limit) || 300));
@@ -7342,6 +7345,7 @@ function csKnowledge_() {
     sheetToObjects(SHEET_BOT_KB).rows.forEach(function (k) {
       if (k['IsActive'] === false || String(k['IsActive']).toUpperCase() === 'FALSE') return;
       if (k['Type'] === 'doc' ? !cs.sources.docs : !cs.sources.qa) return;
+      if (!botKbAud_(k['Audience']).cs) return; // 這一筆沒有開放給對外客服
       out.push({
         id: 'k' + k['ID'],
         source: k['Type'] === 'doc' ? '文件' : '常見問題',
@@ -7384,6 +7388,7 @@ function botStaffKnowledge_() {
   var text = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
   sheetToObjects(SHEET_BOT_KB).rows.forEach(function (k) {
     if (k['IsActive'] === false || String(k['IsActive']).toUpperCase() === 'FALSE') return;
+    if (!botKbAud_(k['Audience']).staff) return; // 這一筆沒有開放給員工助理
     out.push({
       id: 'k' + k['ID'],
       source: k['Type'] === 'doc' ? '文件' : '常見問題',
@@ -7603,7 +7608,47 @@ function botKbRows_() {
       BigCategory: String(r['BigCategory'] || ''),
       Topic: String(r['Topic'] || ''),
       Notes: String(r['Notes'] || ''),
+      Audience: String(r['Audience'] || ''),
     };
+  });
+}
+
+/** 知識庫每一筆「誰看得到」：空白 = 都開放；cs = 對外客服、staff = 員工助理（逗號分隔）；none = 都不開放。 */
+function botKbAud_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { cs: true, staff: true };
+  var parts = s.split(',').map(function (x) { return x.trim(); });
+  return { cs: parts.indexOf('cs') > -1, staff: parts.indexOf('staff') > -1 };
+}
+
+function botKbAudList_(raw) {
+  var a = botKbAud_(raw);
+  return ['cs', 'staff'].filter(function (k) { return a[k]; });
+}
+
+/** 前端送來的 ['cs','staff'] 整理成要存的字串（沒帶 = 都開放）。 */
+function botKbAudStore_(arr) {
+  if (arr === undefined || arr === null) return 'cs,staff';
+  var list = (Array.isArray(arr) ? arr : String(arr).split(',')).map(String);
+  var out = ['cs', 'staff'].filter(function (k) { return list.indexOf(k) > -1; });
+  return out.length ? out.join(',') : 'none';
+}
+
+/** 批次設定知識庫的「誰看得到」。ids = 知識庫項目編號陣列。 */
+function handleBotKbSetAudience(body) {
+  var ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(function (n) { return n > 0; });
+  if (!ids.length) return { success: false, message: '沒有選任何項目' };
+  var value = botKbAudStore_(body.audience || []);
+  return withLock_(function () {
+    var want = {};
+    ids.forEach(function (i) { want[i] = true; });
+    var n = 0;
+    botKbRows_().forEach(function (r) {
+      if (!want[r.ID]) return;
+      updateRowFields(SHEET_BOT_KB, r.RowIndex, { Audience: value });
+      n++;
+    });
+    return { success: true, count: n, audience: botKbAudList_(value) };
   });
 }
 
@@ -7613,6 +7658,7 @@ function handleBotKbList(body) {
   botVecRows_().forEach(function (v) { have[v.id] = v.model; });
   var items = botKbRows_().map(function (r) {
     r.HasVector = !!cfg && have[r.ID] === cfg.key;
+    r.audience = botKbAudList_(r.Audience);
     return r;
   });
   var cats = {};
@@ -7638,6 +7684,7 @@ function handleBotKbSave(body) {
   if (content.length > 20000) return { success: false, message: '內容太長了（上限 20000 字），長文件請用「文件」匯入，會自動切成小段' };
   return withLock_(function () {
     var fields = { Type: type, Title: title || (type === 'qa' ? question.slice(0, 40) : content.slice(0, 20)), Question: type === 'qa' ? question : '', Content: content, Tags: String(body.tags || '').trim(), Source: String(body.source || ''), IsActive: body.isActive === false ? false : true, UpdatedAt: botNow_(), BigCategory: botClip_(body.bigCategory, 40), Topic: botClip_(body.topic, 60), Notes: String(body.notes || '').trim().slice(0, 1000) };
+    if (body.audience !== undefined) fields.Audience = botKbAudStore_(body.audience); // 沒帶 = 修改時不動、新增時都開放
     var id;
     if (body.rowIndex) {
       var sheet = getSheet(SHEET_BOT_KB);
@@ -7647,7 +7694,7 @@ function handleBotKbSave(body) {
       id = Number(body.id);
     } else {
       id = botNextKbId_();
-      appendObjectRow(SHEET_BOT_KB, Object.assign({ ID: id }, fields));
+      appendObjectRow(SHEET_BOT_KB, Object.assign({ ID: id, Audience: 'cs,staff' }, fields));
     }
     // 順便算這一筆的向量（失敗不影響儲存；之後可以按「重新計算向量」補上）
     var embedded = false;
@@ -7680,7 +7727,7 @@ function handleBotKbImport(body) {
     rows.forEach(function (r) {
       var content = String(r.content || '').trim().slice(0, 20000);
       if (!content) return;
-      var o = { ID: id++, Type: 'doc', Title: String(r.title || '').trim().slice(0, 120) || content.slice(0, 20), Question: '', Content: content, Tags: String(r.tags || ''), Source: String(r.source || '').slice(0, 120), IsActive: true, UpdatedAt: t, BigCategory: botClip_(r.bigCategory || body.bigCategory, 40), Topic: botClip_(r.topic || body.topic, 60), Notes: String(r.notes || body.notes || '').trim().slice(0, 1000) };
+      var o = { ID: id++, Type: 'doc', Title: String(r.title || '').trim().slice(0, 120) || content.slice(0, 20), Question: '', Content: content, Tags: String(r.tags || ''), Source: String(r.source || '').slice(0, 120), IsActive: true, UpdatedAt: t, BigCategory: botClip_(r.bigCategory || body.bigCategory, 40), Topic: botClip_(r.topic || body.topic, 60), Notes: String(r.notes || body.notes || '').trim().slice(0, 1000), Audience: botKbAudStore_(body.audience) };
       values.push(header.map(function (h) { return o.hasOwnProperty(h) ? o[h] : ''; }));
     });
     if (!values.length) return { success: false, message: '沒有可匯入的內容' };
@@ -7943,6 +7990,8 @@ function botStaffCfg_() {
     writes: botStaffWrites_(c.writes),
     // 助理永遠看不到產品底價與供應商（就算成員有產品權限）
     hidePrice: c.hidePrice === true,
+    // 助理做的事都記在備忘錄（只有有「BOT 設定」權限的人看得到，只有系統管理員能改 / 刪）
+    audit: { enabled: (c.audit || {}).enabled !== false, reads: (c.audit || {}).reads !== false },
     memory: {
       enabled: m.enabled !== false,
       maxItems: botInt_(m.maxItems, 5, 100, 30),
@@ -8001,12 +8050,12 @@ function botMemberFind_(id) {
 }
 
 /** 成員的權限（等級同網站帳號）：editor / viewer / limited；機器人沒有刪除功能，所以沒有系統管理員。 */
-function botMemberAccess_(m) {
+function botMemberAccess_(m, linkedUser) {
   var role = String(m['Role'] || '');
   if (role === 'admin') role = 'editor';
   if (role !== 'editor' && role !== 'viewer' && role !== 'limited') role = 'viewer';
   var a = accessOf_({ Role: role, Perms: m['Perms'] });
-  a.canDelete = false;
+  a.canDelete = !!(linkedUser && accessOf_(linkedUser).canDelete); // 刪除只有「綁定的網站帳號本來就能刪除」的人（系統管理員）；沒綁定帳號就不能刪
   a.isAdmin = false;
   return botCapAccess_(a);
 }
@@ -8019,7 +8068,7 @@ function botStaffCtx_(id) {
     var u = uname ? findUserRow_(uname) : null;
     if (!u) return { ok: false, status: '未登入', problem: '網站登入已逾期，請重新整理頁面再試', id: id, web: true };
     var a = botCapAccess_(accessOf_(u));
-    a.canDelete = false;
+    a.canDelete = !!accessOf_(u).canDelete;
     a.isAdmin = false;
     return { ok: cfg.enabled && cfg.webEnabled, status: '已開通', problem: !cfg.enabled ? '員工助理還沒啟用' : !cfg.webEnabled ? '網站智能助理沒有開放' : '', id: id, web: true, name: String(u['DisplayName'] || u['Username']), username: String(u['Username']), access: a, ownerKey: String(u['Username']) };
   }
@@ -8027,7 +8076,7 @@ function botStaffCtx_(id) {
   if (!m) return { ok: false, status: '未登記', problem: '', id: id, web: false };
   var linked = String(m['LinkedUsername'] || '');
   var lu = linked ? findUserRow_(linked) : null;
-  var access = botMemberAccess_(m);
+  var access = botMemberAccess_(m, lu);
   return {
     ok: cfg.enabled && m['Status'] === BOT_STAFF_STATUS.ACTIVE,
     status: String(m['Status'] || BOT_STAFF_STATUS.PENDING),
@@ -8111,16 +8160,86 @@ function botPendingGet_(id) {
 // ------------------------------------------------------------
 // 給 linebot 的操作（Bot 金鑰）
 // ------------------------------------------------------------
+var BOT_AUDIT_ICON = { read: '🔎', stage: '📝', write: '✅', delete: '🗑️', cancel: '↩️', denied: '⛔', info: '•' };
+var BOT_AUDIT_MAX = 40000;
+var BOT_AUDIT_SKIP = ['me', 'kbChunks', 'kbVectors', 'calcCatalog'];
+var BOT_AUDIT_LABEL = { customers: '客戶', customer: '客戶詳情', followups: '追蹤清單', cases: '案件', 'case': '案件詳情', products: '產品', product: '產品詳情', priceHistory: '報價紀錄', inquiryDraft: '詢價信草稿', logs: '聯繫紀錄', memos: '備忘錄', calendar: '行事曆', todos: '工作清單', overview: '今日總覽', copyPosts: '文案', copyStyle: '文案風格' };
+
+/**
+ * 助理做的任何事，都記在「備忘錄」讓有「BOT 設定」權限的人檢查：每位成員每天一則（時間先後、持續追加）。
+ * 查詢、提出修改、確認寫入、刪除、取消、被擋下的都記；只有系統管理員能改 / 刪這些備忘錄。記錄失敗不影響助理。
+ */
+function botAudit_(ctx, kind, line) {
+  try {
+    var cfg = botStaffCfg_().audit;
+    if (!cfg.enabled || (kind === 'read' && !cfg.reads)) return;
+    var key = String(ctx.ownerKey || ctx.id || '');
+    if (!key) return;
+    var today = todayStr();
+    var linkId = key + '|' + today;
+    var who = (ctx.name || key.slice(0, 8)) + (ctx.username && ctx.username !== ctx.name ? '／' + ctx.username : '');
+    var entry = botNow_().slice(11, 16) + ' ' + (BOT_AUDIT_ICON[kind] || '•') + ' ' + String(line || '').replace(/\s+/g, ' ').slice(0, 400);
+    var rows = sheetToObjects(SHEET_MEMOS).rows;
+    var found = 0;
+    rows.forEach(function (r, i) { if (r['LinkType'] === 'staffAudit' && r['LinkId'] === linkId) found = i + 2; });
+    if (found) {
+      var old = String(rows[found - 2]['Content'] || '');
+      if (old.length + entry.length + 1 < BOT_AUDIT_MAX) {
+        updateRowFields(SHEET_MEMOS, found, { Content: old + '\n' + entry, LastUpdated: today });
+        return;
+      }
+      linkId = linkId + '#' + (rows.filter(function (r) { return r['LinkType'] === 'staffAudit' && String(r['LinkId']).indexOf(key + '|' + today) === 0; }).length + 1);
+    }
+    appendObjectRow(SHEET_MEMOS, {
+      Owner: 'SYSTEM',
+      OwnerName: '員工助理',
+      Title: '🤖 助理紀錄 ' + today + '｜' + who + (ctx.web ? '（網站）' : '（LINE）') + (found ? '（續）' : ''),
+      Content: entry,
+      Shared: '是',
+      CreatedDate: today,
+      LastUpdated: today,
+      LinkType: 'staffAudit',
+      LinkId: linkId,
+      NeedBlock: 'bot',
+    });
+  } catch (e) {
+    Logger.log('助理紀錄失敗：' + e.message);
+  }
+}
+
+function botAuditParams_(params) {
+  var out = [];
+  Object.keys(params || {}).forEach(function (k) {
+    var v = params[k];
+    if (k === 'limit' || v === '' || v == null || typeof v === 'object') return;
+    out.push(k + '=' + String(v).slice(0, 40));
+  });
+  return out.join('、').slice(0, 120);
+}
+
 function botStaffOp_(op, id, body) {
   if (id.charAt(0) !== 'U' && id.charAt(0) !== 'W') throw new Error('使用者編號格式錯誤');
   if (op === 'start') return botStaffStart_(id, body);
   if (op === 'call') return botStaffCall_(botStaffCtx_(id), String(body.call || ''), body.params || {});
-  if (op === 'stage') return botStage_(id, body);
+  if (op === 'stage') {
+    var sctx = botStaffCtx_(id);
+    try {
+      var staged = botStage_(id, body);
+      botAudit_(sctx, 'stage', '提出修改，等本人確認：' + String(staged.summary).replace(/\n/g, '；'));
+      return staged;
+    } catch (e) {
+      botAudit_(sctx, 'denied', '提出修改被擋：' + e.message);
+      throw e;
+    }
+  }
   if (op === 'commit') return botCommit_(id, body);
   if (op === 'cancel') {
+    var hadPending = botPendingGet_(id);
     botCacheRemove_(['linep:' + id]);
+    if (hadPending) botAudit_(botStaffCtx_(id), 'cancel', '取消待確認的修改：' + String(hadPending.summary).replace(/\n/g, '；'));
     return true;
   }
+  if (op === 'audit') return botStaffAuditOp_(id, body);
   if (op === 'remember') return botStaffRemember_(id, body.turns);
   if (op === 'forget') {
     botCacheRemove_([botStaffHistKey_(id)]);
@@ -8134,9 +8253,21 @@ function botStaffOp_(op, id, body) {
   if (op === 'memory') {
     var ctx = botStaffCtx_(id);
     if (!botStaffCfg_().memory.enabled) throw new Error('長期記憶沒有開啟');
-    return withLock_(function () { return botMemoryWrite_(ctx, body.data || {}); });
+    var mres = withLock_(function () { return botMemoryWrite_(ctx, body.data || {}); });
+    var md = body.data || {};
+    botAudit_(ctx, md.mode === 'delete' ? 'delete' : 'write', '長期記憶 ' + (md.mode === 'delete' ? '刪除 #' + md.id : '新增 / 修改：' + String(md.content || '').slice(0, 80)));
+    return mres;
   }
   throw new Error('未知的 Bot 操作：' + op);
+}
+
+/** 機器人伺服器回報它自己做的事（例如搜尋知識庫、選型計算），記進助理紀錄。 */
+function botStaffAuditOp_(id, body) {
+  var ctx = botStaffCtx_(id);
+  if (!ctx.ok) return false;
+  var kind = ['read', 'write', 'info'].indexOf(body.kind) > -1 ? body.kind : 'info';
+  botAudit_(ctx, kind, String(body.text || '').slice(0, 300));
+  return true;
 }
 
 function botStaffStart_(id, body) {
@@ -8225,6 +8356,31 @@ function botFindProduct_(model) {
   return { obj: found, row: idx, near: near };
 }
 
+/** 用日期 + 價格找出唯一一筆報價紀錄（刪除用）；找不到或有好幾筆都丟錯誤。 */
+function botPriceMatch_(model, date, price) {
+  var pf = botFindProduct_(model);
+  var m = pf.obj ? pf.obj['InternalModel'] : String(model || '').trim();
+  if (!pf.obj) throw new Error('找不到產品「' + m + '」' + (pf.near.length ? '，你是不是要找：' + pf.near.join('、') : ''));
+  if (!isDateStr(String(date || ''))) throw new Error('要刪哪一筆報價？請提供日期（YYYY-MM-DD）與價格，先用 price_history 查');
+  var num = Number(String(price == null ? '' : price).replace(/,/g, ''));
+  var hits = (handleGetPriceHistory({ internalModel: m }).history || []).filter(function (h) { return dateKey_(h['Date']) === date && Number(h['Price']) === num; });
+  if (!hits.length) throw new Error('找不到 ' + date + ' 價格 ' + price + ' 的報價紀錄');
+  if (hits.length > 1) throw new Error('同一天同樣價格有 ' + hits.length + ' 筆報價紀錄，無法確定要刪哪一筆，請到網站刪除');
+  return { model: m, row: hits[0] };
+}
+
+/** 自己的備忘錄（助理只能刪自己建立的一般備忘錄；機器人通知與助理紀錄不行）。 */
+function botMemoOwn_(ctx, rowIndex, title) {
+  var rowNum = Number(rowIndex);
+  var sheet = getSheet(SHEET_MEMOS);
+  if (!(rowNum >= 2 && rowNum <= sheet.getLastRow())) throw new Error('找不到這則備忘錄（可能已被刪除），請用 list_memos 重新查');
+  var memo = readRowAsObject(SHEET_MEMOS, rowNum);
+  if (String(memo['Owner']) !== ctx.username) throw new Error('這不是你的備忘錄，只有擁有者可以刪除');
+  if (memo['LinkType']) throw new Error('這是系統通知 / 助理紀錄，不能用助理刪除');
+  if (String(title || '').trim() && String(memo['Title'] || '').trim() !== String(title).trim()) throw new Error('備忘錄的標題對不上（列號可能已經變動），請用 list_memos 重新查');
+  return memo;
+}
+
 function botPriceOut_(h) {
   return { Date: dateKey_(h['Date']) || String(h['Date'] || ''), Supplier: h['Supplier'], Price: h['Price'], Currency: h['Currency'] || 'TWD', CaseID: h['CaseID'] || undefined, Notes: h['Notes'] ? String(h['Notes']).slice(0, 100) : undefined };
 }
@@ -8238,7 +8394,24 @@ function botKws_(keyword) {
   return String(keyword || '').toLowerCase().split(/\s+/).filter(Boolean);
 }
 
+/** 查詢（記錄在助理紀錄備忘錄）。 */
 function botStaffCall_(ctx, action, params) {
+  var skip = BOT_AUDIT_SKIP.indexOf(action) > -1 || !ctx.ok;
+  var out;
+  try {
+    out = botStaffCallRun_(ctx, action, params);
+  } catch (e) {
+    if (!skip) botAudit_(ctx, 'denied', '查詢「' + (BOT_AUDIT_LABEL[action] || action) + '」被擋 / 失敗：' + e.message);
+    throw e;
+  }
+  if (!skip) {
+    var n = out && typeof out.total === 'number' ? '，共 ' + out.total + ' 筆' : '';
+    botAudit_(ctx, 'read', '查詢 ' + (BOT_AUDIT_LABEL[action] || action) + (botAuditParams_(params) ? '（' + botAuditParams_(params) + '）' : '') + n);
+  }
+  return out;
+}
+
+function botStaffCallRun_(ctx, action, params) {
   if (BOT_STAFF_CALLS.indexOf(action) < 0) throw new Error('員工助理不能使用：' + action);
   if (!ctx.ok) throw new Error(ctx.problem || '這個帳號還沒開通');
   var limit = botInt_(params.limit, 1, 30, 10);
@@ -8386,7 +8559,7 @@ function botStaffCall_(ctx, action, params) {
   }
 
   if (action === 'kbChunks') return botStaffKnowledge_(); // 公司知識庫：每位已開通的同事都能查（客服能看的，同事一定也能看）
-  if (action === 'kbVectors') return csVectors_({ after: params.after, limit: params.limit });
+  if (action === 'kbVectors') return csVectors_({ after: params.after, limit: params.limit }, 'staff');
 
   if (action === 'copyPosts') {
     botNeed_(ctx, 'copy', 'view');
@@ -8421,12 +8594,12 @@ function botStaffCall_(ctx, action, params) {
   if (action === 'memos') {
     var me = ctx.username;
     var mctx = wsShareCtx_(me);
-    var mrows = sheetToObjects(SHEET_MEMOS).rows.filter(function (r) {
+    var mrows = sheetToObjects(SHEET_MEMOS).rows.map(function (r, i) { r.RowIndex = i + 2; return r; }).filter(function (r) {
       var need = String(r['NeedBlock'] || '');
       if (need && botLevel_(ctx, need) === 'none') return false;
       return (me && r['Owner'] === me) || (me && wsVisible_(r, me, mctx.myGroups));
     });
-    return { total: mrows.length, items: mrows.slice(-limit).reverse().map(function (r) { return { Title: r['Title'], Content: String(r['Content'] || '').slice(0, 200), Shared: wsMode_(r) !== 'self', Mine: r['Owner'] === me, Owner: r['Owner'] === me ? undefined : r['OwnerName'] || r['Owner'], Date: dateKey_(r['LastUpdated']) }; }) };
+    return { total: mrows.length, items: mrows.slice(-limit).reverse().map(function (r) { return { ref: r['Owner'] === me && !r['LinkType'] ? r.RowIndex : undefined, Title: r['Title'], Content: String(r['Content'] || '').slice(0, 200), Shared: wsMode_(r) !== 'self', Mine: r['Owner'] === me, Owner: r['Owner'] === me ? undefined : r['OwnerName'] || r['Owner'], Date: dateKey_(r['LastUpdated']) }; }) };
   }
 
   if (action === 'calendar') {
@@ -8445,7 +8618,7 @@ function botStaffCall_(ctx, action, params) {
   if (action === 'overview') {
     var ov = { today: today, weekday: '日一二三四五六'.charAt(new Date(today + 'T12:00:00+08:00').getDay()) };
     if (botLevel_(ctx, 'customers') !== 'none') {
-      var fu = botStaffCall_(ctx, 'followups', { days: 3, limit: 10 });
+      var fu = botStaffCallRun_(ctx, 'followups', { days: 3, limit: 10 });
       ov.followups = { total: fu.total, items: fu.items.slice(0, 15) };
     }
     if (botLevel_(ctx, 'cases') !== 'none') {
@@ -8486,12 +8659,21 @@ var BOT_STAFF_WRITES = {
   updateProduct: { block: 'products', label: '修改產品資料' },
   createInquiryDraft: { block: 'products', label: '建立詢價信 Gmail 草稿（不會寄出）' },
   saveCopyPost: { block: 'copy', label: '儲存文案草稿' },
+  deleteCustomer: { block: 'customers', del: true, label: '🗑️ 刪除客戶（網站帳號有刪除權限才能用）' },
+  deleteContact: { block: 'customers', del: true, label: '🗑️ 刪除客戶聯絡窗口' },
+  deleteCase: { block: 'cases', del: true, label: '🗑️ 刪除案件' },
+  deleteProduct: { block: 'products', del: true, label: '🗑️ 刪除產品' },
+  deletePriceRecord: { block: 'products', del: true, label: '🗑️ 刪除報價紀錄' },
+  deleteCopyPost: { block: 'copy', del: true, label: '🗑️ 刪除文案' },
+  deleteEvent: { block: '', del: true, label: '🗑️ 刪除行事曆行程（自己的）' },
+  deleteTodo: { block: '', del: true, label: '🗑️ 刪除工作清單項目（自己的）' },
+  deleteMemo: { block: '', del: true, label: '🗑️ 刪除備忘錄（自己的）' },
   addEvent: { block: '', label: '新增行事曆行程（自己的）' },
   addTodo: { block: '', label: '新增工作清單項目（自己的）' },
   completeTodo: { block: '', label: '完成 / 重開工作清單項目（自己的）' },
   remember: { block: '', label: '記住（長期記憶）' },
 };
-var BOT_PRICE_WRITES = ['addPriceRecord', 'createInquiryDraft']; // 管理員設定「助理不顯示價格」時，這些也不開放
+var BOT_PRICE_WRITES = ['addPriceRecord', 'createInquiryDraft', 'deletePriceRecord']; // 管理員設定「助理不顯示價格」時，這些也不開放
 var BOT_CASE_EDITABLE = { ProjectContact: '專案聯絡人', ContactPhone: '聯絡電話', EndCustomerName: '終端客戶', Salesperson: '業務', FAE: 'FAE', RequirementDetails: '需求說明', EvaluationResult: '評估結果' };
 var BOT_PRODUCT_EDITABLE = { SupplierModel: '供應商型號', Brand: '品牌', Category: '類別', Interface: '介面', Resolution: '解析度', PixelSize: '像素尺寸', SensorSize: '靶面', FPS: '幀率', Mount: '接口', FocalLength: '焦距', Magnification: '倍率', WD: '工作距離', DOF: '景深', FocusWD: '對焦距離', CompatibleGroup: '相容群組', Origin: '產地', Notes: '備註' };
 var BOT_PRODUCT_PRICEY = { Supplier: '供應商', SupplierContact: '供應商聯絡人', SupplierContactEmail: '供應商 Email', RefPrice: '參考底價' }; // 有價格權限（沒被隱藏）才能改
@@ -8503,6 +8685,8 @@ function botWritableOps_(ctx) {
     if (allowed.indexOf(k) < 0) return false;
     if (k === 'remember') return botStaffCfg_().memory.enabled;
     if (botStaffCfg_().hidePrice && BOT_PRICE_WRITES.indexOf(k) > -1) return false;
+    if (BOT_STAFF_WRITES[k].del && BOT_STAFF_WRITES[k].block && !ctx.access.canDelete) return false; // 系統資料的刪除：要有刪除權限
+    if (BOT_STAFF_WRITES[k].del && !BOT_STAFF_WRITES[k].block && !ctx.username) return false; // 自己的行事曆 / 工作 / 備忘錄：要綁定網站帳號
     var b = BOT_STAFF_WRITES[k].block;
     return !b || botLevel_(ctx, b) === 'edit';
   });
@@ -8521,6 +8705,8 @@ function botWriteCheck_(ctx, w) {
   if (!spec) throw new Error('不能執行：' + w.action);
   if (botStaffCfg_().writes.indexOf(w.action) < 0) throw new Error('管理員沒有開放「' + spec.label + '」給助理使用');
   if (spec.block) botNeed_(ctx, spec.block, 'edit');
+  if (spec.del && spec.block && !ctx.access.canDelete) throw new Error('刪除需要網站帳號有刪除權限（只有系統管理員），你的帳號不能用助理刪除這類資料');
+  if (spec.del && !spec.block && !ctx.username) throw new Error('請先把你的 LINE 綁定到網站帳號，才能刪除自己的行事曆 / 工作 / 備忘錄');
   var d = w.data || {};
   var s = function (k) { return String(d[k] == null ? '' : d[k]).trim(); };
   if (w.action === 'remember') {
@@ -8665,6 +8851,58 @@ function botWriteCheck_(ctx, w) {
     var tto = d.reopen === true ? 'todo' : 'done';
     return { line: (tto === 'done' ? '☑️ 完成工作：' : '↩️ 重開工作：') + ct.row['Title'] };
   }
+  if (w.action === 'deleteCustomer') {
+    var dc = botFindCustomerRow_(s('company'));
+    if (!dc) throw new Error('找不到客戶「' + s('company') + '」');
+    var dcn = String(dc.obj['CompanyName']);
+    var dcases = sheetToObjects(SHEET_CASES).rows.filter(function (r) { return String(r['CustomerName']).trim() === dcn; }).length;
+    if (dcases && d.force !== true) throw new Error('「' + dcn + '」底下還有 ' + dcases + ' 個案件，刪除客戶後這些案件會找不到客戶資料。要連同刪除請跟同事再確認一次，確定後把 force 設為 true');
+    return { line: '🗑️ ⚠️ 刪除客戶「' + dcn + '」' + (dcases ? '（底下還有 ' + dcases + ' 個案件）' : '') + '（無法復原）' };
+  }
+  if (w.action === 'deleteContact') {
+    var dct = botFindCustomerRow_(s('company'));
+    if (!dct) throw new Error('找不到客戶「' + s('company') + '」');
+    var dctn = String(dct.obj['CompanyName']);
+    var dctRow = sheetToObjects(SHEET_CUSTOMER_CONTACTS).rows.filter(function (r) { return String(r['CompanyName']) === dctn && String(r['ContactName']).trim() === s('contactName'); }).length;
+    if (!dctRow) throw new Error(dctn + ' 沒有叫「' + s('contactName') + '」的聯絡窗口');
+    return { line: '🗑️ ⚠️ 刪除 ' + dctn + ' 的聯絡窗口「' + s('contactName') + '」（無法復原）' };
+  }
+  if (w.action === 'deleteCase') {
+    var dcs = findCase(s('caseId'));
+    if (!dcs) throw new Error('找不到案件「' + s('caseId') + '」');
+    return { line: '🗑️ ⚠️ 刪除案件「' + dcs['CaseID'] + '」（連同 CCD 需求與相關公司，無法復原）' };
+  }
+  if (w.action === 'deleteProduct') {
+    var dpf = botFindProduct_(s('internalModel'));
+    if (!dpf.obj) throw new Error('找不到產品「' + s('internalModel') + '」' + (dpf.near.length ? '，你是不是要找：' + dpf.near.join('、') : ''));
+    return { line: '🗑️ ⚠️ 刪除產品「' + dpf.obj['InternalModel'] + '」（無法復原）' };
+  }
+  if (w.action === 'deletePriceRecord') {
+    if (botStaffCfg_().hidePrice) throw new Error('管理員設定助理不處理價格資料');
+    var dpr = botPriceMatch_(s('internalModel'), s('date'), d.price);
+    return { line: '🗑️ ⚠️ 刪除報價紀錄：' + dpr.model + '｜' + dateKey_(dpr.row['Date']) + '｜' + dpr.row['Price'] + ' ' + (dpr.row['Currency'] || 'TWD') + '（無法復原）' };
+  }
+  if (w.action === 'deleteCopyPost') {
+    var dcp = copyFindRow_(SHEET_COPY_POSTS, d.id);
+    if (!dcp) throw new Error('找不到這篇文案 #' + d.id);
+    return { line: '🗑️ ⚠️ 刪除文案 #' + d.id + '：' + String(dcp.row['Topic'] || dcp.row['Content'] || '').slice(0, 30) + '（無法復原）' };
+  }
+  if (w.action === 'deleteEvent') {
+    var dev = wsFindById_(SHEET_CAL, d.id);
+    if (!dev) throw new Error('找不到行程 #' + d.id);
+    if (String(dev.row['Owner']) !== ctx.username) throw new Error('這不是你的行程，只有擁有者可以刪除');
+    return { line: '🗑️ 刪除行程：' + dateKey_(dev.row['StartDate']) + ' ' + dev.row['Title'] };
+  }
+  if (w.action === 'deleteTodo') {
+    var dtd = wsFindById_(SHEET_TODOS, d.id);
+    if (!dtd) throw new Error('找不到工作 #' + d.id);
+    if (String(dtd.row['Owner']) !== ctx.username) throw new Error('這不是你的工作，只有擁有者可以刪除');
+    return { line: '🗑️ 刪除工作：' + dtd.row['Title'] };
+  }
+  if (w.action === 'deleteMemo') {
+    var dmm = botMemoOwn_(ctx, d.rowIndex, s('title'));
+    return { line: '🗑️ 刪除備忘錄：' + (dmm['Title'] || String(dmm['Content'] || '').slice(0, 20)) };
+  }
   if (w.action === 'saveCopyPost') {
     if (!s('content') && !s('topic')) throw new Error('主題與內文至少要填一個');
     if (s('platform') && COPY_PLATFORMS.indexOf(s('platform')) < 0) throw new Error('平台只能是：' + COPY_PLATFORMS.join('、'));
@@ -8696,10 +8934,18 @@ function botCommit_(id, body) {
   if (body.token && String(body.token) !== p.token) throw new Error('這不是最新一筆等待確認的修改，請用最新的確認按鈕');
   var results = [];
   botCacheRemove_(['linep:' + id]); // 先清掉，避免按兩次寫兩次
+  var lines = String(p.summary).split('\n');
   withLock_(function () {
-    p.ops.forEach(function (w) {
-      botWriteCheck_(ctx, w); // 確認當下再檢查一次權限與資料
-      results.push(botWriteRun_(ctx, w));
+    p.ops.forEach(function (w, i) {
+      var isDel = String(w.action).indexOf('delete') === 0;
+      try {
+        botWriteCheck_(ctx, w); // 確認當下再檢查一次權限與資料
+        results.push(botWriteRun_(ctx, w));
+      } catch (e) {
+        botAudit_(ctx, 'denied', '確認後執行失敗：' + (lines[i] || w.action) + '（' + e.message + '）');
+        throw e;
+      }
+      botAudit_(ctx, isDel ? 'delete' : 'write', '已執行：' + (lines[i] || w.action));
     });
   });
   return { summary: p.summary, count: results.length, results: results };
@@ -8823,6 +9069,56 @@ function botWriteRun_(ctx, w) {
     if (!cr.success) throw new Error(cr.message);
     return { action: w.action, ok: true };
   }
+  if (w.action === 'deleteCustomer') {
+    var dcr = botFindCustomerRow_(s('company'));
+    var rdc = handleDeleteCustomer({ _user: user, rowIndex: dcr.row, companyName: dcr.obj['CompanyName'], force: d.force === true });
+    if (!rdc.success) throw new Error(rdc.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deleteContact') {
+    var dctn2 = String(botFindCustomerRow_(s('company')).obj['CompanyName']);
+    var crow = 0;
+    sheetToObjects(SHEET_CUSTOMER_CONTACTS).rows.forEach(function (r, i) { if (!crow && String(r['CompanyName']) === dctn2 && String(r['ContactName']).trim() === s('contactName')) crow = i + 2; });
+    var rct = handleDeleteCustomerContact({ _user: user, rowIndex: crow, expect: { CompanyName: dctn2, ContactName: s('contactName') } });
+    if (!rct.success) throw new Error(rct.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deleteCase') {
+    var rcs = handleDeleteCase({ _user: user, caseId: findCase(s('caseId'))['CaseID'] });
+    if (!rcs.success) throw new Error(rcs.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deleteProduct') {
+    var rdp = handleDeleteProduct({ _user: user, rowIndex: botFindProduct_(s('internalModel')).row });
+    if (!rdp.success) throw new Error(rdp.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deletePriceRecord') {
+    var rpr = handleDeletePriceRecord({ _user: user, rowIndex: botPriceMatch_(s('internalModel'), s('date'), d.price).row.RowIndex });
+    if (!rpr.success) throw new Error(rpr.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deleteCopyPost') {
+    var rcp = handleCopyDeletePost({ _user: user, id: d.id });
+    if (!rcp.success) throw new Error(rcp.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deleteEvent') {
+    var rev = handleCalDeleteEvent({ _user: user, id: d.id });
+    if (!rev.success) throw new Error(rev.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deleteTodo') {
+    var rtd = handleTodoDelete({ _user: user, id: d.id });
+    if (!rtd.success) throw new Error(rtd.message);
+    return { action: w.action, ok: true };
+  }
+  if (w.action === 'deleteMemo') {
+    botMemoOwn_(ctx, d.rowIndex, s('title'));
+    var rmm = handleDeleteMemo({ _user: user, rowIndex: Number(d.rowIndex) });
+    if (!rmm.success) throw new Error(rmm.message || '刪除失敗');
+    return { action: w.action, ok: true };
+  }
   if (w.action === 'saveCopyPost') {
     var post = { platform: s('platform') || 'Threads', topic: s('topic'), keywords: s('keywords'), tone: s('tone'), content: s('content'), status: s('scheduledFor') ? 'scheduled' : 'draft', scheduled_for: s('scheduledFor') };
     if (d.id) {
@@ -8940,6 +9236,7 @@ function handleBotSaveStaff(body) {
     if (c.ceiling) next.ceiling = botStaffCeiling_(c.ceiling);
     if (Array.isArray(c.writes)) next.writes = botStaffWrites_(c.writes);
     if (c.hidePrice !== undefined) next.hidePrice = c.hidePrice === true;
+    if (c.audit) next.audit = { enabled: c.audit.enabled !== false, reads: c.audit.reads !== false };
     if (c.push) next.push = Object.assign({}, cur.push || {}, { enabled: c.push.enabled === true, hour: botInt_(c.push.hour, 0, 23, 8) });
     if (c.memory) {
       var m = c.memory;

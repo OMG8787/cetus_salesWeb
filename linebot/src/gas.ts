@@ -182,7 +182,7 @@ export interface StaffWrite {
 const TIMEOUT_MS = 25_000;
 
 /** 員工助理的操作用員工金鑰，其餘（客服）用客服金鑰：管理系統那邊每把金鑰只能做自己那一邊的事 */
-const STAFF_OPS = new Set(["start", "call", "stage", "commit", "cancel", "remember", "forget", "unfollow", "memory", "pushTargets"]);
+const STAFF_OPS = new Set(["start", "call", "stage", "commit", "cancel", "remember", "forget", "unfollow", "memory", "audit", "pushTargets"]);
 
 async function post<T>(body: Record<string, unknown>, retry = true): Promise<T> {
   const staff = STAFF_OPS.has(String(body.op));
@@ -258,6 +258,14 @@ export const gas = {
   /** 查詢（依這個人的權限過濾；沒權限會丟出錯誤） */
   staffCall(lineUserId: string, call: string, params: Record<string, unknown> = {}): Promise<unknown> {
     return post({ op: "call", lineUserId, call, params });
+  },
+  /** 回報機器人伺服器自己做的事（搜尋知識庫、選型計算），記進管理系統的「助理紀錄」備忘錄。失敗不影響助理。 */
+  async staffAudit(lineUserId: string, kind: "read" | "write" | "info", text: string): Promise<void> {
+    try {
+      await post({ op: "audit", lineUserId, kind, text });
+    } catch (error) {
+      console.warn("助理紀錄回報失敗", (error as Error).message);
+    }
   },
   /** 提出要寫入的修改：驗證後暫存 15 分鐘，本人確認才寫入 */
   staffStage(lineUserId: string, ops: StaffWrite[]): Promise<{ token: string; summary: string }> {

@@ -237,7 +237,7 @@ function demoBotApi(action, params, db) {
     case 'botTestAi':
       return b.ai[params.index || 0] ? { success: true, reply: '成功', ms: 321, model: b.ai[params.index || 0].model || 'default', provider: b.ai[params.index || 0].provider } : { success: false, message: '沒有這個模型' };
     case 'botKbList':
-      return { success: true, items: b.kb.map((k, i) => Object.assign({ RowIndex: i + 2, BigCategory: '', Topic: '', Notes: '', HasVector: false }, k)), embed: b.ai.some((m) => m.provider !== 'claude') ? { provider: 'gemini', model: 'gemini-embedding-001', dim: 256 } : null, categories: [...new Set(b.kb.map((k) => k.BigCategory).filter(Boolean))], pendingVectors: b.kb.filter((k) => !k.HasVector).length };
+      return { success: true, items: b.kb.map((k, i) => Object.assign({ RowIndex: i + 2, BigCategory: '', Topic: '', Notes: '', HasVector: false }, k, { audience: k.audience || ['cs', 'staff'] })), embed: b.ai.some((m) => m.provider !== 'claude') ? { provider: 'gemini', model: 'gemini-embedding-001', dim: 256 } : null, categories: [...new Set(b.kb.map((k) => k.BigCategory).filter(Boolean))], pendingVectors: b.kb.filter((k) => !k.HasVector).length };
     case 'botKbEmbed':
       b.kb.forEach((k) => (k.HasVector = true));
       save();
@@ -245,6 +245,7 @@ function demoBotApi(action, params, db) {
     case 'botKbSave': {
       const row = { BigCategory: params.bigCategory || '', Topic: params.topic || '', Notes: params.notes || '', HasVector: false, ID: params.id || (b.kb.reduce((m, k) => Math.max(m, k.ID), 0) + 1), Type: params.type, Title: params.title || String(params.question || params.content).slice(0, 40), Question: params.question || '', Content: params.content, Tags: params.tags || '', Source: params.source || '', IsActive: params.isActive !== false, UpdatedAt: nowStr() };
       const idx = b.kb.findIndex((k) => k.ID === params.id);
+      row.audience = params.audience !== undefined ? params.audience.filter((x) => x === 'cs' || x === 'staff') : idx > -1 ? b.kb[idx].audience || ['cs', 'staff'] : ['cs', 'staff'];
       if (idx > -1) b.kb[idx] = row;
       else b.kb.push(row);
       save();
@@ -252,9 +253,17 @@ function demoBotApi(action, params, db) {
     }
     case 'botKbImport': {
       let id = b.kb.reduce((m, k) => Math.max(m, k.ID), 0);
-      (params.rows || []).forEach((r) => b.kb.push({ ID: ++id, Type: 'doc', Title: r.title, Question: '', Content: r.content, Tags: '', Source: r.source || '', IsActive: true, UpdatedAt: nowStr() }));
+      (params.rows || []).forEach((r) => b.kb.push({ ID: ++id, Type: 'doc', Title: r.title, Question: '', Content: r.content, Tags: '', Source: r.source || '', IsActive: true, UpdatedAt: nowStr(), audience: (params.audience || ['cs', 'staff']).filter((x) => x === 'cs' || x === 'staff') }));
       save();
       return { success: true, count: (params.rows || []).length };
+    }
+    case 'botKbSetAudience': {
+      const ids = params.ids || [];
+      if (!ids.length) return { success: false, message: '沒有選任何項目' };
+      const audience = (params.audience || []).filter((x) => x === 'cs' || x === 'staff');
+      b.kb.forEach((k) => ids.includes(k.ID) && (k.audience = audience));
+      save();
+      return { success: true, count: ids.length, audience };
     }
     case 'botKbDelete': {
       const before = b.kb.length;
@@ -338,7 +347,7 @@ function demoStaffState(db) {
   const b = demoBotState(db);
   if (!b.staff) {
     b.staff = {
-      config: { enabled: false, welcome: '', pendingText: '', prompt: '', webEnabled: true, hidePrice: false, ceiling: { products: 'edit', cases: 'edit', customers: 'edit' }, writes: ['addMemo', 'logFollowUp', 'updateCustomer', 'addCustomer', 'createCase', 'updateCaseStatus', 'updateCase', 'addContact', 'addPriceRecord', 'addProduct', 'updateProduct', 'createInquiryDraft', 'saveCopyPost', 'addEvent', 'addTodo', 'completeTodo', 'remember'], push: { enabled: false, hour: 8, last: '' }, memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, auto: false, autoEvery: 6 } },
+      config: { enabled: false, welcome: '', pendingText: '', prompt: '', webEnabled: true, hidePrice: false, ceiling: { products: 'edit', cases: 'edit', customers: 'edit' }, writes: ['addMemo', 'logFollowUp', 'updateCustomer', 'addCustomer', 'createCase', 'updateCaseStatus', 'updateCase', 'addContact', 'addPriceRecord', 'addProduct', 'updateProduct', 'createInquiryDraft', 'saveCopyPost', 'addEvent', 'addTodo', 'completeTodo', 'deleteCustomer', 'deleteContact', 'deleteCase', 'deleteProduct', 'deletePriceRecord', 'deleteCopyPost', 'deleteEvent', 'deleteTodo', 'deleteMemo', 'remember'], push: { enabled: false, hour: 8, last: '' }, memory: { enabled: true, maxItems: 30, confirm: true, canShared: false, auto: false, autoEvery: 6 } },
       members: [
         { LineUserId: 'U' + 'a'.repeat(32), DisplayName: '王小明', PictureUrl: '', Status: '待開通', Role: 'viewer', PermsObj: {}, LinkedUsername: '', LinkedName: '', Note: '', PushDaily: false, IsFollowing: true, FollowedAt: '2026-11-04 09:00:00', LastSeenAt: '2026-11-04 09:00:00', ApprovedBy: '' },
         { LineUserId: 'U' + 'b'.repeat(32), DisplayName: '李小華', PictureUrl: '', Status: '已開通', Role: 'limited', PermsObj: { cases: 'edit', customers: 'view' }, LinkedUsername: 'a', LinkedName: 'A', Note: 'FAE', PushDaily: true, IsFollowing: true, FollowedAt: '2026-10-20 10:00:00', LastSeenAt: '2026-11-03 17:20:00', ApprovedBy: 'Admin' },
@@ -358,7 +367,7 @@ function demoStaffApi(action, params, db) {
       return {
         success: true, config: st.config, members: st.members, accounts: (db.users || []).map((u) => ({ username: u.Username, name: u.DisplayName || u.Username })),
         me: '0000', canLinkOthers: true, memory: st.memory, memoryCategories: DEMO_STAFF_CATS, blocks: DEMO_BLOCKS,
-        writes: [{ key: 'addMemo', label: '新增備忘錄' }, { key: 'logFollowUp', label: '記錄追蹤 / 改下次追蹤' }, { key: 'updateCustomer', label: '修改客戶資料' }, { key: 'addCustomer', label: '新增客戶' }, { key: 'createCase', label: '建立案件' }, { key: 'updateCaseStatus', label: '修改案件狀態 / 緊急程度' }, { key: 'updateCase', label: '修改案件內容（聯絡人 / 需求說明 / 評估結果…）' }, { key: 'addContact', label: '新增客戶聯絡窗口' }, { key: 'addPriceRecord', label: '記錄報價（價格紀錄）' }, { key: 'addProduct', label: '新增產品' }, { key: 'updateProduct', label: '修改產品資料' }, { key: 'createInquiryDraft', label: '建立詢價信 Gmail 草稿（不會寄出）' }, { key: 'saveCopyPost', label: '儲存文案草稿' }, { key: 'addEvent', label: '新增行事曆行程（自己的）' }, { key: 'addTodo', label: '新增工作清單項目（自己的）' }, { key: 'completeTodo', label: '完成 / 重開工作清單項目（自己的）' }, { key: 'remember', label: '記住（長期記憶）' }],
+        writes: [{ key: 'addMemo', label: '新增備忘錄' }, { key: 'logFollowUp', label: '記錄追蹤 / 改下次追蹤' }, { key: 'updateCustomer', label: '修改客戶資料' }, { key: 'addCustomer', label: '新增客戶' }, { key: 'createCase', label: '建立案件' }, { key: 'updateCaseStatus', label: '修改案件狀態 / 緊急程度' }, { key: 'updateCase', label: '修改案件內容（聯絡人 / 需求說明 / 評估結果…）' }, { key: 'addContact', label: '新增客戶聯絡窗口' }, { key: 'addPriceRecord', label: '記錄報價（價格紀錄）' }, { key: 'addProduct', label: '新增產品' }, { key: 'updateProduct', label: '修改產品資料' }, { key: 'createInquiryDraft', label: '建立詢價信 Gmail 草稿（不會寄出）' }, { key: 'saveCopyPost', label: '儲存文案草稿' }, { key: 'addEvent', label: '新增行事曆行程（自己的）' }, { key: 'addTodo', label: '新增工作清單項目（自己的）' }, { key: 'completeTodo', label: '完成 / 重開工作清單項目（自己的）' }, { key: 'deleteCustomer', label: '🗑️ 刪除客戶（網站帳號有刪除權限才能用）' }, { key: 'deleteContact', label: '🗑️ 刪除客戶聯絡窗口' }, { key: 'deleteCase', label: '🗑️ 刪除案件' }, { key: 'deleteProduct', label: '🗑️ 刪除產品' }, { key: 'deletePriceRecord', label: '🗑️ 刪除報價紀錄' }, { key: 'deleteCopyPost', label: '🗑️ 刪除文案' }, { key: 'deleteEvent', label: '🗑️ 刪除行事曆行程（自己的）' }, { key: 'deleteTodo', label: '🗑️ 刪除工作清單項目（自己的）' }, { key: 'deleteMemo', label: '🗑️ 刪除備忘錄（自己的）' }, { key: 'remember', label: '記住（長期記憶）' }],
       };
     case 'botSaveStaff': {
       const c = params.config || {};
@@ -1083,6 +1092,7 @@ function handleDemoApi(action, params) {
     case 'botTestAi':
     case 'botKbList':
     case 'botKbSave':
+    case 'botKbSetAudience':
     case 'botKbImport':
     case 'botKbDelete':
     case 'botGenKey':

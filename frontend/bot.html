@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261105a"></script>
+<script src="theme.js?v=20261105b"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261105a" />
-<link rel="stylesheet" href="dark.css?v=20261105a" />
+<link rel="stylesheet" href="style.css?v=20261105b" />
+<link rel="stylesheet" href="dark.css?v=20261105b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -337,7 +337,7 @@
       <div class="calc-hint" style="line-height:1.8;">
         員工用 <b>LINE（員工專用官方帳號）</b>或<b>網站右下角的「智能助理」</b>聊天查資料、交代事情：「今天要追蹤哪些客戶？」「甲公司的聯絡人電話」「記一筆：今天電話聯繫乙公司，下週三再追蹤」。<br>
         ・員工加官方帳號好友後，下面「成員」會出現一列（<b>待開通、沒有任何權限</b>），首頁備忘錄也會通知；你確認是同事後才開通並設定權限（跟網站帳號同一套：編輯者 / 查看 / 特定）。<br>
-        ・查詢<b>依這個人的權限過濾</b>；新增 / 修改只有 AI「提出」，<b>本人按確認才寫入</b>；助理不能刪除任何資料。
+        ・查詢<b>依這個人的權限過濾</b>；新增 / 修改只有 AI「提出」，<b>本人按確認才寫入</b>；<b>刪除</b>只有網站帳號本來就有刪除權限的人（系統管理員）的助理才能提出，一樣要本人確認；助理做的每一件事都會記在備忘錄「助理紀錄」。
       </div>
       <label class="bot-check"><input type="checkbox" id="st-enabled" /> <b>啟用員工助理</b></label>
       <label class="bot-check"><input type="checkbox" id="st-web" /> 開放網站右下角的「智能助理」（用登入帳號本人的權限；需要先啟用上面那項）</label>
@@ -365,14 +365,17 @@
 
     <div class="panel">
       <h3 style="margin-top:0;">🔒 助理能存取的資料（上限）</h3>
-      <div class="calc-hint" style="line-height:1.8;">這裡是整個員工助理的<b>天花板</b>：實際權限 = 成員（網站帳號）的權限與這裡的上限<b>取較小者</b>。例如客戶資料設「不開放」，所有成員的助理都查不到客戶。員工助理永遠不能刪除資料。</div>
+      <div class="calc-hint" style="line-height:1.8;">這裡是整個員工助理的<b>天花板</b>：實際權限 = 成員（網站帳號）的權限與這裡的上限<b>取較小者</b>。例如客戶資料設「不開放」，所有成員的助理都查不到客戶。<b>刪除</b>：只有網站帳號本來就有刪除權限的人（系統管理員）的助理才能提出刪除，而且一樣要本人確認；自己的行事曆 / 工作 / 備忘錄綁定帳號後就能刪。要完全禁止，到右邊取消勾選各個「🗑️ 刪除」項目。</div>
       <div class="bot-grid">
         <div>
           <label>產品與詢價 <select id="st-cap-products" class="st-cap"></select></label>
           <label>案件管理 <select id="st-cap-cases" class="st-cap"></select></label>
           <label>客戶與行事曆 <select id="st-cap-customers" class="st-cap"></select></label>
           <label class="bot-check"><input type="checkbox" id="st-hide-price" /> 對助理隱藏產品<b>底價與供應商</b>（就算成員有產品權限也看不到）</label>
-          <div class="calc-hint">行事曆需要「客戶」或「案件」至少一項可查看。</div>
+          <div class="calc-hint">行事曆是每個帳號各自的，需要把 LINE 綁定到網站帳號。</div>
+          <label class="bot-check" style="margin-top:10px;"><input type="checkbox" id="st-audit" /> 📋 助理做的任何事都記在備忘錄（助理紀錄）供檢查</label>
+          <label class="bot-check" style="margin-left:22px;"><input type="checkbox" id="st-audit-reads" /> 連「查詢」也記（取消勾選 = 只記修改、刪除與被擋下的）</label>
+          <div class="calc-hint">每位成員每天一則「🤖 助理紀錄」備忘錄，依時間記下查詢、提出的修改、確認後執行的結果、刪除、取消與被權限擋下的嘗試。只有有「BOT 設定」權限的人看得到，<b>只有系統管理員能修改或刪除</b>。</div>
         </div>
         <div>
           <label>助理可以「提出」的修改（要本人確認才寫入；取消勾選 = 完全不能做）</label>
@@ -523,8 +526,28 @@
     <datalist id="kb-cats"></datalist>
     <label>備註（寫給 AI 看的分流提示，例如「客人問打光、照明時使用」；客人看不到）</label>
     <textarea id="faq-notes" rows="2" maxlength="1000"></textarea>
+    <label>誰可以看到這筆（可複選，預設都開放）</label>
+    <div class="bot-row">
+      <label class="bot-check"><input type="checkbox" id="faq-aud-cs" checked /> 🛎️ 對外客服機器人</label>
+      <label class="bot-check"><input type="checkbox" id="faq-aud-staff" checked /> 🧑‍💼 員工助理</label>
+    </div>
+    <div class="calc-hint">用來控制資料給誰看：只勾「員工助理」= 內部資料，客人問不到；兩個都不勾 = 兩邊都看不到（等於停用）。客服機器人除了知識庫以外什麼資料都看不到。</div>
     <label class="bot-check"><input type="checkbox" id="faq-active" checked /> 啟用（沒勾 = 機器人不會用到這一筆）</label>
     <div style="margin-top:10px;"><button type="button" onclick="saveFaq()">儲存</button></div>
+  </div>
+</div>
+
+<!-- 批次設定可見對象 -->
+<div id="aud-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:460px;">
+    <div class="modal-header"><h3 style="margin:0;">誰可以看到</h3><button type="button" onclick="closeModal('aud-modal')">關閉</button></div>
+    <div id="aud-target" class="calc-hint"></div>
+    <div class="bot-row">
+      <label class="bot-check"><input type="checkbox" id="aud-cs" /> 🛎️ 對外客服機器人</label>
+      <label class="bot-check"><input type="checkbox" id="aud-staff" /> 🧑‍💼 員工助理</label>
+    </div>
+    <div class="calc-hint">兩個都不勾 = 兩邊都看不到。儲存後最多 5 分鐘生效。</div>
+    <div style="margin-top:10px;"><button type="button" onclick="saveAudience()">儲存</button></div>
   </div>
 </div>
 
@@ -540,6 +563,12 @@
     </div>
     <label>備註（選填，寫給 AI 看的分流提示）</label>
     <input id="doc-notes" maxlength="500" />
+    <label>誰可以看到這份文件（可複選，預設都開放）</label>
+    <div class="bot-row">
+      <label class="bot-check"><input type="checkbox" id="doc-aud-cs" checked /> 🛎️ 對外客服機器人</label>
+      <label class="bot-check"><input type="checkbox" id="doc-aud-staff" checked /> 🧑‍💼 員工助理</label>
+    </div>
+    <div class="calc-hint">用來控制資料給誰看：只勾「員工助理」= 內部資料，客人問不到；兩個都不勾 = 兩邊都看不到（等於停用）。客服機器人除了知識庫以外什麼資料都看不到。</div>
     <label>上傳檔案（txt / md / csv / json / html / PDF，可選）</label>
     <input type="file" id="doc-file" accept=".txt,.md,.csv,.json,.html,.htm,.pdf,text/*" onchange="onDocFile(this)" />
     <label>內容（貼上，或上傳後自動帶入，可以修改）</label>
@@ -552,11 +581,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261105a"></script>
-<script src="demo.js?v=20261105a"></script>
-<script src="common.js?v=20261105a"></script>
-<script src="assistant.js?v=20261105a"></script>
-<script src="bot.js?v=20261105a"></script>
-<script src="botstaff.js?v=20261105a"></script>
+<script src="config.js?v=20261105b"></script>
+<script src="demo.js?v=20261105b"></script>
+<script src="common.js?v=20261105b"></script>
+<script src="assistant.js?v=20261105b"></script>
+<script src="bot.js?v=20261105b"></script>
+<script src="botstaff.js?v=20261105b"></script>
 </body>
 </html>

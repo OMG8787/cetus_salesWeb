@@ -7,7 +7,7 @@ AOI 業務系統的機器人伺服器，部署在 Vercel。設定、知識庫、
 | `/api/cs` | **客服機器人**的 LINE Webhook（對外官方帳號）：客人問產品、規格、公司資訊，機器人用知識庫回答；報價、訂購、客訴、找人 → 轉真人 |
 | `/widget.js` + `/api/widget/*` | **網站客服視窗**：貼一行 `<script>` 到任何網站，右下角出現客服視窗，跟 LINE 客服同一套知識庫與規則 |
 | `/api/test` | 網站「BOT 設定 → 測試聊天」用（用管理系統簽的權杖，不通知同仁、不留對話紀錄） |
-| `/api/line` | **員工助理**的 LINE Webhook（員工專用官方帳號）：員工查客戶 / 案件 / 產品與報價 / 行事曆與工作清單、記錄追蹤、選型計算、寫詢價信與文案草稿；所有修改要本人確認才寫入，不能刪除 |
+| `/api/line` | **員工助理**的 LINE Webhook（員工專用官方帳號）：員工查客戶 / 案件 / 產品與報價 / 行事曆與工作清單、記錄追蹤、選型計算、寫詢價信與文案草稿；所有修改與刪除要本人確認才執行（刪除還要網站帳號有刪除權限），做的每件事都記在備忘錄 |
 | `/api/search` | 網站「BOT 設定 → 知識庫 → 搜尋測試」用（管理系統簽的權杖）：顯示各種檢索模式找到的段落與分數 |
 | `/api/web` | 網站右下角「智能助理」：只給管理系統（Apps Script）用 Bot 金鑰呼叫 |
 | `/api/push` | 每日早報：管理系統每小時檢查，到時間呼叫（header `x-bot-secret`） |
@@ -74,16 +74,16 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 | 類型 | 工具 |
 |---|---|
 | 查詢 | `overview`、`list_memos`、`list_calendar`、`list_todos`、`search_knowledge`、`search_customers`、`get_customer`、`followups_due`、`contact_logs`、`search_cases`、`get_case`、`search_products`、`get_product`、`price_history`、`inquiry_draft`、`calc_selection`、`copy_posts`、`copy_style` |
-| 提出修改（暫存 15 分鐘，本人確認才寫入） | `add_memo`、`log_followup`、`update_customer`、`add_customer`、`add_contact`、`create_case`、`update_case`、`update_case_info`、`add_price_record`、`add_product`、`update_product`、`create_inquiry_draft`、`save_copy_post`、`add_event`、`add_todo`、`complete_todo`、`remember` |
+| 提出修改（暫存 15 分鐘，本人確認才寫入） | `add_memo`、`log_followup`、`update_customer`、`add_customer`、`add_contact`、`create_case`、`update_case`、`update_case_info`、`add_price_record`、`add_product`、`update_product`、`create_inquiry_draft`、`save_copy_post`、`add_event`、`add_todo`、`complete_todo`、`delete_customer`、`delete_contact`、`delete_case`、`delete_product`、`delete_price_record`、`delete_copy_post`、`delete_event`、`delete_todo`、`delete_memo`、`remember` |
 
-工具依這個人的權限與管理員設定的上限出現；**沒有任何刪除工具**。
+工具依這個人的權限與管理員設定的上限出現；**刪除工具只有網站帳號本來就有刪除權限的人才有**，仍要本人確認；每個動作（含搜尋知識庫、選型計算）都會回報給管理系統記進「助理紀錄」備忘錄。
 
 ## 開發
 
 ```bash
 npm install
 npm run typecheck
-npm test          # 64 組：檢索 / 向量、選型計算、客服與員工助理、金鑰分流…
+npm test          # 68 組：檢索 / 向量、選型計算、客服與員工助理、金鑰分流…
 npx tsx test/calc-compare.ts <cases.json> <網站算出的結果.json>   # 選用：與網站 calc.js 逐項比對
 ```
 

@@ -300,6 +300,13 @@ function kbSnippet(t, n) {
   return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
+/** 知識庫每一筆「誰看得到」：對外客服 / 員工助理 */
+const audOf = (k) => (Array.isArray(k.audience) ? k.audience : ['cs', 'staff']);
+const audText = (a) => (a.length === 2 ? '客服＋助理' : !a.length ? '都不開放' : a[0] === 'cs' ? '僅對外客服' : '僅員工助理');
+function audBadge(a) {
+  return `<span class="bot-badge ${a.length === 2 ? '' : a.length ? 'aud-part' : 'warn'}" title="誰可以看到這筆">${audText(a)}</span>`;
+}
+
 function renderKb() {
   if (!kbItems) return;
   const kw = val('kb-keyword').trim().toLowerCase();
@@ -317,9 +324,9 @@ function renderKb() {
   const argOf = (v) => `decodeURIComponent('${encodeURIComponent(v)}')`;
   let html = '';
   if (faqs.length) {
-    html += '<table class="bot-table"><thead><tr><th>常見問題</th><th>答案</th><th>分類 / 主題</th><th>向量</th><th>啟用</th><th></th></tr></thead><tbody>';
+    html += '<table class="bot-table"><thead><tr><th>常見問題</th><th>答案</th><th>分類 / 主題</th><th>向量</th><th>可見對象</th><th>啟用</th><th></th></tr></thead><tbody>';
     faqs.forEach((k) => {
-      html += `<tr class="${k.IsActive ? '' : 'off'}"><td><b>${htmlEsc(k.Question || k.Title)}</b></td><td>${htmlEsc(kbSnippet(k.Content, 120))}${k.Notes ? `<div class="calc-hint">📝 ${htmlEsc(kbSnippet(k.Notes, 60))}</div>` : ''}</td><td>${htmlEsc([k.BigCategory, k.Topic].filter(Boolean).join(' / '))}${k.Tags ? `<div class="calc-hint">${htmlEsc(k.Tags)}</div>` : ''}</td><td>${k.HasVector ? '✓' : kbEmbed ? '<span style="color:#c0392b;">—</span>' : ''}</td>
+      html += `<tr class="${k.IsActive ? '' : 'off'}"><td><b>${htmlEsc(k.Question || k.Title)}</b></td><td>${htmlEsc(kbSnippet(k.Content, 120))}${k.Notes ? `<div class="calc-hint">📝 ${htmlEsc(kbSnippet(k.Notes, 60))}</div>` : ''}</td><td>${htmlEsc([k.BigCategory, k.Topic].filter(Boolean).join(' / '))}${k.Tags ? `<div class="calc-hint">${htmlEsc(k.Tags)}</div>` : ''}</td><td>${k.HasVector ? '✓' : kbEmbed ? '<span style="color:#c0392b;">—</span>' : ''}</td><td>${audBadge(audOf(k))}</td>
         <td><input type="checkbox" class="bot-write" ${k.IsActive ? 'checked' : ''} ${readOnly() ? 'disabled' : ''} onchange="toggleKbActive(${k.ID}, this.checked)" /></td>
         <td class="nowrap"><button type="button" class="btn-mini bot-write" onclick="openFaqModal(${k.ID})">編輯</button> <button type="button" class="btn-mini" onclick="deleteBotItem(${k.ID})">刪除</button></td></tr>`;
     });
@@ -327,7 +334,9 @@ function renderKb() {
   }
   Object.keys(docs).forEach((name) => {
     const list = docs[name];
-    html += `<details class="bot-doc"><summary>📄 <b>${htmlEsc(name)}</b> <span class="calc-hint">${list.length} 段</span>
+    const kinds = [...new Set(list.map((k) => audText(audOf(k))))];
+    html += `<details class="bot-doc"><summary>📄 <b>${htmlEsc(name)}</b> <span class="calc-hint">${list.length} 段</span> ${kinds.length === 1 ? audBadge(audOf(list[0])) : '<span class="bot-badge aud-part">可見對象不一致</span>'}
+      <button type="button" class="btn-mini bot-write" onclick="event.preventDefault();openAudModal(${argOf(name)})">🔒 可見對象</button>
       <button type="button" class="btn-mini" onclick="event.preventDefault();deleteBotDoc(${argOf(name)}, ${list.length})">刪除整份文件</button></summary>
       <table class="bot-table"><tbody>${list
         .map(
@@ -343,7 +352,7 @@ function renderKb() {
 async function toggleKbActive(id, on) {
   const k = kbItems.find((x) => x.ID === id);
   if (!k) return;
-  const r = await callApi('botKbSave', { rowIndex: k.RowIndex, id: k.ID, type: k.Type, title: k.Title, question: k.Question, content: k.Content, tags: k.Tags, source: k.Source, isActive: on });
+  const r = await callApi('botKbSave', { rowIndex: k.RowIndex, id: k.ID, type: k.Type, title: k.Title, question: k.Question, content: k.Content, tags: k.Tags, source: k.Source, bigCategory: k.BigCategory, topic: k.Topic, notes: k.Notes, isActive: on });
   if (!r.success) alert(r.message);
   loadKb();
 }
@@ -362,6 +371,9 @@ function openFaqModal(id) {
   setVal('faq-topic', k ? k.Topic : '');
   setVal('faq-notes', k ? k.Notes : '');
   $('faq-active').checked = k ? k.IsActive : true;
+  const aud = k ? audOf(k) : ['cs', 'staff'];
+  $('faq-aud-cs').checked = aud.includes('cs');
+  $('faq-aud-staff').checked = aud.includes('staff');
   $('faq-modal').style.display = 'flex';
 }
 
@@ -373,7 +385,7 @@ async function saveFaq() {
   const id = Number($('faq-modal').dataset.id) || 0;
   const k = id ? kbItems.find((x) => x.ID === id) : null;
   const isDoc = k && k.Type === 'doc';
-  const body = { type: isDoc ? 'doc' : 'qa', question: val('faq-question').trim(), content: val('faq-content').trim(), tags: val('faq-tags').trim(), bigCategory: val('faq-cat').trim(), topic: val('faq-topic').trim(), notes: val('faq-notes').trim(), isActive: $('faq-active').checked };
+  const body = { type: isDoc ? 'doc' : 'qa', question: val('faq-question').trim(), content: val('faq-content').trim(), tags: val('faq-tags').trim(), bigCategory: val('faq-cat').trim(), topic: val('faq-topic').trim(), notes: val('faq-notes').trim(), isActive: $('faq-active').checked, audience: ['cs', 'staff'].filter((x) => $('faq-aud-' + x).checked) };
   if (!isDoc && !body.question) return alert('請填問題');
   if (!body.content) return alert('請填答案 / 內容');
   if (k) Object.assign(body, { rowIndex: k.RowIndex, id: k.ID, title: k.Title, source: k.Source });
@@ -381,6 +393,27 @@ async function saveFaq() {
   if (!r.success) return alert(r.message);
   if (r.embedError) alert('已儲存，但向量計算失敗：' + r.embedError + '\n之後可以按「補算還沒有向量的」重試。');
   closeModal('faq-modal');
+  loadKb();
+}
+
+let audIds = [];
+function openAudModal(docName) {
+  const list = kbItems.filter((k) => k.Type === 'doc' && (k.Source || k.Title || '（未命名文件）') === docName);
+  if (!list.length) return;
+  audIds = list.map((k) => k.ID);
+  const first = audOf(list[0]);
+  $('aud-target').textContent = `文件「${docName}」共 ${list.length} 段，一次設定整份。`;
+  $('aud-cs').checked = first.includes('cs');
+  $('aud-staff').checked = first.includes('staff');
+  $('aud-modal').style.display = 'flex';
+}
+
+async function saveAudience() {
+  const audience = ['cs', 'staff'].filter((x) => $('aud-' + x).checked);
+  if (!audience.length && !confirm('兩個都不勾，客服與員工助理都看不到這份文件。確定嗎？')) return;
+  const r = await callApi('botKbSetAudience', { ids: audIds, audience });
+  if (!r.success) return alert(r.message);
+  closeModal('aud-modal');
   loadKb();
 }
 
@@ -430,6 +463,8 @@ function openDocModal() {
   setVal('doc-name', '');
   setVal('doc-text', '');
   setVal('doc-file', '');
+  $('doc-aud-cs').checked = true;
+  $('doc-aud-staff').checked = true;
   updateDocPreview();
   $('doc-modal').style.display = 'flex';
 }
@@ -501,7 +536,7 @@ async function importDoc() {
   let done = 0;
   for (let i = 0; i < chunks.length; i += 200) {
     const part = chunks.slice(i, i + 200).map((c, j) => ({ title: `${name}（${i + j + 1}/${chunks.length}）`, content: c, source: name }));
-    const r = await callApi('botKbImport', { rows: part, bigCategory: val('doc-cat').trim(), topic: val('doc-topic').trim(), notes: val('doc-notes').trim() });
+    const r = await callApi('botKbImport', { rows: part, bigCategory: val('doc-cat').trim(), topic: val('doc-topic').trim(), notes: val('doc-notes').trim(), audience: ['cs', 'staff'].filter((x) => $('doc-aud-' + x).checked) });
     if (!r.success) return alert(`匯入到第 ${done} 段時失敗：${r.message}`);
     done += r.count;
   }

@@ -49,6 +49,8 @@ function fillStaffConfig(c) {
   $('st-mem-confirm').checked = c.memory.confirm;
   $('st-mem-shared').checked = c.memory.canShared;
   $('st-hide-price').checked = c.hidePrice;
+  $('st-audit').checked = !c.audit || c.audit.enabled;
+  $('st-audit-reads').checked = !c.audit || c.audit.reads;
   ['products', 'cases', 'customers'].forEach((b) => {
     const el = $('st-cap-' + b);
     el.innerHTML = [['none', '不開放'], ['view', '只能查看'], ['edit', '可查看與修改']].map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
@@ -68,6 +70,7 @@ async function saveStaff() {
     prompt: val('st-prompt'),
     push: { enabled: $('st-push').checked, hour: Number(val('st-push-hour')) },
     hidePrice: $('st-hide-price').checked,
+    audit: { enabled: $('st-audit').checked, reads: $('st-audit-reads').checked },
     ceiling: { products: val('st-cap-products'), cases: val('st-cap-cases'), customers: val('st-cap-customers') },
     writes: [...document.querySelectorAll('.st-write-opt:checked')].map((e) => e.value),
     memory: { enabled: $('st-mem').checked, maxItems: Number(val('st-mem-max')), confirm: $('st-mem-confirm').checked, canShared: $('st-mem-shared').checked },
