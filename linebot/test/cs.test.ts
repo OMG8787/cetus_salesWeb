@@ -173,7 +173,7 @@ test("AI 提供選項按鈕 → 變成 LINE 快速回覆", async () => {
       : { candidates: [{ content: { role: "model", parts: [{ text: "請問是哪一類產品？" }] } }] };
   await handleCsEvent(msg("這個怎麼用"));
   const messages = replies()[0].body.messages as { quickReply?: { items: { action: { label: string } }[] } }[];
-  assert.deepEqual(messages[0].quickReply?.items.map((i) => i.action.label), ["相機", "鏡頭"]);
+  assert.deepEqual(messages[0].quickReply?.items.map((i) => i.action.label), ["相機", "鏡頭", "🙋 轉真人"]); // 每則回覆下方都有「轉真人」按鈕
 });
 
 test("沒啟用 / 專人服務時間（只在服務時間以外回）→ 不回覆", async () => {

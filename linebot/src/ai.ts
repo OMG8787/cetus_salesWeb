@@ -3,9 +3,17 @@ import type { AiConfig, EmbedConfig } from "./gas.js";
 // 呼叫 AI（Gemini / Claude / OpenAI 相容），支援工具呼叫（function calling）
 // 金鑰與模型由網站「BOT 管理」設定，每則訊息從管理系統取得
 
+/** 要一起送給 AI 看的圖片（base64，不含 data: 前綴） */
+export interface ImageData {
+  mime: string;
+  data: string;
+}
+
 export interface Turn {
   isUser: boolean;
   text: string;
+  /** 這則訊息附的圖片（需要支援圖片輸入的模型，例如 Gemini / Claude / GPT-4o） */
+  images?: ImageData[];
 }
 
 /** 提供給 AI 呼叫的工具 */
@@ -41,8 +49,10 @@ export function normalizeTurns(turns: Turn[]): Turn[] {
     if (!turn.text.trim()) continue;
     if (merged.length === 0 && !turn.isUser) continue;
     const last = merged.at(-1);
-    if (last && last.isUser === turn.isUser) last.text += "\n" + turn.text;
-    else merged.push({ ...turn });
+    if (last && last.isUser === turn.isUser) {
+      last.text += "\n" + turn.text;
+      if (turn.images?.length) last.images = [...(last.images ?? []), ...turn.images];
+    } else merged.push({ ...turn });
   }
   return merged;
 }
@@ -89,7 +99,7 @@ interface GeminiPart {
 async function gemini({ ai, system, turns, tools = [] }: AiRequest): Promise<string> {
   const contents: { role: string; parts: GeminiPart[] }[] = normalizeTurns(turns).map((t) => ({
     role: t.isUser ? "user" : "model",
-    parts: [{ text: t.text }],
+    parts: [{ text: t.text }, ...(t.images ?? []).map((im) => ({ inlineData: { mimeType: im.mime, data: im.data } }))],
   }));
   const body: Record<string, unknown> = { systemInstruction: { parts: [{ text: system }] }, contents };
   if (tools.length) body.tools = [{ functionDeclarations: tools.map(({ name, description, parameters }) => ({ name, description, parameters })) }];
@@ -126,7 +136,9 @@ type ClaudeBlock = { type: string; text?: string; id?: string; name?: string; in
 async function claude({ ai, system, turns, tools = [] }: AiRequest): Promise<string> {
   const messages: { role: string; content: string | ClaudeBlock[] }[] = normalizeTurns(turns).map((t) => ({
     role: t.isUser ? "user" : "assistant",
-    content: t.text,
+    content: t.images?.length
+      ? [...t.images.map((im) => ({ type: "image", source: { type: "base64", media_type: im.mime, data: im.data } })), { type: "text", text: t.text }]
+      : t.text,
   }));
   const toolDefs = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   const url = `${ai.endpoint.replace(/\/+$/, "")}/messages`;
@@ -167,7 +179,10 @@ interface ToolCall {
 async function openai({ ai, system, turns, tools = [] }: AiRequest): Promise<string> {
   const messages: Record<string, unknown>[] = [
     { role: "system", content: system },
-    ...normalizeTurns(turns).map((t) => ({ role: t.isUser ? "user" : "assistant", content: t.text })),
+    ...normalizeTurns(turns).map((t) => ({
+      role: t.isUser ? "user" : "assistant",
+      content: t.images?.length ? [{ type: "text", text: t.text }, ...t.images.map((im) => ({ type: "image_url", image_url: { url: `data:${im.mime};base64,${im.data}` } }))] : t.text,
+    })),
   ];
   const toolDefs = tools.map(({ name, description, parameters }) => ({ type: "function", function: { name, description, parameters } }));
   const url = `${ai.endpoint.replace(/\/+$/, "")}/chat/completions`;

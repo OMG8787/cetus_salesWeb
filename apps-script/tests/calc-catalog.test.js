@@ -32,21 +32,21 @@ const dump = JSON.stringify(cat);
 for (const secret of ['秘密供應商', '15000', '3000', '9999', '內部備註', '毛利', 'RefPrice', 'Supplier"']) ok(!dump.includes(secret), '型錄不含：' + secret);
 ok(JSON.stringify(ctx.botCalcCatalog_(['鏡頭'])).includes('LENS25') && ctx.botCalcCatalog_(['鏡頭']).cameras.length === 0, '類別過濾：只要鏡頭');
 
-// 客服：產品來源有開才給
+// 客服：選型計算有自己的開關（預設開，跟「產品型號與規格」知識來源各自獨立）
 const form = call('handleBotGetSettings', {}).cs;
-form.sources.products = false;
-call('handleBotSaveSettings', { cs: form });
+ok(form.sources.calc === true && form.sources.products === false, '預設：選型計算開、產品知識來源關');
 let r = api(csKey, 'csCalcCatalog', U);
-ok(r.success && r.data.cameras.length === 0 && r.data.fa.length === 0 && r.data.tele.length === 0, '客服沒開產品來源 → 空型錄');
+ok(r.success && r.data.cameras.length === 1 && r.data.fa.length === 1 && r.data.tele.length === 1, '沒開產品知識來源，客服也有選型型錄（機器人才推薦得出相機）');
+ok(!JSON.stringify(r.data).match(/秘密供應商|15000|3000|9999|內部備註/), '客服型錄不含價格 / 供應商 / 備註');
+form.sources.calc = false;
+call('handleBotSaveSettings', { cs: form });
+r = api(csKey, 'csCalcCatalog', U);
+ok(r.success && r.data.cameras.length === 0 && r.data.fa.length === 0 && r.data.tele.length === 0, '關閉選型計算 → 空型錄');
+form.sources.calc = true;
 form.sources.products = true;
 call('handleBotSaveSettings', { cs: form });
 r = api(csKey, 'csCalcCatalog', U);
-ok(r.success && r.data.cameras.length === 1 && r.data.fa.length === 1 && r.data.tele.length === 1, '客服開產品來源 → 有型錄');
-ok(!JSON.stringify(r.data).match(/秘密供應商|15000|3000|內部備註/), '客服型錄不含價格 / 供應商 / 備註');
-form.sources.productCategories = '鏡頭';
-call('handleBotSaveSettings', { cs: form });
-r = api(csKey, 'csCalcCatalog', U);
-ok(r.data.cameras.length === 0 && r.data.fa.length === 1, '客服只開放鏡頭類別 → 相機不出現');
+ok(r.data.cameras.length === 1, '重新打開 → 有型錄');
 ok(!api(stKey, 'csCalcCatalog', V).success && api(stKey, 'csCalcCatalog', V).code === 'BOT_AUTH', '員工金鑰不能用客服的選型型錄');
 
 // 員工助理：calcCatalog 需要產品檢視權

@@ -6336,11 +6336,12 @@ function handleDeleteContactLog(body) {
 var SHEET_BOT_CONFIG = 'BotConfig';
 var SHEET_BOT_KB = 'BotKnowledge';
 var SHEET_BOT_MSG = 'BotMessages';
+var SHEET_BOT_LEADS = 'BotLeads';
 
 var BOT_SECRET_PROP = 'BOT_SECRET'; // 舊版共用金鑰（只讀，重新產生金鑰時會自動拆成下面兩把）
 var BOT_CS_SECRET_PROP = 'BOT_CS_SECRET'; // 客服機器人專用：只能呼叫客服的操作
 var BOT_STAFF_SECRET_PROP = 'BOT_STAFF_SECRET'; // 員工助理專用：只能呼叫員工助理的操作
-var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget'];
+var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget', 'csLead'];
 var SHEET_BOT_VEC = 'BotVectors';
 var BOT_KB_VER_PROP = 'BOT_KB_VER';
 var BOT_VEC_DIM = 256; // 向量維度（Gemini / OpenAI 都支援縮小維度；256 維兼顧準確度與試算表容量）
@@ -6374,7 +6375,7 @@ var BOT_CS_TOPICS = [
   { key: 'shipping', name: '運費 / 交期', words: '運費 配送 寄送 出貨 物流 到貨 交期 現貨 缺貨' },
   { key: 'complaint', name: '客訴 / 退換貨 / 維修', words: '退貨 退款 換貨 客訴 投訴 故障 維修 壞掉 保固 RMA 不良' },
 ];
-var BOT_STAFF_OPS = ['start', 'call', 'stage', 'commit', 'cancel', 'remember', 'forget', 'unfollow', 'memory', 'audit'];
+var BOT_STAFF_OPS = ['start', 'call', 'stage', 'commit', 'cancel', 'remember', 'forget', 'unfollow', 'memory', 'audit', 'cards'];
 var BOT_HANDOFF_WORDS = '真人 客服人員 小編 專人 人工 業務';
 var BOT_TONES = ['friendly', 'formal', 'concise'];
 var BOT_EMOJI = ['many', 'some', 'none'];
@@ -6383,11 +6384,12 @@ function botSchema_() {
   var base = {
     schema: {
       BotConfig: ['Key', 'Value'],
-      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes', 'Audience', 'Overlap', 'ChunkSize', 'SortOrder', 'FileName'],
+      BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes', 'Audience', 'Overlap', 'ChunkSize', 'SortOrder', 'FileName', 'Images'],
       BotVectors: ['ID', 'Model', 'Vec'],
+      BotLeads: ['ID', 'Time', 'Channel', 'UserId', 'Name', 'Company', 'Phone', 'Email', 'Note', 'Source'],
       BotMessages: ['ID', 'Time', 'Channel', 'UserId', 'Name', 'Role', 'Text', 'Topic'],
     },
-    text: { BotMessages: ['Time', 'UserId'], BotKnowledge: [], BotVectors: [] },
+    text: { BotMessages: ['Time', 'UserId'], BotKnowledge: [], BotVectors: [], BotLeads: ['Time', 'UserId', 'Phone'] },
   };
   return botMerge_(base, typeof botStaffSchema_ === 'function' ? botStaffSchema_() : null);
 }
@@ -6407,6 +6409,7 @@ function botPerms_() {
     botSaveSettings: ['bot', 'w'], botSaveAi: ['bot', 'w'], botTestAi: ['bot', 'w'], botKbSave: ['bot', 'w'], botKbImport: ['bot', 'w'],
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
     botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
+    botKbImageUpload: ['bot', 'w'], botLeads: ['bot', 'r'], botLeadDelete: ['bot', 'd'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -6440,6 +6443,9 @@ function botRoutes_() {
     botClear: { auth: true, fn: handleBotClear },
     botCsPreview: { auth: true, fn: handleBotCsPreview },
     botKbEmbed: { auth: true, fn: handleBotKbEmbed },
+    botKbImageUpload: { auth: true, fn: handleBotKbImageUpload },
+    botLeads: { auth: true, fn: handleBotLeads },
+    botLeadDelete: { auth: true, fn: handleBotLeadDelete },
   };
   if (typeof botStaffRoutes_ === 'function') botMergePerms_(base, botStaffRoutes_());
   return base;
@@ -6595,6 +6601,8 @@ function botCsConfig_(cs) {
       // 客服能看到的產品欄位（白名單；沒設定 = 全部白名單欄位）與產品類別（空白 = 全部類別）
       productFields: botCsFields_(src.productFields),
       productCategories: String(src.productCategories || '').slice(0, 500),
+      // 選型計算用的相機 / 鏡頭型錄（不含價格）：預設開，不用打開「產品型號與規格」也能用
+      calc: src.calc !== false,
     },
     brandInfo: String(cs.brandInfo || ''),
     replyWhen: cs.replyWhen === 'offHours' ? 'offHours' : 'always',
@@ -6619,6 +6627,9 @@ function botCsConfig_(cs) {
     customAskPos: cs.customAskPos === 'before' ? 'before' : 'after',
     topicText: String(cs.topicText || ''),
     unsure: cs.unsure === 'handoff' ? 'handoff' : 'ask',
+    handoffButton: cs.handoffButton !== false, // 每則回覆下方附「轉真人」按鈕
+    contactAfter: botInt_(cs.contactAfter, 0, 50, 3), // 聊到第幾段請訪客留聯繫資料（0 = 不問）
+    sendImages: cs.sendImages !== false, // 問到有附圖的知識時，可以直接給圖片
     groundCheck: cs.groundCheck === true, // AI 回覆前先檢查有沒有知識庫根據（預設關閉；會多花一次 AI）
     style: {
       tone: BOT_TONES.indexOf(st.tone) >= 0 ? st.tone : 'friendly',
@@ -6845,6 +6856,7 @@ function handleBotApi(body) {
       else if (op === 'csRemember') data = csRemember_(id, body);
       else if (op === 'csForget') data = csForget_(id);
       else if (op === 'csHandoff') data = csHandoff_(id, body);
+      else if (op === 'csLead') data = csLead_(id, body);
       else if (op === 'csMessages') data = csMessages_(id, body);
       else if (op === 'csThread') data = csThread_(id, body);
       else if (typeof botStaffOp_ === 'function') data = botStaffOp_(op, id, body);
@@ -7056,12 +7068,11 @@ function botCalcCatalog_(categories) {
   return { cameras: cams, fa: fa, tele: tele };
 }
 
-/** 客服機器人用：產品來源有開才給；只含管理員開放的產品類別。 */
+/** 客服機器人用：選型計算的相機 / 鏡頭型錄（只有型號與規格，不含價格、供應商）。BOT 設定「選型計算」開關控制（預設開），跟「產品型號與規格」知識來源各自獨立。 */
 function csCalcCatalog_() {
   var cs = botSettings_();
-  if (!cs.sources.products) return { cameras: [], fa: [], tele: [] };
-  var cats = String(cs.sources.productCategories || '').split(/[,，、\n]+/).map(function (c) { return c.trim(); }).filter(Boolean);
-  return botCalcCatalog_(cats);
+  if (!cs.sources.calc) return { cameras: [], fa: [], tele: [] };
+  return botCalcCatalog_(null);
 }
 
 /** 知識庫向量（給機器人伺服器分頁取用）：只回傳目前這個 embedding 模型算的、且對應項目還在的。 */
@@ -7156,6 +7167,11 @@ function csStart_(id, req) {
     embedAi: botEmbedCfg_(),
     kbVer: botKbVer_(),
     groundCheck: cs.groundCheck === true,
+    handoffButton: cs.handoffButton,
+    contactAfter: cs.contactAfter,
+    sendImages: cs.sendImages,
+    turnCount: Number(botCacheGet_('cscnt:' + id) || 0),
+    leadState: String(botCacheGet_('cslead:' + id) || ''),
     // 回覆檢查另外指定了一組 AI 才用它；沒指定就用客服這一組
     checkAi: botAiStored_().some(function (m) { return m.uses.indexOf('check') > -1; }) ? botAiList_('check')[0] || null : null,
     history: botCacheGet_(csHistKey_(id)) || [],
@@ -7187,12 +7203,17 @@ function csRemember_(id, req) {
     .filter(function (x) { return x.t; });
   var list = (botCacheGet_(csHistKey_(id)) || []).concat(add).slice(-m.turns);
   botCachePut_(csHistKey_(id), list, m.hours * 3600);
-  if (channel !== 'test') botLogTurns_(channel, id, name || String(botCacheGet_('csname:' + id) || ''), add.map(function (x) { return { role: x.u ? 'user' : 'bot', text: String(x.t) }; }), String(req.topic || ''));
+  if (add.some(function (x) { return x.u; })) botCachePut_('cscnt:' + id, Number(botCacheGet_('cscnt:' + id) || 0) + 1, 21600); // 這位客人聊了幾段
+  if (req.askedContact === true && !botCache_().get('cslead:' + id)) botCachePut_('cslead:' + id, 'asked', 21600);
+  // 對話紀錄：機器人這則附了圖片，在文字後面加上圖片標記（網站視窗還原對話時會顯示成圖片）
+  var imgs = (Array.isArray(req.images) ? req.images : []).slice(0, 5).map(function (im) { return '[[img:' + String((im && im.url) || '').slice(0, 300) + '|' + String((im && im.caption) || '').replace(/[\]|\[]/g, ' ').slice(0, 60) + ']]'; });
+  if (channel !== 'test') botLogTurns_(channel, id, name || String(botCacheGet_('csname:' + id) || ''), add.map(function (x) { return { role: x.u ? 'user' : 'bot', text: String(x.t) + (!x.u && imgs.length ? '\n' + imgs.join('\n') : '') }; }), String(req.topic || ''));
   return list.length;
 }
 
 function csForget_(id) {
-  botCacheRemove_([csHistKey_(id)]);
+  botCacheRemove_([csHistKey_(id), 'cscnt:' + id]);
+  if (botCacheGet_('cslead:' + id) === 'asked') botCacheRemove_(['cslead:' + id]);
   // 對話紀錄裡記一筆「重新開始」：網站視窗重新整理後不再顯示這之前的對話
   if (id.charAt(0) !== 'T') botLogTurns_(id.charAt(0) === 'V' ? 'web' : 'line', id, '', [{ role: 'reset', text: '（客人重新開始對話）' }], '');
   return csResume_(id);
@@ -7284,6 +7305,135 @@ function csHandoff_(id, req) {
     NeedBlock: 'bot',
   });
   return true;
+}
+
+// ---- 聯繫名單（客人聊了幾段後留下的聯繫資料；網站視窗的表單、或 AI 聽到客人主動留資料）----
+/** 客人留下聯繫資料：存進 BotLeads、首頁備忘錄通知有「BOT 設定」權限的人；至少要有電話或 Email。 */
+function csLead_(id, req) {
+  var name = botClip_(req.name, 40);
+  var company = botClip_(req.company, 60);
+  var phone = botClip_(req.phone, 30);
+  var email = botClip_(req.email, 80);
+  var note = botClip_(req.note, 300);
+  if (!phone && !email) throw new Error('請留下電話或 Email，專人才能聯繫您');
+  if (phone && phone.replace(/\D/g, '').length < 6) throw new Error('電話號碼看起來不完整');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Email 格式不正確');
+  var channel = id.charAt(0) === 'V' ? 'web' : id.charAt(0) === 'T' ? 'test' : 'line';
+  var source = req.source === 'ai' ? 'ai' : 'form';
+  var lineName = String(botCacheGet_('csname:' + id) || '');
+  var sent = Number(botCacheGet_('cslc:' + id) || 0); // 同一位客人一小時最多留 5 次，避免被灌名單
+  if (sent >= 5) throw new Error('送出太頻繁了，請稍後再試');
+  botCachePut_('cslc:' + id, sent + 1, 3600);
+  withLock_(function () {
+    var max = 0;
+    sheetToObjects(SHEET_BOT_LEADS).rows.forEach(function (r) { max = Math.max(max, Number(r['ID']) || 0); });
+    appendObjectRow(SHEET_BOT_LEADS, { ID: max + 1, Time: botNow_(), Channel: channel, UserId: id, Name: name || lineName, Company: company, Phone: phone, Email: email, Note: note, Source: source });
+  });
+  botCachePut_('cslead:' + id, 'done', 21600);
+  if (channel !== 'test') {
+    var today = todayStr();
+    var who = (name || lineName || (channel === 'web' ? '網站訪客' : 'LINE 客人')) + (company ? '（' + company + '）' : '');
+    appendObjectRow(SHEET_MEMOS, {
+      Owner: 'SYSTEM',
+      OwnerName: '客服機器人',
+      Title: '📇 新的聯繫名單：' + who,
+      Content: ['姓名：' + (name || lineName || '—'), company ? '公司：' + company : '', phone ? '電話：' + phone : '', email ? 'Email：' + email : '', note ? '備註：' + note : '', '來源：' + (channel === 'web' ? '網站客服視窗' : 'LINE') + (source === 'ai' ? '（客人在聊天中主動留下）' : '（留資料表單）'), '\n完整名單在「BOT 設定 → 聯繫名單」。'].filter(Boolean).join('\n'),
+      Shared: '是',
+      CreatedDate: today,
+      LastUpdated: today,
+      LinkType: 'csLead',
+      LinkId: id,
+      NeedBlock: 'bot',
+    });
+  }
+  return true;
+}
+
+function handleBotLeads(body) {
+  var rows = sheetToObjects(SHEET_BOT_LEADS).rows.map(function (r) {
+    return { id: Number(r['ID']) || 0, time: String(r['Time'] || ''), channel: String(r['Channel'] || ''), userId: String(r['UserId'] || ''), name: String(r['Name'] || ''), company: String(r['Company'] || ''), phone: String(r['Phone'] || ''), email: String(r['Email'] || ''), note: String(r['Note'] || ''), source: String(r['Source'] || '') };
+  });
+  rows.sort(function (a, b) { return b.id - a.id; });
+  return { success: true, leads: rows.slice(0, 500), total: rows.length };
+}
+
+function handleBotLeadDelete(body) {
+  var want = {};
+  (Array.isArray(body.ids) ? body.ids : []).forEach(function (i) { want[Number(i)] = true; });
+  return withLock_(function () {
+    var sheet = getSheet(SHEET_BOT_LEADS);
+    var rows = sheetToObjects(SHEET_BOT_LEADS).rows;
+    var n = 0;
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (want[Number(rows[i]['ID'])]) {
+        sheet.deleteRow(i + 2);
+        n++;
+      }
+    }
+    return { success: true, deleted: n };
+  });
+}
+
+// ---- 知識庫圖片（架構圖、示意圖）：存在雲端硬碟「AOI機器人圖片」資料夾（設成知道連結的人可檢視），知識庫項目記下檔案代號與說明 ----
+var BOT_IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+var BOT_IMG_MAX_BYTES = 8 * 1024 * 1024;
+
+function botImgFolder_() {
+  var id = getConfig('BotImagesFolderId');
+  if (id) {
+    try {
+      return DriveApp.getFolderById(id);
+    } catch (e) {
+      // 資料夾被刪掉，往下重建
+    }
+  }
+  var folder = DriveApp.createFolder('AOI機器人圖片');
+  setConfig('BotImagesFolderId', folder.getId());
+  return folder;
+}
+
+/** 知識庫項目的圖片清單：[{id: 雲端硬碟檔案代號, caption: 說明}]，最多 6 張，格式不對的丟掉。 */
+function botKbImages_(raw) {
+  var list = raw;
+  if (typeof raw === 'string') {
+    try {
+      list = JSON.parse(raw || '[]');
+    } catch (e) {
+      list = [];
+    }
+  }
+  var seen = {};
+  return (Array.isArray(list) ? list : []).map(function (x) {
+    return { id: String((x && x.id) || '').trim(), caption: botClip_(x && x.caption, 60) };
+  }).filter(function (x) {
+    if (!/^[A-Za-z0-9_-]{10,80}$/.test(x.id) || seen[x.id]) return false;
+    seen[x.id] = true;
+    return true;
+  }).slice(0, 6);
+}
+
+/** 上傳一張知識庫圖片（網頁端先縮到 1600px 以內再傳）。回傳雲端硬碟檔案代號。 */
+function handleBotKbImageUpload(body) {
+  var mime = String(body.mimeType || '').toLowerCase();
+  if (!BOT_IMG_TYPES[mime]) return { success: false, message: '只能上傳 JPG / PNG / WebP / GIF 圖片' };
+  var b64 = String(body.base64 || '');
+  if (!b64) return { success: false, message: '沒有收到圖片內容' };
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(b64);
+  } catch (e) {
+    return { success: false, message: '圖片內容格式不正確' };
+  }
+  if (bytes.length > BOT_IMG_MAX_BYTES) return { success: false, message: '圖片太大了（上限 8MB），請縮小後再上傳' };
+  var name = String(body.filename || 'image').replace(/[^\w.\-一-龥]+/g, '_').slice(0, 80) || 'image';
+  var file = botImgFolder_().createFile(Utilities.newBlob(bytes, mime, name));
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e2) {
+    file.setTrashed(true);
+    return { success: false, message: '無法把圖片設成「知道連結的人可檢視」（可能是 Google Workspace 的組織政策擋住分享），客人才看不到圖片。請管理員開放分享，或改用個人 Google 帳號部署。' };
+  }
+  return { success: true, id: file.getId(), name: name };
 }
 
 /**
@@ -7380,6 +7530,7 @@ function csKnowledge_() {
         topic: text(k['Topic']),
         notes: text(k['Notes']),
         tags: text(k['Tags']),
+        images: cs.sendImages ? botKbImages_(k['Images']) : [],
         text: [k['Question'] ? '問：' + text(k['Question']) : '', k['Question'] ? '答：' + text(k['Content']) : text(k['Content']), k['Tags'] ? '關鍵字：' + text(k['Tags']) : ''].filter(Boolean).join('\n'),
       });
     });
@@ -7448,6 +7599,8 @@ function csWidgetConfig_() {
     welcome: cs.welcome || '👋 您好，我是' + csBrand_() + '的線上客服，有任何問題都可以直接問我；需要專人協助請輸入「' + (botWords_(cs.handoffWords)[0] || '真人') + '」。',
     buttons: botButtons_(cs.buttons),
     replyDelay: botGeneral_().replyDelay,
+    handoffButton: cs.handoffButton,
+    handoffWord: botWords_(cs.handoffWords)[0] || '真人',
   };
 }
 
@@ -7648,6 +7801,7 @@ function botKbRows_() {
       ChunkSize: r['ChunkSize'] === '' || r['ChunkSize'] == null ? '' : Number(r['ChunkSize']) || '',
       SortOrder: Number(r['SortOrder']) || 0,
       FileName: String(r['FileName'] || ''),
+      Images: String(r['Images'] || ''),
     };
   });
 }
@@ -7699,6 +7853,7 @@ function handleBotKbList(body) {
   var items = botKbRows_().map(function (r) {
     r.HasVector = !!cfg && have[r.ID] === cfg.key;
     r.audience = botKbAudList_(r.Audience);
+    r.images = botKbImages_(r.Images);
     return r;
   });
   var cats = {};
@@ -7811,6 +7966,7 @@ function handleBotKbSave(body) {
   return withLock_(function () {
     var fields = { Type: type, Title: title || (type === 'qa' ? question.slice(0, 40) : content.slice(0, 20)), Question: type === 'qa' ? question : '', Content: content, Tags: String(body.tags || '').trim(), Source: String(body.source || ''), IsActive: body.isActive === false ? false : true, UpdatedAt: botNow_(), BigCategory: botClip_(body.bigCategory, 40), Topic: botClip_(body.topic, 60), Notes: String(body.notes || '').trim().slice(0, 1000) };
     if (body.audience !== undefined) fields.Audience = botKbAudStore_(body.audience); // 沒帶 = 修改時不動、新增時都開放
+    if (body.images !== undefined) fields.Images = JSON.stringify(botKbImages_(body.images)); // 沒帶 = 修改時不動
     botKbBump_();
     var id;
     if (body.rowIndex) {
@@ -7877,7 +8033,7 @@ function handleBotKbDocSave(body) {
         Title: c.title ? title + '（' + (i + 1) + '/' + n + '）｜' + c.title : n > 1 ? title + '（' + (i + 1) + '/' + n + '）' : title,
         Question: '', Content: c.content, Tags: String(body.tags || '').trim().slice(0, 200), Source: title, IsActive: body.isActive === false ? false : true, UpdatedAt: t,
         BigCategory: botClip_(body.bigCategory, 40), Topic: botClip_(body.topic, 60), Notes: String(body.notes || '').trim().slice(0, 1000),
-        Audience: botKbAudStore_(body.audience), Overlap: c.overlap, ChunkSize: size, SortOrder: i + 1, FileName: key,
+        Audience: botKbAudStore_(body.audience), Overlap: c.overlap, ChunkSize: size, SortOrder: i + 1, FileName: key, Images: JSON.stringify(botKbImages_(body.images)),
       };
       return o;
     });
@@ -8124,8 +8280,9 @@ function botSetup_(log) {
 
 var SHEET_BOT_MEMBERS = 'BotMembers';
 var SHEET_BOT_MEMORY = 'BotMemory';
+var SHEET_BOT_CARDS = 'BotCards';
 
-var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'product', 'priceHistory', 'inquiryDraft', 'logs', 'memos', 'calendar', 'todos', 'calcCatalog', 'kbChunks', 'kbVectors', 'copyPosts', 'copyStyle'];
+var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'product', 'priceHistory', 'inquiryDraft', 'logs', 'memos', 'calendar', 'todos', 'calcCatalog', 'kbChunks', 'kbVectors', 'copyPosts', 'copyStyle', 'cards'];
 var BOT_STAFF_STATUS = { PENDING: '待開通', ACTIVE: '已開通', OFF: '停用' };
 var BOT_PENDING_SECONDS = 900;
 var BOT_CASE_STATUSES = ['需求單已發出', '評估單已發出', '已結案'];
@@ -8136,8 +8293,9 @@ function botStaffSchema_() {
     schema: {
       BotMembers: ['LineUserId', 'DisplayName', 'PictureUrl', 'Status', 'Role', 'Perms', 'LinkedUsername', 'Note', 'PushDaily', 'IsFollowing', 'FollowedAt', 'LastSeenAt', 'ApprovedBy', 'ApprovedAt'],
       BotMemory: ['ID', 'Scope', 'Owner', 'Category', 'Content', 'Importance', 'UpdatedAt'],
+      BotCards: ['ID', 'Owner', 'Time', 'Status', 'Batch', 'Name', 'Title', 'Company', 'Phone', 'CompanyPhone', 'Fax', 'Email', 'Address', 'TaxId', 'Website', 'Note', 'Confidence', 'Result'],
     },
-    text: { BotMembers: ['LineUserId'], BotMemory: ['Owner'] },
+    text: { BotMembers: ['LineUserId'], BotMemory: ['Owner'], BotCards: ['Owner', 'Time', 'Phone', 'CompanyPhone', 'Fax', 'TaxId'] },
   };
 }
 
@@ -8357,7 +8515,7 @@ function botPendingGet_(id) {
 var BOT_AUDIT_ICON = { read: '🔎', stage: '📝', write: '✅', delete: '🗑️', cancel: '↩️', denied: '⛔', info: '•' };
 var BOT_AUDIT_MAX = 40000;
 var BOT_AUDIT_SKIP = ['me', 'kbChunks', 'kbVectors', 'calcCatalog'];
-var BOT_AUDIT_LABEL = { customers: '客戶', customer: '客戶詳情', followups: '追蹤清單', cases: '案件', 'case': '案件詳情', products: '產品', product: '產品詳情', priceHistory: '報價紀錄', inquiryDraft: '詢價信草稿', logs: '聯繫紀錄', memos: '備忘錄', calendar: '行事曆', todos: '工作清單', overview: '今日總覽', copyPosts: '文案', copyStyle: '文案風格' };
+var BOT_AUDIT_LABEL = { customers: '客戶', customer: '客戶詳情', followups: '追蹤清單', cases: '案件', 'case': '案件詳情', products: '產品', product: '產品詳情', priceHistory: '報價紀錄', inquiryDraft: '詢價信草稿', logs: '聯繫紀錄', memos: '備忘錄', calendar: '行事曆', todos: '工作清單', overview: '今日總覽', copyPosts: '文案', copyStyle: '文案風格', cards: '名片收件匣' };
 
 /**
  * 助理做的任何事，都記在「備忘錄」讓有「BOT 設定」權限的人檢查：每位成員每天一則（時間先後、持續追加）。
@@ -8434,6 +8592,7 @@ function botStaffOp_(op, id, body) {
     return true;
   }
   if (op === 'audit') return botStaffAuditOp_(id, body);
+  if (op === 'cards') return botStaffCardsOp_(id, body);
   if (op === 'remember') return botStaffRemember_(id, body.turns);
   if (op === 'forget') {
     botCacheRemove_([botStaffHistKey_(id)]);
@@ -8776,6 +8935,18 @@ function botStaffCallRun_(ctx, action, params) {
     };
   }
 
+  if (action === 'cards') {
+    botNeed_(ctx, 'customers', 'view');
+    var cstatus = ['pending', 'saved', 'discarded', 'all'].indexOf(String(params.status)) > -1 ? String(params.status) : 'pending';
+    if (String(params.note || '').trim()) {
+      botNeed_(ctx, 'customers', 'edit');
+      botCardSetNote_(ctx, String(params.note));
+    }
+    var mineCards = botCardRows_().filter(function (c) { return c.owner === ctx.ownerKey && (cstatus === 'all' || c.status === cstatus); });
+    var shownCards = mineCards.slice(-40);
+    return { total: mineCards.length, batchNote: botCardNote_(ctx), items: shownCards.map(function (c) { return botCardOut_(c); }) };
+  }
+
   if (action === 'logs') {
     botNeed_(ctx, 'customers', 'view');
     var cn = String(params.companyName || '').trim();
@@ -8863,6 +9034,8 @@ var BOT_STAFF_WRITES = {
   deleteEvent: { block: '', del: true, label: '🗑️ 刪除行事曆行程（自己的）' },
   deleteTodo: { block: '', del: true, label: '🗑️ 刪除工作清單項目（自己的）' },
   deleteMemo: { block: '', del: true, label: '🗑️ 刪除備忘錄（自己的）' },
+  saveCards: { block: 'customers', label: '名片：把收件匣的名片整批存成客戶 / 聯絡窗口' },
+  discardCards: { block: 'customers', label: '名片：丟棄收件匣裡的名片（不存入客戶）' },
   addEvent: { block: '', label: '新增行事曆行程（自己的）' },
   addTodo: { block: '', label: '新增工作清單項目（自己的）' },
   completeTodo: { block: '', label: '完成 / 重開工作清單項目（自己的）' },
@@ -9027,6 +9200,18 @@ function botWriteCheck_(ctx, w) {
     if (!cd.obj) throw new Error('找不到產品「' + s('internalModel') + '」' + (cd.near.length ? '，你是不是要找：' + cd.near.join('、') : ''));
     if (!String(cd.obj['SupplierContactEmail'] || '').trim()) throw new Error('「' + cd.obj['InternalModel'] + '」沒有填供應商 Email，沒辦法建立詢價信草稿');
     return { line: '✉️ 建立詢價信草稿（只存草稿、不寄出）：' + cd.obj['InternalModel'] + ' → ' + cd.obj['SupplierContactEmail'] + (s('quantity') ? '｜數量 ' + s('quantity') : '') };
+  }
+  if (w.action === 'saveCards' || w.action === 'discardCards') {
+    var targets = botCardTargets_(ctx, d);
+    if (!targets.length) throw new Error('名片收件匣裡沒有符合的待整理名片（先傳名片照片給我，或用 list_cards 查編號）');
+    if (w.action === 'discardCards') return { line: '🗑️ 丟棄 ' + targets.length + ' 張名片：' + targets.slice(0, 8).map(function (c) { return c.name || c.company || '#' + c.id; }).join('、') + (targets.length > 8 ? '…' : '') + '（不會存進客戶資料）' };
+    var plan = botCardPlan_(targets, d.overrides || {}, d.category);
+    var counts = { newCustomer: 0, addContact: 0, skip: 0 };
+    plan.forEach(function (x) { counts[x.kind]++; });
+    return {
+      line: '📇 名片整批存入（新增客戶 ' + counts.newCustomer + ' 間、補聯絡窗口 ' + counts.addContact + ' 位' + (counts.skip ? '、略過 ' + counts.skip + ' 張' : '') + '）：\n' +
+        plan.map(function (x) { return '  ' + x.text; }).join('\n'),
+    };
   }
   if (w.action === 'addEvent' || w.action === 'addTodo' || w.action === 'completeTodo') {
     if (!ctx.username) throw new Error('行事曆與工作清單是每個帳號各自的，請先把你的 LINE 綁定到網站帳號');
@@ -9264,6 +9449,9 @@ function botWriteRun_(ctx, w) {
     if (!cr.success) throw new Error(cr.message);
     return { action: w.action, ok: true };
   }
+  if (w.action === 'saveCards' || w.action === 'discardCards') {
+    return botCardsRun_(ctx, w, user);
+  }
   if (w.action === 'deleteCustomer') {
     var dcr = botFindCustomerRow_(s('company'));
     var rdc = handleDeleteCustomer({ _user: user, rowIndex: dcr.row, companyName: dcr.obj['CompanyName'], force: d.force === true });
@@ -9325,6 +9513,179 @@ function botWriteRun_(ctx, w) {
     return { action: w.action, ok: true, id: r12.id };
   }
   throw new Error('不能執行：' + w.action);
+}
+
+// ------------------------------------------------------------
+// 名片收件匣：在 LINE 傳名片照片（單張或一次多張），機器人用視覺模型讀出欄位存進收件匣（BotCards），
+// 同事說「整理名片」→ 助理列出清單 → 按確認才整批存成客戶 / 聯絡窗口。每個人的收件匣各自獨立。
+// ------------------------------------------------------------
+var BOT_CARD_FIELDS = { name: 'Name', title: 'Title', company: 'Company', phone: 'Phone', companyPhone: 'CompanyPhone', fax: 'Fax', email: 'Email', address: 'Address', taxId: 'TaxId', website: 'Website', note: 'Note' };
+var BOT_CARD_MAX_INBOX = 300;
+
+function botCardRows_() {
+  return sheetToObjects(SHEET_BOT_CARDS).rows.map(function (r, i) {
+    return { RowIndex: i + 2, id: Number(r['ID']) || 0, owner: String(r['Owner'] || ''), time: String(r['Time'] || ''), status: String(r['Status'] || 'pending'), batch: String(r['Batch'] || ''), name: String(r['Name'] || ''), title: String(r['Title'] || ''), company: String(r['Company'] || ''), phone: String(r['Phone'] || ''), companyPhone: String(r['CompanyPhone'] || ''), fax: String(r['Fax'] || ''), email: String(r['Email'] || ''), address: String(r['Address'] || ''), taxId: String(r['TaxId'] || ''), website: String(r['Website'] || ''), note: String(r['Note'] || ''), confidence: String(r['Confidence'] || ''), result: String(r['Result'] || '') };
+  });
+}
+
+function botCardOut_(c) {
+  var o = { id: c.id, status: c.status };
+  ['name', 'title', 'company', 'phone', 'companyPhone', 'fax', 'email', 'address', 'taxId', 'website', 'note', 'batch', 'confidence', 'result'].forEach(function (k) { if (c[k]) o[k] = c[k]; });
+  if (c.status === 'pending' && c.company) {
+    var hit = botFindCustomerRow_(c.company);
+    if (hit) o.existingCustomer = String(hit.obj['CompanyName']);
+  }
+  return o;
+}
+
+function botCardNote_(ctx) {
+  return String(botCacheGet_('cardnote:' + ctx.ownerKey) || '');
+}
+
+/** 設定這批名片的註記（例如展會名稱），之後傳的名片都會帶上，也一併套用到收件匣裡待整理且還沒有註記的名片。 */
+function botCardSetNote_(ctx, note) {
+  note = botClip_(note, 60);
+  botCachePut_('cardnote:' + ctx.ownerKey, note, 43200);
+  withLock_(function () {
+    botCardRows_().forEach(function (c) {
+      if (c.owner === ctx.ownerKey && c.status === 'pending' && !c.batch) updateRowFields(SHEET_BOT_CARDS, c.RowIndex, { Batch: note });
+    });
+  });
+  return note;
+}
+
+function botCardClean_(raw, field, n) {
+  return botClip_(raw && raw[field], n).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+}
+
+/** linebot 讀完名片照片後把結果丟進收件匣。body.cards = [{name,title,company,phone,companyPhone,fax,email,address,taxId,website,note,confidence}] */
+function botStaffCardsOp_(id, body) {
+  var ctx = botStaffCtx_(id);
+  if (!ctx.ok) throw new Error(ctx.problem || '這個帳號還沒開通');
+  botNeed_(ctx, 'customers', 'edit');
+  var list = (Array.isArray(body.cards) ? body.cards : []).slice(0, 10);
+  if (!list.length) return { added: [], pending: botCardRows_().filter(function (c) { return c.owner === ctx.ownerKey && c.status === 'pending'; }).length };
+  var note = botCardNote_(ctx);
+  var added = [];
+  withLock_(function () {
+    var rows = botCardRows_();
+    var mine = rows.filter(function (c) { return c.owner === ctx.ownerKey; });
+    if (mine.length >= BOT_CARD_MAX_INBOX) throw new Error('名片收件匣滿了（' + BOT_CARD_MAX_INBOX + ' 張），請先整理或丟棄舊的');
+    var max = 0;
+    rows.forEach(function (c) { max = Math.max(max, c.id); });
+    list.forEach(function (raw) {
+      var card = {};
+      Object.keys(BOT_CARD_FIELDS).forEach(function (k) { card[k] = botCardClean_(raw, k, k === 'note' || k === 'address' ? 200 : 80); });
+      if (!card.name && !card.company && !card.phone && !card.email) return; // 什麼都讀不到
+      var row = { ID: ++max, Owner: ctx.ownerKey, Time: botNow_(), Status: 'pending', Batch: note, Confidence: botCardClean_(raw, 'confidence', 10), Result: '' };
+      Object.keys(BOT_CARD_FIELDS).forEach(function (k) { row[BOT_CARD_FIELDS[k]] = card[k]; });
+      // 收件匣裡已經有同一個人（Email 或 姓名 + 電話相同）→ 提醒重複，仍然收下（由同事決定）
+      var dup = mine.filter(function (c) { return c.status === 'pending' && ((card.email && c.email.toLowerCase() === card.email.toLowerCase()) || (card.name && c.name === card.name && card.phone && c.phone === card.phone)); })[0];
+      appendObjectRow(SHEET_BOT_CARDS, row);
+      var out = { id: row.ID, name: card.name, title: card.title, company: card.company, phone: card.phone, email: card.email };
+      if (dup) out.duplicateOf = dup.id;
+      var hit = card.company ? botFindCustomerRow_(card.company) : null;
+      if (hit) out.existingCustomer = String(hit.obj['CompanyName']);
+      added.push(out);
+      mine.push({ id: row.ID, status: 'pending', email: card.email, name: card.name, phone: card.phone });
+    });
+  });
+  var pending = botCardRows_().filter(function (c) { return c.owner === ctx.ownerKey && c.status === 'pending'; }).length;
+  botAudit_(ctx, 'write', '名片收件匣收下 ' + added.length + ' 張名片（待整理共 ' + pending + ' 張）');
+  return { added: added, pending: pending, batchNote: note };
+}
+
+/** 這次要處理的名片：data.ids 有給就只處理那些，沒給就是這個人收件匣裡全部待整理的（最多 40 張）。 */
+function botCardTargets_(ctx, d) {
+  var want = null;
+  if (Array.isArray(d.ids) && d.ids.length) {
+    want = {};
+    d.ids.forEach(function (i) { want[Number(i)] = true; });
+  }
+  return botCardRows_().filter(function (c) { return c.owner === ctx.ownerKey && c.status === 'pending' && (!want || want[c.id]); }).slice(0, 40);
+}
+
+function botCardMerge_(card, ov) {
+  var m = Object.assign({}, card);
+  Object.keys(BOT_CARD_FIELDS).forEach(function (k) {
+    if (ov && ov[k] !== undefined && ov[k] !== null) m[k] = botClip_(ov[k], k === 'note' || k === 'address' ? 200 : 80);
+  });
+  return m;
+}
+
+/** 每張名片要怎麼處理：公司不存在 → 新增客戶；公司已存在（含這次前面剛要新增的）→ 新增聯絡窗口；沒有公司名稱 → 略過。 */
+function botCardPlan_(cards, overrides, category) {
+  var planned = {};
+  var plan = [];
+  cards.forEach(function (c) {
+    var m = botCardMerge_(c, overrides[String(c.id)] || overrides[c.id]);
+    var label = (m.name || '（無姓名）') + (m.title ? ' ' + m.title : '');
+    if (!m.company) {
+      plan.push({ id: c.id, kind: 'skip', card: m, text: '⚠️ #' + c.id + ' ' + label + '：名片上沒有公司名稱，略過（請告訴我公司名稱，或丟棄）' });
+      return;
+    }
+    var key = normCompanyName_(m.company);
+    var hit = botFindCustomerRow_(m.company);
+    if (hit || planned[key]) {
+      var cname = hit ? String(hit.obj['CompanyName']) : planned[key];
+      var exists = hit && (normCompanyName_(hit.obj['Contact']) === normCompanyName_(m.name) || sheetToObjects(SHEET_CUSTOMER_CONTACTS).rows.some(function (r) { return String(r['CompanyName']) === cname && String(r['ContactName']).trim() === m.name; }));
+      if (!m.name) {
+        plan.push({ id: c.id, kind: 'skip', card: m, text: '⚠️ #' + c.id + ' ' + cname + '：名片上沒有姓名，略過' });
+      } else if (exists) {
+        plan.push({ id: c.id, kind: 'skip', card: m, text: '・#' + c.id + ' ' + cname + ' 已經有聯絡人「' + m.name + '」，略過' });
+      } else {
+        plan.push({ id: c.id, kind: 'addContact', company: cname, card: m, text: '・#' + c.id + ' ' + cname + ' 已是客戶 → 新增聯絡窗口 ' + label + (m.phone ? ' ' + m.phone : '') + (m.email ? ' ' + m.email : '') });
+      }
+      return;
+    }
+    planned[key] = m.company;
+    plan.push({ id: c.id, kind: 'newCustomer', company: m.company, card: m, category: category, text: '・#' + c.id + ' 新增客戶 ' + m.company + '（' + label + (m.phone ? ' ' + m.phone : '') + (m.email ? ' ' + m.email : '') + '）' });
+  });
+  return plan;
+}
+
+function botCardNotes_(m, batch) {
+  return [m.title ? '職稱：' + m.title : '', m.website ? '網站：' + m.website : '', m.fax ? '傳真：' + m.fax : '', m.note, '名片登入' + (batch ? '（' + batch + '）' : '') + ' ' + todayStr()].filter(Boolean).join('；');
+}
+
+function botCardsRun_(ctx, w, user) {
+  var d = w.data || {};
+  var targets = botCardTargets_(ctx, d);
+  if (!targets.length) throw new Error('名片收件匣裡沒有符合的待整理名片');
+  if (w.action === 'discardCards') {
+    targets.forEach(function (c) { updateRowFields(SHEET_BOT_CARDS, c.RowIndex, { Status: 'discarded', Result: '已丟棄 ' + todayStr() }); });
+    return { action: w.action, ok: true, discarded: targets.length };
+  }
+  var plan = botCardPlan_(targets, d.overrides || {}, d.category);
+  var byId = {};
+  targets.forEach(function (c) { byId[c.id] = c; });
+  var done = { newCustomers: 0, contacts: 0, skipped: 0, failed: [] };
+  plan.forEach(function (x) {
+    var m = x.card;
+    var batch = byId[x.id].batch;
+    var result = '';
+    try {
+      if (x.kind === 'newCustomer') {
+        var r1 = handleAddCustomer({ _user: user, companyName: m.company, contact: m.name, phone: m.phone, email: m.email, companyPhone: m.companyPhone, address: m.address, taxId: m.taxId, category: x.category || '一般客戶', urgency: '中', notes: botCardNotes_(m, batch) });
+        if (!r1.success) throw new Error(r1.message);
+        done.newCustomers++;
+        result = '新增客戶 ' + m.company;
+      } else if (x.kind === 'addContact') {
+        var r2 = handleAddCustomerContact({ _user: user, companyName: x.company, contactName: m.name, title: m.title, phone: m.phone, email: m.email, notes: botCardNotes_({ website: m.website, fax: m.fax, note: m.note }, batch) });
+        if (!r2.success) throw new Error(r2.message);
+        done.contacts++;
+        result = '新增聯絡窗口 → ' + x.company;
+      } else {
+        done.skipped++;
+        return; // 略過的留在收件匣，請同事補資料或丟棄
+      }
+      updateRowFields(SHEET_BOT_CARDS, byId[x.id].RowIndex, { Status: 'saved', Result: result + ' ' + todayStr(), Company: m.company, Name: m.name, Title: m.title, Phone: m.phone, CompanyPhone: m.companyPhone, Email: m.email, Address: m.address, TaxId: m.taxId, Website: m.website, Fax: m.fax, Note: m.note });
+    } catch (e) {
+      done.failed.push('#' + x.id + '：' + e.message);
+    }
+  });
+  if (done.failed.length) throw new Error('有 ' + done.failed.length + ' 張存入失敗（' + done.failed.join('；') + '）；已成功的 ' + (done.newCustomers + done.contacts) + ' 張不會重複存入');
+  return { action: w.action, ok: true, newCustomers: done.newCustomers, contactsAdded: done.contacts, skipped: done.skipped };
 }
 
 // ------------------------------------------------------------

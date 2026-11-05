@@ -223,6 +223,9 @@ html[data-theme="dark"] .kb-card, html[data-theme="dark"] .kb-chunk-box, html[da
 html[data-theme="dark"] .kb-card:hover { background: #252c36; }
 html[data-theme="dark"] .kb-prev-row, html[data-theme="dark"] .kb-foot { border-color: #2b333e; }
 html[data-theme="dark"] #kb-modal input, html[data-theme="dark"] #kb-modal textarea, html[data-theme="dark"] #kb-modal select { background: #14181d; color: #e5e7eb; border-color: #3a4452; }
+html[data-theme="dark"] .kb-img { background: #1b2028; border-color: #2c3440; }
+html[data-theme="dark"] .kb-img img { background: #232a34; }
+html[data-theme="dark"] .bot-table th, html[data-theme="dark"] .bot-table td { border-bottom-color: #2c3440; }
 }
 
 /* 列印：一律淺色，不印出切換按鈕 */

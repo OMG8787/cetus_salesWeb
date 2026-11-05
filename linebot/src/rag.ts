@@ -241,7 +241,8 @@ export function formatHits(hits: Hit[]): string {
     .map((h, i) => {
       const c = h.chunk;
       const tags = [c.category, c.topic].filter(Boolean).join(" / ");
-      return `【${i + 1}｜${c.source}｜${c.title}${tags ? `｜${tags}` : ""}】\n${c.text}${c.notes ? `\n（備註：${c.notes}）` : ""}`;
+      const pics = (c.images ?? []).map((im, n) => `${c.id}#${n}（${im.caption || "圖片"}）`);
+      return `【${i + 1}｜${c.source}｜${c.title}${tags ? `｜${tags}` : ""}】\n${c.text}${c.notes ? `\n（備註：${c.notes}）` : ""}${pics.length ? `\n（可附圖片，用 send_image 的 ref 給客人：${pics.join("、")}）` : ""}`;
     })
     .join("\n\n");
 }

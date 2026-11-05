@@ -60,7 +60,7 @@ function headers(ch: Channel) {
 }
 
 /** 文字切成 LINE 能送的訊息（每則 5000 字、最多 5 則）；choices 變成最後一則下方的快速回覆按鈕 */
-export function textMessages(text: string, choices: Choice[] = []): Record<string, unknown>[] {
+export function textMessages(text: string, choices: Choice[] = [], images: string[] = []): Record<string, unknown>[] {
   const chunks: string[] = [];
   let rest = text.trim() || "……";
   while (rest.length > MAX_TEXT_LENGTH) {
@@ -71,7 +71,10 @@ export function textMessages(text: string, choices: Choice[] = []): Record<strin
     rest = rest.slice(at).trimStart();
   }
   chunks.push(rest);
-  const messages: Record<string, unknown>[] = chunks.slice(0, MAX_MESSAGES_PER_REPLY).map((t) => ({ type: "text", text: t }));
+  const picCount = Math.min(images.length, MAX_MESSAGES_PER_REPLY - 1);
+  const messages: Record<string, unknown>[] = chunks.slice(0, MAX_MESSAGES_PER_REPLY - picCount).map((t) => ({ type: "text", text: t }));
+  // 圖片接在文字後面（LINE 一次最多 5 則；原圖 ≤10MB、縮圖 ≤1MB，縮圖用小尺寸）
+  for (const url of images.slice(0, picCount)) messages.push({ type: "image", originalContentUrl: url, previewImageUrl: url.replace(/([?&])w=\d+/, "$1w=480") });
   if (choices.length) {
     messages[messages.length - 1].quickReply = {
       items: choices.slice(0, MAX_CHOICES).map((c) => ({
@@ -88,8 +91,8 @@ export function textMessages(text: string, choices: Choice[] = []): Record<strin
 /**
  * 回覆訊息；回覆權杖過期（處理太久）時改用推播送給本人（推播會用到官方帳號的每月額度）
  */
-export async function replyText(ch: Channel, replyToken: string | undefined, userId: string, text: string, choices: Choice[] = []): Promise<void> {
-  const messages = textMessages(text, choices);
+export async function replyText(ch: Channel, replyToken: string | undefined, userId: string, text: string, choices: Choice[] = [], images: string[] = []): Promise<void> {
+  const messages = textMessages(text, choices, images);
   if (replyToken) {
     const response = await fetch(`${API}/message/reply`, { method: "POST", headers: headers(ch), body: JSON.stringify({ replyToken, messages }) });
     if (response.ok) return;
@@ -98,14 +101,29 @@ export async function replyText(ch: Channel, replyToken: string | undefined, use
     if (response.status !== 400 || !userId) return;
   }
   if (!userId) return;
-  await pushText(ch, userId, text, choices);
+  await pushText(ch, userId, text, choices, images);
 }
 
 /** 主動推播（會用到官方帳號的每月額度） */
-export async function pushText(ch: Channel, to: string, text: string, choices: Choice[] = []): Promise<boolean> {
-  const push = await fetch(`${API}/message/push`, { method: "POST", headers: headers(ch), body: JSON.stringify({ to, messages: textMessages(text, choices) }) });
+export async function pushText(ch: Channel, to: string, text: string, choices: Choice[] = [], images: string[] = []): Promise<boolean> {
+  const push = await fetch(`${API}/message/push`, { method: "POST", headers: headers(ch), body: JSON.stringify({ to, messages: textMessages(text, choices, images) }) });
   if (!push.ok) console.warn(`LINE 推播失敗 ${push.status}: ${(await push.text()).slice(0, 300)}`);
   return push.ok;
+}
+
+const MAX_CONTENT_BYTES = 10 * 1024 * 1024;
+
+/** 下載使用者傳來的圖片（LINE 保留 14 天以內）；回傳 base64。太大、不是圖片或下載失敗丟出錯誤。 */
+export async function downloadImage(ch: Channel, messageId: string): Promise<{ mime: string; data: string }> {
+  const response = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, { headers: { Authorization: `Bearer ${ch.token}` }, signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(`LINE 圖片下載失敗（${response.status}）`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > MAX_CONTENT_BYTES) throw new Error("圖片太大了（上限 10MB）");
+  const header = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  // LINE 的圖片幾乎都是 JPEG；用檔頭判斷，header 不可靠時也能認出來
+  const mime = bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg" : bytes.subarray(1, 4).toString() === "PNG" ? "image/png" : header.startsWith("image/") ? header : "";
+  if (!mime) throw new Error("這不是圖片檔");
+  return { mime, data: bytes.toString("base64") };
 }
 
 /** 顯示「輸入中」動畫（只有一對一聊天有效；失敗不影響回覆） */

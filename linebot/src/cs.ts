@@ -2,8 +2,9 @@ import { embed, generate, type Tool, type Turn } from "./ai.js";
 import { calcTool, CALC_RULES } from "./calc-tool.js";
 import { cleanReply, processEvents } from "./common.js";
 import { gas, type CsInfo, type CsStyle, type CsTopic, type EmbedConfig } from "./gas.js";
+import { imageUrl, type ReplyImage } from "./img.js";
 import { choicesTool, humanPause } from "./human.js";
-import { channels, getProfile, replyText, showLoading, type LineEvent } from "./line.js";
+import { channels, getProfile, MAX_CHOICES, replyText, showLoading, type LineEvent } from "./line.js";
 import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, loadVectorMap, searchKnowledge, type Hit, type SearchConfig, type SearchResult } from "./rag.js";
 import { nowLocal } from "./time.js";
 
@@ -45,17 +46,23 @@ export async function knowledge(force = false, ver?: string): Promise<KnowledgeI
   return index;
 }
 
-let catalogCache: { at: number; value: Promise<import("./calc.js").Catalog> } | null = null;
-/** 選型計算用的型錄（客服版：不含價格；同一個執行個體內快取 5 分鐘） */
-function catalogOnce(): Promise<import("./calc.js").Catalog> {
-  if (catalogCache && Date.now() - catalogCache.at < KNOWLEDGE_TTL_MS) return catalogCache.value;
+let catalogCache: { at: number; ver?: string; value: Promise<import("./calc.js").Catalog> } | null = null;
+/**
+ * 選型計算用的型錄（客服版：不含價格）。同一個執行個體內快取 5 分鐘、知識庫版本號變了就重讀；
+ * 型錄讀進記憶體後，算選型就是「AI 整理參數 → 程式查型錄算前三名 → AI 重述」，不再碰試算表。
+ */
+function catalogOnce(ver?: string): Promise<import("./calc.js").Catalog> {
+  if (catalogCache && Date.now() - catalogCache.at < KNOWLEDGE_TTL_MS && (!ver || catalogCache.ver === ver)) return catalogCache.value;
   const value = gas.csCalcCatalog();
   value.catch(() => {
     catalogCache = null;
   });
-  catalogCache = { at: Date.now(), value };
+  catalogCache = { at: Date.now(), ver, value };
   return value;
 }
+
+/** 看起來是選型計算的問題（視野、工作距離、精度、解析度、相機、鏡頭…）：先在背景載入型錄，等 AI 整理好參數時已經在記憶體裡 */
+const CALC_HINT = /視野|FOV|WD|工作距離|精度|解析度|畫素|像素|相機|鏡頭|選型|焦距|倍率|飛拍|曝光|[uµμ]m|mm|\d\s*[x×*]\s*\d/i;
 
 /** 依 BOT 設定的搜尋流程找知識庫（問題轉向量失敗會自動退回關鍵字，不會讓客人沒有回覆） */
 export async function runSearch(index: KnowledgeIndex, query: string, search: SearchConfig | undefined, embedAi: EmbedConfig | null | undefined): Promise<SearchResult> {
@@ -124,6 +131,12 @@ export function csSystemPrompt(info: CsInfo, references: string): string {
     topics.length
       ? `7. 以下問題不要自己回答，一律呼叫 transfer_to_human（topic 填問題類型）交給專人，就算參考資料裡有答案也一樣（這條優先於其他規則）：${topics.map((x) => x.name).join("、")}。`
       : "",
+    info.sendImages !== false
+      ? "8. 參考資料標有「可附圖片」，而且客人問的內容用得到那張圖（架構圖、示意圖、接線圖…）、或客人要看圖時，呼叫 send_image 把圖傳給客人，並用一句話說明這張圖；只能傳這次參考資料標的圖片，不要自己貼圖片網址。"
+      : "",
+    (info.contactAfter ?? 0) > 0
+      ? "9. 客人主動說了自己的姓名、公司、電話或 Email，或答應留下聯繫資料時，呼叫 save_contact 記下來（至少要有電話或 Email）；不要主動追問、也不要逼對方留資料。"
+      : "",
     info.prompt ? `\n【公司規則（管理員設定，優先遵守）】\n${info.prompt}` : "",
     "",
     "【參考資料】",
@@ -147,6 +160,56 @@ function transferTool(info: CsInfo, handed: { topic: string | null }): Tool {
     handler: async (a) => {
       handed.topic = String(a.topic ?? "").trim() || "需要專人協助";
       return "已轉給專人，請直接結束，不用再回覆內容。";
+    },
+  };
+}
+
+const MAX_REPLY_IMAGES = 3;
+
+/** 把這次找到的資料附的圖片（架構圖、示意圖）直接傳給客人；只能傳這次檢索到的資料附的圖 */
+export function imageTool(seen: Hit[], images: ReplyImage[]): Tool {
+  return {
+    name: "send_image",
+    description: `把參考資料附的圖片（架構圖、示意圖…）直接傳給客人。客人問的內容剛好有對應的圖、或要求看圖時使用；ref 照參考資料括號裡寫的給（例如 k12#0）。一次最多 ${MAX_REPLY_IMAGES} 張，不相關的圖不要傳。`,
+    parameters: { type: "object", properties: { ref: { type: "string", description: "圖片編號，例如 k12#0" } }, required: ["ref"] },
+    handler: async (a) => {
+      const m = String(a.ref ?? "").trim().match(/^(.+)#(\d+)$/);
+      const im = m ? seen.find((h) => h.chunk.id === m[1])?.chunk.images?.[Number(m[2])] : undefined;
+      if (!m || !im) return "失敗：沒有這張圖片，請照參考資料裡「可附圖片」寫的編號（只能傳這次找到的資料附的圖）";
+      const url = imageUrl(im.id);
+      if (!url) return "失敗：機器人網址還沒設定，現在沒辦法傳圖片，請改用文字說明";
+      if (images.some((x) => x.url === url)) return "這張圖片已經附上了";
+      if (images.length >= MAX_REPLY_IMAGES) return `已經附了 ${MAX_REPLY_IMAGES} 張圖片，不能再多了`;
+      images.push({ url, caption: im.caption });
+      return `已附上圖片「${im.caption || "圖片"}」，會顯示在你的回覆下方；回覆裡用一句話說明這張圖即可，不要貼網址。`;
+    },
+  };
+}
+
+/** 客人主動留下聯繫資料時，記給專人（存進後台「聯繫名單」並通知同仁） */
+export function leadTool(uid: string, state: { saved: boolean }): Tool {
+  return {
+    name: "save_contact",
+    description: "客人主動提供（或答應留下）自己的聯繫資料時呼叫，記給專人日後聯繫。至少要有電話或 Email；有幾項就填幾項，不要自己編。",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "姓名" },
+        company: { type: "string", description: "公司" },
+        phone: { type: "string", description: "電話" },
+        email: { type: "string", description: "Email" },
+        note: { type: "string", description: "需求或備註（一句話）" },
+      },
+    },
+    handler: async (a) => {
+      const f = (k: string) => String(a[k] ?? "").trim();
+      try {
+        await gas.csLead(uid, { name: f("name"), company: f("company"), phone: f("phone"), email: f("email"), note: f("note"), source: "ai" });
+        state.saved = true;
+        return "已記下，專人之後會聯繫對方。回覆裡謝謝對方即可。";
+      } catch (error) {
+        return `沒有記下：${(error as Error).message}。請把原因告訴對方，請他補上。`;
+      }
     },
   };
 }
@@ -193,9 +256,12 @@ export async function groundCheck(info: CsInfo, questions: string[], refs: strin
 }
 
 /** 用知識庫回答一個問題：reply = 回覆、choices = 選項按鈕、handed = AI 判斷要交給真人（問題類型） */
-export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[]): Promise<{ reply: string; choices: string[]; handed: string | null; blocked?: string }> {
+export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[], uid = ""): Promise<{ reply: string; choices: string[]; handed: string | null; blocked?: string; images: ReplyImage[]; leadSaved: boolean }> {
+  if (CALC_HINT.test(text)) void catalogOnce(info.kbVer).catch(() => undefined); // 選型問題：型錄先在背景載入，跟知識庫檢索同時進行
   const index = await knowledge(false, info.kbVer);
   const choices: string[] = [];
+  const images: ReplyImage[] = [];
+  const lead = { saved: false };
   const handed: { topic: string | null } = { topic: null };
   // 檢索時連同上一個問題一起找（「那另一款呢？」這種接續問題）
   const lastUser = [...history].reverse().find((h) => h.u)?.t ?? "";
@@ -204,8 +270,10 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const hits = (await runSearch(index, query, search, info.embedAi)).hits;
 
   const seen: Hit[] = [...hits];
-  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(catalogOnce), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
+  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(() => catalogOnce(info.kbVer)), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
   if (info.topics?.length || info.unsure === "handoff") tools.push(transferTool(info, handed));
+  if (info.sendImages !== false) tools.push(imageTool(seen, images));
+  if ((info.contactAfter ?? 0) > 0 && uid) tools.push(leadTool(uid, lead));
 
   const turns: Turn[] = [...history.map((h) => ({ isUser: h.u, text: h.t })), { isUser: true, text }];
   let reply: string;
@@ -215,7 +283,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   } catch (error) {
     console.error("客服 AI 回覆失敗", error);
     reply = `不好意思，系統忙碌中，請稍後再問一次，或輸入「${callWord(info)}」由專人回覆 🙏`;
-    return { reply, choices, handed: handed.topic };
+    return { reply, choices, handed: handed.topic, images: [], leadSaved: false };
   }
   // 回覆前檢查（沒開、或這則本來就要轉真人時不檢查）：沒有根據就不送出，改請客人找專人（或直接轉專人）
   if (info.groundCheck && handed.topic === null) {
@@ -223,11 +291,11 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
     const check = await groundCheck(info, questions, formatHits(seen), reply);
     if (!check.ok) {
       console.warn("客服回覆沒有知識庫根據，已攔下", check.reason);
-      if (info.unsure === "handoff") return { reply, choices: [], handed: "知識庫找不到根據", blocked: check.reason };
-      return { reply: `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`, choices: [], handed: null, blocked: check.reason };
+      if (info.unsure === "handoff") return { reply, choices: [], handed: "知識庫找不到根據", blocked: check.reason, images: [], leadSaved: false };
+      return { reply: `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`, choices: [], handed: null, blocked: check.reason, images: [], leadSaved: false };
     }
   }
-  return { reply, choices, handed: handed.topic };
+  return { reply, choices, handed: handed.topic, images, leadSaved: lead.saved };
 }
 
 export type CsChannel = "line" | "web" | "test";
@@ -241,16 +309,28 @@ export interface CsResult {
   /** 這次有轉給真人（問題類型；空字串 = 客人要求） */
   handoff: string | null;
   info: CsInfo;
+  /** 這則回覆附的圖片（知識庫的架構圖 / 示意圖） */
+  images: ReplyImage[];
+  /** 該請客人留聯繫資料了（聊到設定的段數、還沒留過）：網站視窗跳出表單；LINE 已經把請求附在回覆文字後面 */
+  askContact: boolean;
+  /** 每則回覆下方要不要附「轉真人」按鈕 */
+  handoffButton: boolean;
 }
 
-const NO_REPLY = (info: CsInfo, paused = false): CsResult => ({ silent: true, paused, reply: "", choices: [], handoff: null, info });
+const NO_REPLY = (info: CsInfo, paused = false): CsResult => ({ silent: true, paused, reply: "", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: false });
+
+/** LINE 沒辦法跳出表單，聊到設定的段數就在回覆後面直接請客人留資料 */
+export const CONTACT_ASK_TEXT = "📇 方便留下您的姓名、公司和電話 / Email 嗎？之後專人可以主動聯繫您，直接回覆就可以了 😊";
+
+/** 「轉真人」按鈕上的字 */
+export const handoffLabel = (info: CsInfo) => `🙋 轉${callWord(info)}`;
 
 /**
  * 處理客人的一則訊息（LINE、網站視窗、後台測試共用）：
  * 沒啟用 / 專人服務時間 / 小編接手中 → 不回；重新開始；轉真人關鍵字；指定問題；知識庫 + AI 回答。
  * 回覆前不會等待（像真人打字的停頓由呼叫端用 humanPause 處理）。
  */
-export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string> }): Promise<CsResult> {
+export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string>; human?: boolean }): Promise<CsResult> {
   const info = await gas.csStart(uid);
   const testing = opts.channel === "test";
   if (!testing && (!info.enabled || !info.ai)) return NO_REPLY(info);
@@ -264,37 +344,47 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   if (info.paused && !reset && !testing) return NO_REPLY(info, true);
 
   const name = async () => (info.known === false || opts.channel === "web" ? (await opts.displayName?.()) ?? "" : "");
-  const remember = async (reply: string, topic = "") => {
+  const said = opts.human ? handoffLabel(info) : text; // 客人按「轉真人」按鈕時，對話紀錄記成按鈕上的字
+  const remember = async (reply: string, topic = "", extra: { askedContact?: boolean; images?: ReplyImage[] } = {}) => {
     try {
-      await gas.csRemember(uid, [{ u: true, t: text }, { u: false, t: reply }], await name(), topic);
+      await gas.csRemember(uid, [{ u: true, t: said }, { u: false, t: reply }], await name(), topic, extra);
     } catch (err) {
       console.warn("記錄客服對話失敗", err);
     }
   };
   const handoff = async (topic = ""): Promise<CsResult> => {
     const displayName = (await opts.displayName?.()) ?? "";
-    if (!testing) await gas.csHandoff(uid, displayName, text, topic);
+    if (!testing) await gas.csHandoff(uid, displayName, said, topic);
     const reply = handoffReply(info, topic);
     await remember(reply, topic || "找真人");
-    return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info };
+    return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info, images: [], askContact: false, handoffButton: false };
   };
 
   if (reset) {
     await gas.csForget(uid);
-    return { silent: false, paused: false, reply: "好的～想問什麼都可以直接問我 😊", choices: [], handoff: null, info };
+    return { silent: false, paused: false, reply: "好的～想問什麼都可以直接問我 😊", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: info.handoffButton !== false };
   }
 
+  if (opts.human) return handoff(); // 客人按了回覆下方的「轉真人」按鈕
   if (hasWord(text, info.handoffWords?.length ? info.handoffWords : DEFAULT_HANDOFF)) return handoff();
 
   // 問到交給真人回答的問題（關鍵字）：不經過 AI，直接轉
   const topic = matchTopic(text, info.topics);
   if (topic) return handoff(topic.name);
 
-  const { reply, choices, handed, blocked } = await csAnswer(info, text, info.history);
-  if (handed !== null) return handoff(handed);
+  const answer = await csAnswer(info, text, info.history, uid);
+  if (answer.handed !== null) return handoff(answer.handed);
+  const { choices, blocked } = answer;
+  const images = info.sendImages === false ? [] : answer.images;
 
-  await remember(reply, blocked ? "回覆檢查未通過" : ""); // 後台對話紀錄看得出哪些問題缺資料、需要補進知識庫
-  return { silent: false, paused: false, reply, choices, handoff: null, info };
+  // 聊到設定的段數（後台「客服設定」可改，0 = 不問）還沒留過聯繫資料 → 請客人留下
+  const askContact = !blocked && !answer.leadSaved && (info.contactAfter ?? 0) > 0 && (info.turnCount ?? 0) + 1 >= (info.contactAfter ?? 0) && !info.leadState;
+  const reply = askContact && opts.channel === "line" ? `${answer.reply}
+
+${CONTACT_ASK_TEXT}` : answer.reply;
+
+  await remember(reply, blocked ? "回覆檢查未通過" : "", { askedContact: askContact, images }); // 後台對話紀錄看得出哪些問題缺資料、需要補進知識庫
+  return { silent: false, paused: false, reply, choices, handoff: null, info, images, askContact, handoffButton: info.handoffButton !== false };
 }
 
 export async function handleCsEvent(e: LineEvent): Promise<void> {
@@ -323,7 +413,10 @@ export async function handleCsEvent(e: LineEvent): Promise<void> {
   if (result.silent) return;
   await humanPause(receivedAt, result.info.replyDelay);
   const buttons = result.info.buttonsAlways ? result.info.buttons ?? [] : [];
-  await replyText(ch(), e.replyToken, lineId, result.reply, result.choices.length ? result.choices : buttons);
+  const base = result.choices.length ? result.choices : buttons;
+  // 每則回覆下方都附「轉真人」按鈕（快速回覆最多 13 個，按鈕留一個位置給它）
+  const choices = result.handoffButton && !result.handoff ? [...base.slice(0, MAX_CHOICES - 1), handoffLabel(result.info)] : base;
+  await replyText(ch(), e.replyToken, lineId, result.reply, choices, result.images.map((i) => i.url));
 }
 
 export function processCsEvents(events: LineEvent[]): Promise<void> {

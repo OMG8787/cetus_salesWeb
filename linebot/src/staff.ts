@@ -1,11 +1,12 @@
 import { embed, generate, type Tool, type Turn } from "./ai.js";
 import { calcTool, CALC_RULES } from "./calc-tool.js";
+import { CardError, cardIntakeReply, extractCards } from "./cards.js";
 import type { Catalog } from "./calc.js";
 import { cleanReply, processEvents } from "./common.js";
 import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, loadVectorMap, searchKnowledge } from "./rag.js";
 import { GasError, gas, type StaffInfo, type StaffWrite } from "./gas.js";
 import { choicesTool } from "./human.js";
-import { channels, getProfile, pushText, replyText, showLoading, type Choice, type LineEvent, type Profile } from "./line.js";
+import { channels, downloadImage, getProfile, pushText, replyText, showLoading, type Choice, type LineEvent, type Profile } from "./line.js";
 import { addDays, daysFrom, nowLocal, showDate } from "./time.js";
 
 // 員工私人助理（員工專用的 LINE 官方帳號 + 網站右下角的「智能助理」，同一套邏輯）
@@ -108,6 +109,9 @@ export function staffSystemPrompt(info: StaffInfo): string {
     (info.blocks?.products ?? "none") !== "none" ? CALC_RULES : "",
     (info.blocks?.products ?? "none") !== "none"
       ? "產品與詢價：問價格先用 get_product / price_history 查報價紀錄，沒有紀錄就說沒有，不要估價；要詢價先用 inquiry_draft 產生信件內容給同事看，同事要存草稿再用 create_inquiry_draft（只存草稿、不會寄出）；拿到供應商新報價用 add_price_record 記錄。底價與供應商只能對同事講，絕對不要轉述給客戶。"
+      : "",
+    (info.blocks?.customers ?? "none") === "edit"
+      ? "名片登入：同事在 LINE 傳名片照片（單張或一次多張）時，系統已經讀出欄位放進「名片收件匣」。同事說「整理名片」「存名片」「看收件匣」時：先用 list_cards 看待整理的名片（有 existingCustomer 代表公司已是客戶，會新增為聯絡窗口），有明顯讀錯、缺公司名稱的先問同事或請他補；沒問題就用 save_cards 提出整批存入（同事按確認才寫入），不要一張一張分開提出。同事說「這批是 XX 展」就用 list_cards 的 note 參數記下展會註記。同事要丟掉名片用 discard_cards。回覆時不要把每張名片逐項重講（系統會附上摘要），只講重點與需要他決定的事。"
       : "",
     (info.blocks?.copy ?? "none") !== "none" ? "文案製作：寫社群文案前先用 copy_style 看公司風格與平台，照風格寫；寫好用 save_copy_post 存成草稿（不會自動發佈），並把內文貼給同事看。" : "",
     info.memory?.enabled
@@ -269,6 +273,14 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
       description: "查公司的文案風格與提示詞庫（寫文案前先看，照公司風格寫）；也列出可用的平台。",
       parameters: { type: "object", properties: {} },
       handler: () => query(uid, "copyStyle", {}),
+    });
+  }
+  if (lv("customers") !== "none") {
+    tools.push({
+      name: "list_cards",
+      description: "看「名片收件匣」：同事傳的名片照片讀出來的資料（編號、姓名、職稱、公司、電話、Email…）。status：pending 待整理（預設）/ saved 已存入 / discarded 已丟棄 / all。note 參數可設定這批名片的註記（例如「2026 台北自動化展」），之後傳的名片與收件匣裡待整理的都會帶上。",
+      parameters: { type: "object", properties: { status: { type: "string", enum: ["pending", "saved", "discarded", "all"], description: "預設 pending" }, note: str("這批名片的註記，例如展會名稱（選填）") } },
+      handler: (a) => query(uid, "cards", { status: a.status, note: a.note }),
     });
   }
   return tools;
@@ -501,6 +513,48 @@ function writeTools(uid: string, info: StaffInfo, staging: Staging): Tool[] {
       handler: (a) => propose("completeTodo", { id: a.id, reopen: a.reopen === true ? true : undefined })(),
     });
   }
+  if (writable.has("saveCards")) {
+    tools.push({
+      name: "save_cards",
+      description: "把「名片收件匣」待整理的名片整批存成客戶資料：公司還不是客戶 → 新增客戶（姓名放聯絡人，職稱、網站等放備註）；公司已經是客戶（或同一批裡同公司的第二張）→ 新增聯絡窗口；沒有公司名稱的會略過。要同事按確認才會寫入。ids 不填 = 全部待整理；fixes 可以修正某張讀錯的欄位或補公司名稱。一次整批提出，不要一張一張分開。",
+      parameters: {
+        type: "object",
+        properties: {
+          ids: { type: "array", items: { type: "number" }, description: "只存這些名片編號；不填 = 收件匣裡全部待整理的" },
+          fixes: {
+            type: "array",
+            description: "要修正的欄位，每張一筆",
+            items: {
+              type: "object",
+              properties: { id: { type: "number", description: "名片編號" }, name: str("姓名"), title: str("職稱"), company: str("公司"), phone: str("手機"), company_phone: str("公司電話"), email: str("Email"), address: str("地址"), tax_id: str("統編"), website: str("網站"), note: str("備註") },
+              required: ["id"],
+            },
+          },
+          category: str("新增客戶的分類：AOI同業資料 / 器材原廠 / 機構合作設備商 / 一般客戶（預設）"),
+        },
+      },
+      handler: (a) => {
+        const overrides: Record<string, Record<string, string>> = {};
+        for (const f of Array.isArray(a.fixes) ? (a.fixes as Record<string, unknown>[]) : []) {
+          const id = Number(f.id);
+          if (!id) continue;
+          const o: Record<string, string> = {};
+          const map: Record<string, string> = { name: "name", title: "title", company: "company", phone: "phone", company_phone: "companyPhone", email: "email", address: "address", tax_id: "taxId", website: "website", note: "note" };
+          for (const [from, to] of Object.entries(map)) if (typeof f[from] === "string" && String(f[from]).trim()) o[to] = String(f[from]).trim();
+          if (Object.keys(o).length) overrides[String(id)] = o;
+        }
+        return propose("saveCards", { ids: Array.isArray(a.ids) && a.ids.length ? a.ids : undefined, overrides: Object.keys(overrides).length ? overrides : undefined, category: a.category })();
+      },
+    });
+  }
+  if (writable.has("discardCards")) {
+    tools.push({
+      name: "discard_cards",
+      description: "丟棄「名片收件匣」裡的名片（不存進客戶資料；例如讀錯、重複、不需要的）。ids 不填 = 全部待整理的。要同事按確認才會執行。",
+      parameters: { type: "object", properties: { ids: { type: "array", items: { type: "number" }, description: "要丟棄的名片編號；不填 = 全部待整理的" } } },
+      handler: (a) => propose("discardCards", { ids: Array.isArray(a.ids) && a.ids.length ? a.ids : undefined })(),
+    });
+  }
   const del = (action: string, data: Record<string, unknown>) => propose(action, data)();
   if (writable.has("deleteCustomer")) {
     tools.push({
@@ -712,6 +766,38 @@ export async function staffConverse(uid: string, input: StaffInput, opts: { chan
 // ------------------------------------------------------------
 export const CONFIRM_DATA = /^staff:(ok|no):([0-9a-f]{10})$/;
 
+/** 同事傳了一張照片（名片）：讀出欄位放進名片收件匣。需要「客戶與追蹤」編輯權限。 */
+export async function staffCardPhoto(uid: string, messageId: string, opts: { profile?: () => Promise<Profile> } = {}): Promise<StaffResult> {
+  const prof = opts.profile ? await opts.profile() : { displayName: "", pictureUrl: "" };
+  const info = await gas.staffStart(uid, prof);
+  if (!info.allowed) return say(info, blockedReply(info));
+  if (info.blocks?.customers !== "edit" || !(info.writable ?? []).includes("saveCards")) {
+    return say(info, "你目前沒有「客戶與追蹤」的編輯權限，或管理員沒有開放名片登入，所以不能登入名片。需要的話請管理員到「BOT 設定 → 員工助理」開放。");
+  }
+  if (!info.ai) return say(info, "還沒有設定 AI：請管理員到網站「BOT 設定 → AI 模型」填入 API Key（要用支援圖片輸入的模型）。");
+  let reply: string;
+  let shown = "（傳了一張照片）";
+  try {
+    const image = await downloadImage(ch(), messageId);
+    const cards = await extractCards(info.ai, info.aiFallback, [image]);
+    if (!cards.length) {
+      reply = "📷 這張照片裡我看不出名片。請重拍一次：整張名片入鏡、對焦清楚、光線充足、不要反光。";
+    } else {
+      const res = await gas.staffCards(uid, cards);
+      shown = `（傳了名片照片：${res.added.map((c) => c.name || c.company || "名片").join("、")}）`;
+      reply = res.added.length ? cardIntakeReply(res.added, res.pending, res.batchNote) : "📷 名片上的字我讀不出來，請重拍一次（整張入鏡、對焦清楚、光線充足）。";
+    }
+  } catch (error) {
+    if (error instanceof CardError || error instanceof GasError) reply = `📷 ${error.message}`;
+    else {
+      console.error("名片登入失敗", error);
+      reply = "📷 這張照片處理失敗了，請稍後再傳一次。";
+    }
+  }
+  await remember(uid, shown, reply);
+  return say(info, reply, { choices: reply.startsWith("📇") ? ["📇 整理名片", "📥 看收件匣"] : [] });
+}
+
 export function pendingChoices(token: string): Choice[] {
   return [
     { label: "✅ 確認寫入", data: `staff:ok:${token}`, displayText: "確認" },
@@ -743,6 +829,12 @@ export async function handleStaffEvent(e: LineEvent): Promise<void> {
     input = { confirm: m[1] === "ok", token: m[2] };
   } else if (e.type === "message" && e.message?.type === "text" && e.message.text?.trim()) {
     input = { text: e.message.text.trim() };
+  } else if (e.type === "message" && e.message?.type === "image" && e.message.id) {
+    // 名片照片（單張或一次多張，每張各一個事件）
+    await showLoading(ch(), uid);
+    const photo = await staffCardPhoto(uid, e.message.id, { profile });
+    if (!photo.silent) await replyText(ch(), e.replyToken, uid, photo.reply, photo.choices);
+    return;
   } else {
     return;
   }

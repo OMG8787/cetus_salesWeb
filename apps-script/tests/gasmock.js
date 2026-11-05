@@ -138,6 +138,21 @@ function makeEnv(opts) {
   };
   const cache = {};
   const props = {};
+  const drive = {};
+  let driveSeq = 0;
+  const driveFolder = (name) => {
+    const id = 'folder' + ++driveSeq + 'abcdefghij';
+    const files = [];
+    return (drive[id] = {
+      name, files, getId: () => id,
+      createFile: (blob) => {
+        const fid = 'file' + ++driveSeq + 'XYZabcdefg';
+        const f = { blob, shared: false, trashed: false, getId: () => fid, setSharing: () => { if (opts.denyShare) throw new Error('policy'); f.shared = true; }, setTrashed: (v) => (f.trashed = v) };
+        files.push(f);
+        return f;
+      },
+    });
+  };
   const fetchLog = [];
   const ctx = {
     console,
@@ -153,6 +168,13 @@ function makeEnv(opts) {
       getUuid: () => crypto.randomUUID(),
       sleep: () => {},
       newBlob: (a, b, c) => ({ bytes: a, type: b, name: c }),
+      base64Decode: (t) => Array.from(Buffer.from(String(t), 'base64')),
+    },
+    DriveApp: {
+      Access: { ANYONE_WITH_LINK: 'link' },
+      Permission: { VIEW: 'view' },
+      createFolder: (n) => driveFolder(n),
+      getFolderById: (id) => { if (!drive[id]) throw new Error('no folder'); return drive[id]; },
     },
     CacheService: { getScriptCache: () => ({ get: (k) => (k in cache ? cache[k] : null), put: (k, v) => (cache[k] = v), remove: (k) => delete cache[k], removeAll: (ks) => ks.forEach((k) => delete cache[k]) }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
@@ -180,7 +202,7 @@ function makeEnv(opts) {
       for (let r = 2; r <= sh.maxRows; r++) sh.fmt[r + ',' + ci] = '@';
     });
   });
-  return { ctx, sheets, events, cache, props, fetchLog };
+  return { ctx, sheets, events, cache, props, fetchLog, drive };
 }
 
 module.exports = { makeEnv };

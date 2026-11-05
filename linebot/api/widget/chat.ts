@@ -18,18 +18,23 @@ export async function POST(request: Request): Promise<Response> {
     const widget = await loadWidget();
     cors = corsHeaders(checkOrigin(request, widget));
 
-    const body = (await request.json().catch(() => null)) as { visitorId?: unknown; text?: unknown } | null;
+    const body = (await request.json().catch(() => null)) as { visitorId?: unknown; text?: unknown; human?: unknown } | null;
+    const human = body?.human === true; // 客人按了回覆下方的「轉真人」按鈕
     const visitorId = typeof body?.visitorId === "string" ? body.visitorId : "";
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!VISITOR_ID.test(visitorId)) throw new WidgetError("訪客編號不正確", 400);
-    if (!text) throw new WidgetError("請輸入訊息", 400);
+    if (!text && !human) throw new WidgetError("請輸入訊息", 400);
     if (text.length > MAX_TEXT) throw new WidgetError(`訊息太長了（上限 ${MAX_TEXT} 字）`, 400);
 
-    const result = await csConverse(visitorUserId(visitorId), text, { channel: "web", displayName: async () => "網站訪客" });
+    const result = await csConverse(visitorUserId(visitorId), text, { channel: "web", displayName: async () => "網站訪客", human });
     // 像真人一樣不要秒回
     if (!result.silent) await humanPause(receivedAt, result.info.replyDelay);
     return Response.json(
-      { reply: result.silent || !result.reply ? null : { id: 0, text: result.reply, choices: result.choices }, paused: result.paused },
+      {
+        reply: result.silent || !result.reply ? null : { id: 0, text: result.reply, choices: result.choices, images: result.images, handoffButton: result.handoffButton },
+        paused: result.paused,
+        askContact: result.askContact,
+      },
       { headers: cors },
     );
   } catch (error) {

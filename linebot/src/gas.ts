@@ -57,6 +57,16 @@ export interface CsInfo {
   groundCheck?: boolean;
   /** 檢查用的 AI（沒指定 = 用 ai） */
   checkAi?: AiConfig | null;
+  /** 每則回覆下方附「轉真人」按鈕 */
+  handoffButton?: boolean;
+  /** 聊到第幾段請客人留聯繫資料（0 = 不問） */
+  contactAfter?: number;
+  /** 這位客人已經聊了幾段 */
+  turnCount?: number;
+  /** 聯繫資料：'' 還沒問 / asked 已問過 / done 已留 */
+  leadState?: "" | "asked" | "done";
+  /** 知識庫有附圖時可以直接給客人 */
+  sendImages?: boolean;
   history: { u: boolean; t: string }[];
   /** 已經知道客人的名稱（false = 記對話時順便帶上名稱） */
   known?: boolean;
@@ -99,6 +109,8 @@ export interface KnowledgeChunk {
   topic?: string;
   notes?: string;
   tags?: string;
+  /** 附圖（雲端硬碟檔案代號 + 說明） */
+  images?: { id: string; caption: string }[];
 }
 
 /** 算向量（embedding）用的模型與金鑰（管理系統從 AI 設定裡挑 Gemini 或 OpenAI 相容的那一組） */
@@ -132,6 +144,10 @@ export interface WidgetConfig {
   welcome: string;
   buttons: string[];
   replyDelay: number;
+  /** 每則回覆下方附「轉真人」按鈕 */
+  handoffButton?: boolean;
+  /** 轉真人按鈕上的稱呼（第一個轉真人關鍵字） */
+  handoffWord?: string;
 }
 
 export interface ThreadMessage {
@@ -181,6 +197,22 @@ export interface StaffInfo {
   memory?: { enabled: boolean; maxItems: number; confirm: boolean; canShared: boolean; categories: string[]; items: StaffMemoryItem[] };
 }
 
+/** 名片上讀到的欄位 */
+export interface CardFields {
+  name?: string;
+  title?: string;
+  company?: string;
+  phone?: string;
+  companyPhone?: string;
+  fax?: string;
+  email?: string;
+  address?: string;
+  taxId?: string;
+  website?: string;
+  note?: string;
+  confidence?: string;
+}
+
 export interface StaffWrite {
   action: string;
   data: Record<string, unknown>;
@@ -189,7 +221,7 @@ export interface StaffWrite {
 const TIMEOUT_MS = 25_000;
 
 /** 員工助理的操作用員工金鑰，其餘（客服）用客服金鑰：管理系統那邊每把金鑰只能做自己那一邊的事 */
-const STAFF_OPS = new Set(["start", "call", "stage", "commit", "cancel", "remember", "forget", "unfollow", "memory", "audit", "pushTargets"]);
+const STAFF_OPS = new Set(["start", "call", "stage", "commit", "cancel", "remember", "forget", "unfollow", "memory", "audit", "cards", "pushTargets"]);
 
 async function post<T>(body: Record<string, unknown>, retry = true): Promise<T> {
   const staff = STAFF_OPS.has(String(body.op));
@@ -229,8 +261,12 @@ export const gas = {
   csStart(lineUserId: string): Promise<CsInfo> {
     return post<CsInfo>({ op: "csStart", lineUserId, botUrl: config.botUrl });
   },
-  csRemember(lineUserId: string, turns: { u: boolean; t: string }[], displayName = "", topic = ""): Promise<number> {
-    return post<number>({ op: "csRemember", lineUserId, turns, displayName, topic });
+  csRemember(lineUserId: string, turns: { u: boolean; t: string }[], displayName = "", topic = "", extra: { askedContact?: boolean; images?: { url: string; caption: string }[] } = {}): Promise<number> {
+    return post<number>({ op: "csRemember", lineUserId, turns, displayName, topic, ...extra });
+  },
+  /** 客人留下聯繫資料（網站表單或 AI 聽到客人主動留） */
+  csLead(lineUserId: string, lead: { name?: string; company?: string; phone?: string; email?: string; note?: string; source?: "form" | "ai" }): Promise<boolean> {
+    return post<boolean>({ op: "csLead", lineUserId, ...lead });
   },
   csForget(lineUserId: string): Promise<boolean> {
     return post<boolean>({ op: "csForget", lineUserId });
@@ -263,6 +299,10 @@ export const gas = {
     return post<StaffInfo>({ op: "start", lineUserId, displayName: profile.displayName ?? "", pictureUrl: profile.pictureUrl ?? "", botUrl: config.botUrl });
   },
   /** 查詢（依這個人的權限過濾；沒權限會丟出錯誤） */
+  /** 名片照片讀出來的欄位放進收件匣；回傳每張的編號、重複提醒與待整理張數 */
+  staffCards(lineUserId: string, cards: CardFields[]): Promise<{ added: { id: number; name?: string; title?: string; company?: string; phone?: string; email?: string; duplicateOf?: number; existingCustomer?: string }[]; pending: number; batchNote?: string }> {
+    return post({ op: "cards", lineUserId, cards });
+  },
   staffCall(lineUserId: string, call: string, params: Record<string, unknown> = {}): Promise<unknown> {
     return post({ op: "call", lineUserId, call, params });
   },

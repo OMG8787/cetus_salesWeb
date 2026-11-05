@@ -682,3 +682,14 @@ header, .tabs { position: relative; z-index: 300; }
 #kb-modal .bot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 640px) { #kb-modal .bot-grid { grid-template-columns: 1fr; } }
 #kb-modal label.kb-inline { white-space: nowrap; }
+
+/* 知識庫附圖、聯繫名單 */
+.kb-imgs { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.kb-img { display: flex; align-items: center; gap: 8px; border: 1px solid #d8dde6; border-radius: 8px; padding: 6px; background: #fff; }
+.kb-img img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; background: #eef2f7; flex: none; }
+.kb-img input { flex: 1; margin: 0; }
+.kb-img button { flex: none; }
+.bot-table-wrap { overflow-x: auto; }
+.bot-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bot-table th, .bot-table td { border-bottom: 1px solid #e3e8ef; padding: 6px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+.bot-table td:nth-child(6) { white-space: normal; min-width: 160px; }

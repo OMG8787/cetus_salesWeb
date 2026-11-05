@@ -14,7 +14,7 @@ let keyShown = {};
 let revealedKey = '';
 
 const DAY_NAMES = '日一二三四五六';
-const TAB_LOADERS = { kb: () => loadKb(), talk: () => loadTalk(), conn: () => fillConn(), web: () => fillWeb(), ai: () => fillAi() };
+const TAB_LOADERS = { kb: () => loadKb(), leads: () => loadLeads(), talk: () => loadTalk(), conn: () => fillConn(), web: () => fillWeb(), ai: () => fillAi() };
 
 function $(id) {
   return document.getElementById(id);
@@ -153,6 +153,10 @@ function fillCs(cs) {
   $('cs-src-brand').checked = cs.sources.brand;
   setVal('cs-brand-info', cs.brandInfo);
   $('cs-src-products').checked = cs.sources.products;
+  $('cs-src-calc').checked = cs.sources.calc !== false;
+  $('cs-handoff-button').checked = cs.handoffButton !== false;
+  setVal('cs-contact-after', cs.contactAfter === undefined ? 3 : cs.contactAfter);
+  $('cs-send-images').checked = cs.sendImages !== false;
   setVal('cs-product-limit', cs.sources.productLimit);
   setVal('cs-product-cats', cs.sources.productCategories);
   renderProductFields(cs.sources.productFields);
@@ -180,6 +184,7 @@ function readCs() {
       docs: $('cs-src-docs').checked,
       brand: $('cs-src-brand').checked,
       products: $('cs-src-products').checked,
+      calc: $('cs-src-calc').checked,
       productLimit: val('cs-product-limit'),
       productCategories: val('cs-product-cats'),
       productFields: [...document.querySelectorAll('#cs-product-fields input:checked')].map((e) => e.value),
@@ -207,6 +212,9 @@ function readCs() {
     customAskPos: val('cs-custom-ask-pos'),
     topicText: val('cs-topic-text'),
     unsure: val('cs-unsure'),
+    handoffButton: $('cs-handoff-button').checked,
+    contactAfter: val('cs-contact-after'),
+    sendImages: $('cs-send-images').checked,
     style: { tone: val('cs-tone'), address: val('cs-address'), emoji: val('cs-emoji'), maxLines: val('cs-max-lines') },
     buttons: val('cs-buttons'),
     buttonsAlways: $('cs-buttons-always').checked,
@@ -416,6 +424,10 @@ function openKb(item) {
   setVal('kb-cat', r.BigCategory || '');
   setVal('kb-topic', r.Topic || '');
   setVal('kb-notes', r.Notes || '');
+  kbImages = (r.images || []).map((x) => ({ id: x.id, caption: x.caption || '' }));
+  renderKbImages();
+  $('kb-img-file').value = '';
+  $('kb-img-info').textContent = '';
   $('kb-active').checked = editing ? r.IsActive !== false : true;
   const aud = editing ? audOf(r) : ['cs', 'staff'];
   $('kb-vis-cs').checked = aud.includes('cs');
@@ -580,7 +592,8 @@ async function runAiSplit() {
 
 async function saveKb() {
   const item = kbEditing;
-  const common = { tags: val('kb-tags').trim(), bigCategory: val('kb-cat').trim(), topic: val('kb-topic').trim(), notes: val('kb-notes').trim(), isActive: $('kb-active').checked, audience: ['staff', 'cs'].filter((x) => $('kb-vis-' + x).checked) };
+  syncKbImageCaptions();
+  const common = { images: kbImages.map((x) => ({ id: x.id, caption: x.caption })), tags: val('kb-tags').trim(), bigCategory: val('kb-cat').trim(), topic: val('kb-topic').trim(), notes: val('kb-notes').trim(), isActive: $('kb-active').checked, audience: ['staff', 'cs'].filter((x) => $('kb-vis-' + x).checked) };
   if (!common.audience.length && !confirm('小助手和對外客服都沒有勾，這筆資料不會被任何機器人用到。確定嗎？')) return;
   if (item.type === 'qa') {
     const q = val('kb-question').trim();
@@ -610,6 +623,132 @@ async function saveKb() {
   closeModal('kb-modal');
   await loadKb();
   if (kbEmbed && kbPending) embedAll(false);
+}
+
+// ------------------------------------------------------------
+// 知識庫圖片（架構圖、示意圖）：先在瀏覽器縮小，再上傳到公司的 Google 雲端硬碟
+// ------------------------------------------------------------
+let kbImages = [];
+const KB_IMG_MAX = 6;
+const kbImgUrl = (x) => (x.preview ? x.preview : `https://lh3.googleusercontent.com/d/${encodeURIComponent(x.id)}=w240`);
+
+function syncKbImageCaptions() {
+  document.querySelectorAll('#kb-images .kb-img').forEach((el, i) => {
+    if (kbImages[i]) kbImages[i].caption = el.querySelector('input').value.trim().slice(0, 60);
+  });
+}
+
+function renderKbImages() {
+  $('kb-images').innerHTML = kbImages
+    .map(
+      (x, i) => `<div class="kb-img"><img src="${htmlEsc(kbImgUrl(x))}" alt="" loading="lazy" onerror="this.style.opacity=.3" />
+      <input maxlength="60" placeholder="這張圖是什麼？（必填，例如：系統架構圖）" value="${htmlEsc(x.caption || '')}" />
+      <button type="button" class="btn-secondary bot-write" title="移除這張圖片（雲端硬碟裡的檔案不會刪）" onclick="removeKbImage(${i})">✕</button></div>`
+    )
+    .join('');
+  $('kb-img-btn').disabled = readOnly() || kbImages.length >= KB_IMG_MAX;
+}
+
+function removeKbImage(i) {
+  syncKbImageCaptions();
+  kbImages.splice(i, 1);
+  renderKbImages();
+}
+
+/** 圖片縮到長邊 1600 以內（JPEG 0.88）；小檔案（1.5MB 內的 JPG / PNG / WebP）直接上傳原檔 */
+function prepareImage(file) {
+  return new Promise((resolve, reject) => {
+    const asIs = file.size <= 1.5 * 1024 * 1024 && /^image\/(jpeg|png|webp|gif)$/.test(file.type);
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('讀不到這個檔案'));
+    reader.onload = () => {
+      const url = reader.result;
+      if (asIs) return resolve({ mimeType: file.type, base64: String(url).split(',')[1], preview: url });
+      if (file.type === 'image/gif') return reject(new Error('GIF 超過 1.5MB，請先縮小'));
+      const img = new Image();
+      img.onerror = () => reject(new Error('這不是圖片檔'));
+      img.onload = () => {
+        const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, c.width, c.height);
+        g.drawImage(img, 0, 0, c.width, c.height);
+        const out = c.toDataURL('image/jpeg', 0.88);
+        resolve({ mimeType: 'image/jpeg', base64: out.split(',')[1], preview: out });
+      };
+      img.src = url;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function onKbImages() {
+  const files = [...$('kb-img-file').files];
+  $('kb-img-file').value = '';
+  if (!files.length) return;
+  syncKbImageCaptions();
+  const room = KB_IMG_MAX - kbImages.length;
+  if (files.length > room) alert(`每個項目最多 ${KB_IMG_MAX} 張圖片，只會上傳前 ${Math.max(0, room)} 張。`);
+  let n = 0;
+  for (const f of files.slice(0, Math.max(0, room))) {
+    $('kb-img-info').textContent = `上傳中…（${n + 1}/${Math.min(files.length, room)}）`;
+    try {
+      const img = await prepareImage(f);
+      const r = await callApi('botKbImageUpload', { mimeType: img.mimeType, base64: img.base64, filename: f.name });
+      if (!r.success) throw new Error(r.message);
+      kbImages.push({ id: r.id, caption: f.name.replace(/\.[^.]+$/, '').slice(0, 60), preview: img.preview });
+      n++;
+      renderKbImages();
+    } catch (e) {
+      alert(`「${f.name}」上傳失敗：${e.message}`);
+    }
+  }
+  $('kb-img-info').textContent = n ? `✓ 已上傳 ${n} 張，請填圖片說明後按儲存` : '';
+}
+
+// ------------------------------------------------------------
+// 聯繫名單
+// ------------------------------------------------------------
+let leadsCache = [];
+async function loadLeads() {
+  const r = await callApi('botLeads', {}, { silent: true });
+  if (!r.success) {
+    $('leads-list').innerHTML = `<div class="calc-hint" style="color:#c0392b;">${htmlEsc(r.message || '讀取失敗')}</div>`;
+    return;
+  }
+  leadsCache = r.leads;
+  $('leads-count').textContent = r.total ? `共 ${r.total} 筆` : '';
+  $('leads-list').innerHTML = r.leads.length
+    ? `<div class="bot-table-wrap"><table class="bot-table"><thead><tr><th>時間</th><th>姓名</th><th>公司</th><th>電話</th><th>Email</th><th>需求 / 備註</th><th>來源</th><th></th></tr></thead><tbody>${r.leads
+        .map(
+          (l) => `<tr><td>${htmlEsc(String(l.time).slice(5, 16))}</td><td>${htmlEsc(l.name)}</td><td>${htmlEsc(l.company)}</td><td>${l.phone ? `<a href="tel:${htmlEsc(l.phone)}">${htmlEsc(l.phone)}</a>` : ''}</td><td>${l.email ? `<a href="mailto:${htmlEsc(l.email)}">${htmlEsc(l.email)}</a>` : ''}</td><td>${htmlEsc(l.note)}</td><td>${l.channel === 'web' ? '網站' : 'LINE'}${l.source === 'ai' ? '（聊天中留下）' : ''}</td><td><button type="button" class="btn-secondary bot-write" onclick="deleteLead(${l.id})">🗑</button></td></tr>`
+        )
+        .join('')}</tbody></table></div>`
+    : '<div class="calc-hint" style="padding:8px 0;">還沒有人留下聯繫資料。</div>';
+  applyReadOnly();
+}
+
+async function deleteLead(id) {
+  if (!confirm('刪除這筆聯繫資料？')) return;
+  const r = await callApi('botLeadDelete', { ids: [id] });
+  if (!r.success) return alert(r.message);
+  loadLeads();
+}
+
+function exportLeads() {
+  if (!leadsCache.length) return alert('目前沒有資料可以匯出');
+  const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const rows = [['時間', '姓名', '公司', '電話', 'Email', '需求 / 備註', '來源']].concat(leadsCache.map((l) => [l.time, l.name, l.company, l.phone, l.email, l.note, (l.channel === 'web' ? '網站' : 'LINE') + (l.source === 'ai' ? '（聊天中留下）' : '')]));
+  // 電話開頭的 0 在 Excel 會被吃掉：加上 = "…" 讓它當文字
+  const csv = '\ufeff' + rows.map((r, i) => r.map((v, c) => (i && c === 3 && v ? `="${String(v).replace(/"/g, '')}"` : q(v))).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `聯繫名單_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 async function deleteKb() {
@@ -722,7 +861,7 @@ async function openThread(id, keepScroll) {
     .map((m) =>
       m.role === 'reset'
         ? `<div class="bot-note">${htmlEsc(m.text)}・${htmlEsc(m.time.slice(5, 16))}</div>`
-        : `<div class="bot-msg ${m.role}"><div class="bot-who">${m.role === 'user' ? '客人' : m.role === 'human' ? '專人' : '機器人'}・${htmlEsc(m.time.slice(5, 16))}${m.topic ? '・' + htmlEsc(m.topic) : ''}</div><div class="bot-bub">${htmlEsc(m.text)}</div></div>`
+        : `<div class="bot-msg ${m.role}"><div class="bot-who">${m.role === 'user' ? '客人' : m.role === 'human' ? '專人' : '機器人'}・${htmlEsc(m.time.slice(5, 16))}${m.topic ? '・' + htmlEsc(m.topic) : ''}</div><div class="bot-bub">${htmlEsc(String(m.text).replace(/\[\[img:([^|\]]*)\|?([^\]]*)\]\]/g, (_, u, c) => '🖼️ 附圖：' + (c || '圖片')))}</div></div>`
     )
     .join('');
   if (!keepScroll || bottom) box.scrollTop = box.scrollHeight;

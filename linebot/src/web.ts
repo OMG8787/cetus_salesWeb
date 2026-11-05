@@ -85,6 +85,8 @@ export function publicConfig(widget: WidgetConfig) {
     placeholder: "輸入訊息…",
     autoOpen: widget.autoOpen,
     welcome: widget.welcome ? { text: widget.welcome, choices: widget.buttons ?? [] } : null,
+    handoffButton: widget.handoffButton !== false,
+    handoffLabel: `🙋 轉${widget.handoffWord || "真人"}`,
   };
 }
 

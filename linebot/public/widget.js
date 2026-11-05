@@ -5,8 +5,10 @@
  * 選用屬性：
  *   data-api   API 網址（預設是這支 script 所在的網域）
  *   data-open  "true" 載入後直接展開
+ *   data-launcher  "false" 不顯示右下角的圓形按鈕（由官網的小機器人選單來開啟客服）
  *
- * 網頁上也可以用 window.AoiChat.open() / close() / toggle() / ask("問題") 控制。
+ * 網頁上也可以用 window.AoiChat.open() / close() / toggle() / ask("問題") / contact()（開啟並跳出留資料表單）/ human()（直接轉真人）控制；
+ * window.AoiChat.ready 是 Promise，客服設定載入完成回傳 true（客服沒啟用 / 載入失敗回傳 false）。
  * 外觀、歡迎詞、按鈕、允許嵌入的網站，都在網站「BOT 設定 → 網站客服視窗」設定。
  */
 (function () {
@@ -16,6 +18,7 @@
   if (window.AoiChat) return; // 同一頁只載入一次
 
   var BOT = "aoi";
+  var NO_LAUNCHER = script.dataset.launcher === "false";
   var API = (script.dataset.api || new URL(script.src, location.href).origin).replace(/\/$/, "") + "/api/widget";
   var POLL_MS = 5000;
   var POLL_MAX_MS = 30 * 60 * 1000;
@@ -82,6 +85,15 @@
     ".in textarea{flex:1;border:0;background:transparent;color:var(--tx);resize:none;outline:none;font:inherit;max-height:110px;padding:5px 0}",
     ".send{width:36px;height:36px;border:0;border-radius:10px;background:var(--c);color:var(--ci);font-size:17px;cursor:pointer;flex:none}.send:disabled{opacity:.4;cursor:default}",
     ".hint{font-size:11px;color:var(--mu);text-align:center;margin-top:5px}",
+    ".bub img{display:block;max-width:100%;border-radius:10px;margin-top:6px;cursor:zoom-in;background:var(--soft)}.bub img:first-child{margin-top:0}",
+    ".cap{font-size:11px;color:var(--mu);margin-top:2px}",
+    ".hand{margin-top:3px}.hand button{border:0;background:transparent;color:var(--mu);cursor:pointer;font:inherit;font-size:12px;padding:2px 6px;border-radius:8px}.hand button:hover:not(:disabled){color:var(--cl);background:var(--bg)}.hand button:disabled{opacity:.4;cursor:default}",
+    ".card{background:var(--bot);border:1px solid var(--line);border-radius:14px;padding:10px 12px;width:100%;display:flex;flex-direction:column;gap:6px}",
+    ".card b{font-size:13px}.card p{margin:0;font-size:12px;color:var(--mu)}",
+    ".card input,.card textarea{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--tx);font:inherit;padding:6px 9px;outline:none;resize:none}.card input:focus,.card textarea:focus{border-color:var(--c)}",
+    ".card .acts{display:flex;gap:8px;margin-top:2px}.card .acts button{border:1px solid var(--cl);background:var(--bg);color:var(--cl);border-radius:999px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}.card .acts .go{background:var(--c);border-color:var(--c);color:var(--ci)}.card .acts button:disabled{opacity:.5;cursor:default}",
+    ".card .cerr{font-size:12px;color:#c0392b}",
+    ".w.nolaunch .launch{display:none}.w.nolaunch .panel{bottom:100px}",
     "@media(max-width:575px){.panel{inset:0;width:100%;max-width:none;height:100dvh;border-radius:0}.w.open-m .launch{display:none}}",
     "@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}",
   ].join("");
@@ -104,6 +116,7 @@
   var $ = function (s) { return root.querySelector(s); };
   var wrap = $(".w"), launch = $(".launch"), panel = $(".panel"), body = $(".body"), input = $("textarea"), sendBtn = $(".send"), badge = $(".badge");
 
+  var readyDone, ready = new Promise(function (r) { readyDone = r; });
   var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, welcomed = false, loaded = false;
 
   /* ───────── 訊息顯示（一律用 textContent / DOM，不用 innerHTML 塞使用者或 AI 的文字） ───────── */
@@ -123,8 +136,34 @@
   function scrollDown() { body.scrollTop = body.scrollHeight; }
   function disableChips() { body.querySelectorAll(".chips button").forEach(function (b) { b.disabled = true; }); }
 
+  /* 回覆裡的圖片標記 [[img:網址|說明]]（還原對話時用）→ 圖片清單；只接受 https 網址 */
+  function extractImages(text) {
+    var imgs = [];
+    var clean = String(text).replace(/\[\[img:([^|\]]+)\|?([^\]]*)\]\]/g, function (_, u, c) {
+      if (/^https:\/\//.test(u)) imgs.push({ url: u, caption: c });
+      return "";
+    }).replace(/\n{3,}/g, "\n\n").trim();
+    return { text: clean, images: imgs };
+  }
+
+  function addImages(bubble, images) {
+    var seen = {};
+    (images || []).forEach(function (im) {
+      if (!im || !/^https:\/\//.test(im.url) || seen[im.url]) return;
+      seen[im.url] = 1;
+      var img = document.createElement("img");
+      img.src = im.url; img.alt = im.caption || "圖片"; img.loading = "lazy";
+      img.onclick = function () { window.open(im.url, "_blank", "noopener"); };
+      img.onload = scrollDown;
+      bubble.appendChild(img);
+      if (im.caption) { var cp = document.createElement("div"); cp.className = "cap"; cp.textContent = im.caption; bubble.appendChild(cp); }
+    });
+  }
+
   function add(kind, text, opts) {
     opts = opts || {};
+    var pics = opts.images || [];
+    if (kind === "ai") { var ex = extractImages(text); text = ex.text; pics = pics.concat(ex.images); }
     disableChips(); // 只有最新一則的按鈕能按
     var row = document.createElement("div");
     row.className = "row " + (kind === "me" ? "me" : kind === "err" ? "err" : "ai");
@@ -134,7 +173,16 @@
     var b = document.createElement("div");
     b.className = "bub";
     linkify(b, text);
+    addImages(b, pics);
+    if (!b.firstChild) b.textContent = "……";
     col.appendChild(b);
+    // 每則客服回覆下方都有「轉真人」按鈕（專人的回覆、錯誤訊息、已經轉真人的那則不用）
+    if (kind === "ai" && !opts.who && !opts.noHand && cfg && cfg.handoffButton !== false) {
+      var hd = document.createElement("div"); hd.className = "hand";
+      var hb = document.createElement("button"); hb.type = "button"; hb.textContent = cfg.handoffLabel || "🙋 轉真人";
+      hb.onclick = function () { human(); };
+      hd.appendChild(hb); col.appendChild(hd);
+    }
     row.appendChild(col);
     body.appendChild(row);
     if (opts.choices && opts.choices.length) chips(opts.choices, col);
@@ -178,7 +226,7 @@
   /* ───────── 載入設定、還原對話 ───────── */
   function applyConfig(c) {
     cfg = c;
-    wrap.className = "w " + (c.position === "left" ? "left" : "right");
+    wrap.className = "w " + (c.position === "left" ? "left" : "right") + (NO_LAUNCHER ? " nolaunch" : "");
     wrap.style.setProperty("--c", c.color);
     // 依背景亮度挑文字顏色
     var n = parseInt(c.color.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
@@ -224,15 +272,16 @@
     ask(text);
   }
 
-  function ask(text, silent) {
+  function ask(text, silent, isHuman) {
     setBusy(true);
     var t = silent ? null : typing();
-    return api("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, text: text }) })
+    return api("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, text: text, human: isHuman === true }) })
       .then(function (d) {
         if (t) t.remove();
-        if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices });
+        if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false });
         else if (d.paused) note("客服人員處理中，請稍候，回覆會顯示在這裡");
         if (d.paused) startPolling();
+        if (d.askContact && !silent && !store.get(leadKey())) contactCard();
       })
       .catch(function (e) {
         if (t) t.remove();
@@ -242,12 +291,55 @@
           box.className = "chips"; box.style.marginTop = "6px";
           var retry = document.createElement("button");
           retry.type = "button"; retry.textContent = "↻ 再試一次";
-          retry.onclick = function () { row.remove(); ask(text); };
+          retry.onclick = function () { row.remove(); ask(text, false, isHuman); };
           box.appendChild(retry);
           row.firstChild.appendChild(box);
         }
       })
       .then(function () { setBusy(false); if (isOpen()) input.focus(); });
+  }
+
+  /* ───────── 轉真人（回覆下方的按鈕）───────── */
+  function human() {
+    if (busy) return;
+    add("me", (cfg && cfg.handoffLabel) || "🙋 轉真人");
+    ask("", false, true);
+  }
+
+  /* ───────── 聊了幾段後，請訪客留下聯繫資料（段數在後台「客服設定」；0 = 不問）───────── */
+  function leadKey() { return "aoi_lead_" + BOT + "_" + visitor; }
+  var cardOpen = false;
+  function contactCard() {
+    if (cardOpen) return;
+    cardOpen = true;
+    disableChips();
+    var row = document.createElement("div");
+    row.className = "row ai";
+    var col = document.createElement("div");
+    col.className = "col"; col.style.maxWidth = "92%"; col.style.width = "100%";
+    var card = document.createElement("form");
+    card.className = "card";
+    card.innerHTML =
+      "<b>📇 方便留下聯繫資料嗎？</b><p>之後有新的資訊或需要進一步討論，專人可以主動聯繫您。</p>" +
+      '<input name="name" placeholder="姓名" maxlength="40" autocomplete="name">' +
+      '<input name="company" placeholder="公司" maxlength="60" autocomplete="organization">' +
+      '<input name="phone" placeholder="電話（電話或 Email 擇一必填）" maxlength="30" autocomplete="tel" inputmode="tel">' +
+      '<input name="email" placeholder="Email" maxlength="80" autocomplete="email" inputmode="email">' +
+      '<textarea name="note" rows="2" maxlength="300" placeholder="想了解什麼（選填）"></textarea>' +
+      '<div class="cerr" role="alert"></div>' +
+      '<div class="acts"><button type="submit" class="go">送出</button><button type="button" class="skip">稍後再說</button></div>';
+    col.appendChild(card); row.appendChild(col); body.appendChild(row); scrollDown();
+    var err = card.querySelector(".cerr"), go = card.querySelector(".go");
+    card.querySelector(".skip").onclick = function () { row.remove(); cardOpen = false; };
+    card.onsubmit = function (e) {
+      e.preventDefault();
+      var f = function (n) { return card.elements[n].value.trim(); };
+      if (!f("phone") && !f("email")) { err.textContent = "請至少留下電話或 Email，專人才能聯繫您"; return; }
+      err.textContent = ""; go.disabled = true;
+      api("/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, name: f("name"), company: f("company"), phone: f("phone"), email: f("email"), note: f("note") }) })
+        .then(function () { store.set(leadKey(), "1"); row.remove(); cardOpen = false; add("ai", "謝謝您！已收到您的聯繫資料，專人會盡快與您聯繫 🙏", { noHand: true }); })
+        .catch(function (e2) { go.disabled = false; err.textContent = e2.message || "送出失敗，請稍後再試"; });
+    };
   }
 
   /* ───────── 小編接手後，輪詢小編的回覆 ───────── */
@@ -272,11 +364,13 @@
     panel.classList.add("open"); wrap.classList.add("open-m");
     panel.setAttribute("aria-hidden", "false"); launch.setAttribute("aria-expanded", "true");
     unread = 0; badge.classList.remove("on");
+    try { window.dispatchEvent(new CustomEvent("aoichat:open")); } catch (e) { /* 舊瀏覽器略過 */ }
     restore().then(function () { setTimeout(function () { input.focus(); }, 120); scrollDown(); });
   }
   function close() {
     panel.classList.remove("open"); wrap.classList.remove("open-m");
     panel.setAttribute("aria-hidden", "true"); launch.setAttribute("aria-expanded", "false");
+    try { window.dispatchEvent(new CustomEvent("aoichat:close")); } catch (e) { /* 舊瀏覽器略過 */ }
   }
   function toggle() { isOpen() ? close() : open(); }
 
@@ -299,15 +393,25 @@
   });
   root.addEventListener("keydown", function (e) { if (e.key === "Escape" && isOpen()) close(); });
 
-  window.AoiChat = { open: open, close: close, toggle: toggle, ask: function (t) { open(); restore().then(function () { add("me", t); ask(t); }); } };
+  function afterReady(fn) { ready.then(function (ok) { if (ok) fn(); }); }
+  window.AoiChat = {
+    ready: ready,
+    open: function () { afterReady(open); },
+    close: close,
+    toggle: function () { afterReady(toggle); },
+    ask: function (t) { afterReady(function () { open(); restore().then(function () { add("me", t); ask(t); }); }); },
+    contact: function () { afterReady(function () { open(); restore().then(function () { contactCard(); }); }); },
+    human: function () { afterReady(function () { open(); restore().then(human); }); },
+  };
 
   /* ───────── 啟動 ───────── */
   api("/config").then(function (c) {
     applyConfig(c);
     (document.body || document.documentElement).appendChild(host);
+    readyDone(true);
     if (script.dataset.open === "true") open();
     else if (c.autoOpen && !store.get("aoi_auto_" + BOT)) {
       setTimeout(function () { if (!isOpen()) { open(); store.set("aoi_auto_" + BOT, "1"); } }, 3000);
     }
-  }).catch(function (e) { console.warn("[AOI] 客服視窗未啟用：" + e.message); });
+  }).catch(function (e) { readyDone(false); console.warn("[AOI] 客服視窗未啟用：" + e.message); });
 })();

@@ -184,7 +184,7 @@ const DEMO_CS_FIELDS = [['SupplierModel', '原廠型號'], ['Category', '類別'
 function demoBotState(db) {
   if (!db.bot) {
     db.bot = {
-      cs: { enabled: false, welcome: '', prompt: '', handoffText: '', sources: { qa: true, docs: true, products: false, brand: true, productLimit: 1500, productCategories: '', productFields: DEMO_CS_FIELDS.map((f) => f[0]) }, brandInfo: '', replyWhen: 'always', hours: { enabled: false, days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00', offText: '' }, handoffWords: '真人 客服人員 小編 專人 人工 業務', pauseMinutes: 30, topics: {}, customWords: '', customAsk: '', customAskPos: 'after', topicText: '', unsure: 'ask', style: { tone: 'friendly', address: '您', emoji: 'some', maxLines: 5 }, buttons: '', buttonsAlways: false, web: { enabled: false, title: '線上客服', subtitle: '有任何問題都可以問我', color: '#2c5aa0', position: 'right', autoOpen: false, allowedOrigins: '' } },
+      cs: { enabled: false, welcome: '', prompt: '', handoffText: '', sources: { qa: true, docs: true, products: false, calc: true, brand: true, productLimit: 1500, productCategories: '', productFields: DEMO_CS_FIELDS.map((f) => f[0]) }, brandInfo: '', replyWhen: 'always', hours: { enabled: false, days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00', offText: '' }, handoffWords: '真人 客服人員 小編 專人 人工 業務', pauseMinutes: 30, topics: {}, customWords: '', customAsk: '', customAskPos: 'after', topicText: '', unsure: 'ask', handoffButton: true, contactAfter: 3, sendImages: true, style: { tone: 'friendly', address: '您', emoji: 'some', maxLines: 5 }, buttons: '', buttonsAlways: false, web: { enabled: false, title: '線上客服', subtitle: '有任何問題都可以問我', color: '#2c5aa0', position: 'right', autoOpen: false, allowedOrigins: '' } },
       general: { replyDelay: 2, botUrl: '', brand: '鑫堡股份有限公司', memory: { turns: 10, hours: 6, chars: 600 } },
       ai: [], kb: [], messages: [], pauses: [], key: '',
     };
@@ -247,11 +247,21 @@ function demoBotApi(action, params, db) {
       const row = { BigCategory: params.bigCategory || '', Topic: params.topic || '', Notes: params.notes || '', HasVector: false, ID: params.id || (b.kb.reduce((m, k) => Math.max(m, k.ID), 0) + 1), Type: params.type, Title: params.title || String(params.question || params.content).slice(0, 40), Question: params.question || '', Content: params.content, Tags: params.tags || '', Source: params.source || '', IsActive: params.isActive !== false, UpdatedAt: nowStr() };
       const idx = b.kb.findIndex((k) => k.ID === params.id);
       row.audience = params.audience !== undefined ? params.audience.filter((x) => x === 'cs' || x === 'staff') : idx > -1 ? b.kb[idx].audience || ['cs', 'staff'] : ['cs', 'staff'];
+      row.images = params.images !== undefined ? params.images : idx > -1 ? b.kb[idx].images || [] : [];
       if (idx > -1) b.kb[idx] = row;
       else b.kb.push(row);
       save();
       return { success: true };
     }
+    case 'botKbImageUpload':
+      return { success: true, id: 'demoimage' + Math.random().toString(36).slice(2, 12), name: params.filename || 'image' };
+    case 'botLeads':
+      b.leads = b.leads || [{ id: 1, time: nowStr(), channel: 'web', userId: 'V1', name: '王小明（示範）', company: '甲公司', phone: '0912-345-678', email: 'ming@example.com', note: '想了解 AOI 相機選型', source: 'form' }];
+      return { success: true, leads: b.leads.slice().reverse(), total: b.leads.length };
+    case 'botLeadDelete':
+      b.leads = (b.leads || []).filter((l) => !(params.ids || []).includes(l.id));
+      save();
+      return { success: true, deleted: 1 };
     case 'botKbImport': {
       let id = b.kb.reduce((m, k) => Math.max(m, k.ID), 0);
       (params.rows || []).forEach((r) => b.kb.push({ ID: ++id, Type: 'doc', Title: r.title, Question: '', Content: r.content, Tags: '', Source: r.source || '', IsActive: true, UpdatedAt: nowStr(), audience: (params.audience || ['cs', 'staff']).filter((x) => x === 'cs' || x === 'staff') }));
@@ -1121,6 +1131,9 @@ function handleDemoApi(action, params) {
     case 'botKbDocSave':
     case 'botKbAiSplit':
     case 'botKbImport':
+    case 'botKbImageUpload':
+    case 'botLeads':
+    case 'botLeadDelete':
     case 'botKbDelete':
     case 'botGenKey':
     case 'botRevealKey':

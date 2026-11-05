@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261105d"></script>
+<script src="theme.js?v=20261105e"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261105d" />
-<link rel="stylesheet" href="dark.css?v=20261105d" />
+<link rel="stylesheet" href="style.css?v=20261105e" />
+<link rel="stylesheet" href="dark.css?v=20261105e" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -77,6 +77,7 @@
     <button type="button" class="bot-tab" data-tab="kb">📚 知識庫</button>
     <button type="button" class="bot-tab" data-tab="web">🌐 網站客服視窗</button>
     <button type="button" class="bot-tab" data-tab="talk">💬 對話與小編接手</button>
+    <button type="button" class="bot-tab" data-tab="leads">🧾 聯繫名單</button>
     <button type="button" class="bot-tab" data-tab="test">🧪 測試聊天</button>
     <button type="button" class="bot-tab" data-tab="staff">🧑‍💼 員工助理</button>
     <button type="button" class="bot-tab" data-tab="ai">🧠 AI 模型</button>
@@ -194,6 +195,15 @@
     </div>
 
     <div class="panel">
+      <h3 class="bot-h">🙋 轉真人按鈕、留聯繫資料、附圖與選型計算</h3>
+      <label class="bot-check"><input type="checkbox" id="cs-handoff-button" /> 每則回覆下方都附「🙋 轉真人」按鈕（網站視窗是回覆下方的小按鈕；LINE 是快速回覆按鈕），客人按了就直接轉給專人並通知同仁</label>
+      <label>聊到第 <input type="number" id="cs-contact-after" min="0" max="50" style="width:80px;display:inline-block;" /> 段後，請訪客留下聯繫資料（0 = 不問）</label>
+      <div class="calc-hint">網站視窗會跳出表單（姓名、公司、電話、Email；至少要有電話或 Email）；LINE 沒辦法跳表單，會在回覆後面請客人直接回覆，客人說了機器人就會記下來。每位客人只問一次，留下的資料在「🧾 聯繫名單」，同時用首頁備忘錄通知有 BOT 權限的同仁。</div>
+      <label class="bot-check"><input type="checkbox" id="cs-send-images" /> 問到知識庫有附圖的內容時，機器人直接傳圖片給客人（在「📚 知識庫」編輯項目時上傳圖片）</label>
+      <label class="bot-check"><input type="checkbox" id="cs-src-calc" /> 選型計算：客人問視野、精度、相機鏡頭怎麼選時，機器人把需求整理成參數，由程式查型錄算出前三名建議再回答（型錄只有型號與規格，<b>不含價格、供應商</b>；跟下面「產品資料庫」的開關各自獨立）</label>
+    </div>
+
+    <div class="panel">
       <h3 class="bot-h">📚 知識庫來源</h3>
       <div class="calc-hint">RAG：每次先找出跟問題相關的內容，機器人只根據這些內容回答。</div>
       <label class="bot-check"><input type="checkbox" id="cs-src-qa" /> 常見問題（在「📚 知識庫」維護）</label>
@@ -297,6 +307,17 @@
   </div>
 
   <!-- ===================== 對話與小編接手 ===================== -->
+  <div class="bot-panel" data-panel="leads" style="display:none;">
+    <div class="panel">
+      <div class="bot-row" style="justify-content:space-between;">
+        <h3 style="margin:0;">🧾 聯繫名單 <span id="leads-count" class="calc-hint"></span></h3>
+        <div class="bot-row"><button type="button" class="btn-secondary" onclick="loadLeads()">↻ 重新整理</button> <button type="button" class="btn-secondary" onclick="exportLeads()">⬇ 匯出 CSV</button></div>
+      </div>
+      <div class="calc-hint">客人聊了幾段之後在網站視窗填的表單，或在 LINE 聊天中主動留下的聯繫資料。段數與開關在「🛎️ 客服設定」。聯絡完可以到「客戶管理」建立成客戶。</div>
+      <div id="leads-list"></div>
+    </div>
+  </div>
+
   <div class="bot-panel" data-panel="talk" style="display:none;">
     <div class="bot-talk">
       <div class="panel bot-talk-list">
@@ -563,6 +584,14 @@
       <div><label>主題（選填，比大分類再細一層）</label><input id="kb-topic" maxlength="60" placeholder="例如：宅配" /></div>
     </div>
     <datalist id="kb-cats"></datalist>
+    <label>🖼️ 附圖（選填，最多 6 張）：架構圖、示意圖、接線圖…客人問到相關問題時，機器人可以直接把圖傳給他</label>
+    <div id="kb-images" class="kb-imgs"></div>
+    <div class="bot-row">
+      <input id="kb-img-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple style="display:none;" onchange="onKbImages()" />
+      <button type="button" class="btn-secondary bot-write" id="kb-img-btn" onclick="$('kb-img-file').click()">➕ 上傳圖片</button>
+      <span id="kb-img-info" class="calc-hint"></span>
+    </div>
+    <div class="calc-hint">圖片存在公司的 Google 雲端硬碟（「AOI機器人圖片」資料夾，設為知道連結的人可檢視）。說明請寫清楚這張圖是什麼（例如「系統架構圖」「接線示意圖」），機器人靠說明判斷什麼時候要傳。文件型的項目，圖片會掛在每一段上。</div>
     <label>備註（寫給 AI 看的提示，選填；客人看不到）</label>
     <input id="kb-notes" maxlength="1000" placeholder="例如：客人問運送、寄送、到貨時使用" />
     <label>關鍵字（選填，空白分隔；幫助找到這筆）</label>
@@ -581,11 +610,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261105d"></script>
-<script src="demo.js?v=20261105d"></script>
-<script src="common.js?v=20261105d"></script>
-<script src="assistant.js?v=20261105d"></script>
-<script src="bot.js?v=20261105d"></script>
-<script src="botstaff.js?v=20261105d"></script>
+<script src="config.js?v=20261105e"></script>
+<script src="demo.js?v=20261105e"></script>
+<script src="common.js?v=20261105e"></script>
+<script src="assistant.js?v=20261105e"></script>
+<script src="bot.js?v=20261105e"></script>
+<script src="botstaff.js?v=20261105e"></script>
 </body>
 </html>
