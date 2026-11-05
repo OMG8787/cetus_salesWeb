@@ -7374,6 +7374,35 @@ function csKnowledge_() {
   return out;
 }
 
+/**
+ * 員工助理用的知識庫：全部「啟用中」的常見問答、文件與公司資訊（不受客服「可用來源」勾選限制，因為這是公司自己的資料）。
+ * 產品另有產品查詢工具（含權限與底價隱藏），所以不放在這裡。id 與客服相同（向量共用）。
+ */
+function botStaffKnowledge_() {
+  var cs = botSettings_();
+  var out = [];
+  var text = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  sheetToObjects(SHEET_BOT_KB).rows.forEach(function (k) {
+    if (k['IsActive'] === false || String(k['IsActive']).toUpperCase() === 'FALSE') return;
+    out.push({
+      id: 'k' + k['ID'],
+      source: k['Type'] === 'doc' ? '文件' : '常見問題',
+      title: text(k['Title']) || text(k['Question']),
+      category: text(k['BigCategory']),
+      topic: text(k['Topic']),
+      notes: text(k['Notes']),
+      tags: text(k['Tags']),
+      text: [k['Question'] ? '問：' + text(k['Question']) : '', k['Question'] ? '答：' + text(k['Content']) : text(k['Content']), k['Tags'] ? '關鍵字：' + text(k['Tags']) : ''].filter(Boolean).join('\n'),
+    });
+  });
+  if (text(cs.brandInfo)) {
+    botChunkText_(cs.brandInfo, 500).forEach(function (c, i) {
+      out.push({ id: 'b' + i, source: '公司資訊', title: '公司資訊', text: c });
+    });
+  }
+  return out;
+}
+
 /** 網站嵌入視窗的公開設定（外觀、歡迎詞、按鈕、允許嵌入的網站）；沒有任何金鑰。 */
 function csWidgetConfig_() {
   var cs = botSettings_();
@@ -7855,7 +7884,7 @@ function botSetup_(log) {
 var SHEET_BOT_MEMBERS = 'BotMembers';
 var SHEET_BOT_MEMORY = 'BotMemory';
 
-var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'product', 'priceHistory', 'inquiryDraft', 'logs', 'memos', 'calendar', 'todos', 'calcCatalog', 'copyPosts', 'copyStyle'];
+var BOT_STAFF_CALLS = ['me', 'overview', 'customers', 'customer', 'followups', 'cases', 'case', 'products', 'product', 'priceHistory', 'inquiryDraft', 'logs', 'memos', 'calendar', 'todos', 'calcCatalog', 'kbChunks', 'kbVectors', 'copyPosts', 'copyStyle'];
 var BOT_STAFF_STATUS = { PENDING: '待開通', ACTIVE: '已開通', OFF: '停用' };
 var BOT_PENDING_SECONDS = 900;
 var BOT_CASE_STATUSES = ['需求單已發出', '評估單已發出', '已結案'];
@@ -8143,6 +8172,8 @@ function botStaffStart_(id, body) {
     prompt: cfg.prompt,
     ai: ais.length ? ais[0] : null,
     aiFallback: ais.slice(1),
+    search: botSearchCfg_(),
+    embedAi: botEmbedCfg_(),
     history: botCacheGet_(botStaffHistKey_(id)) || [],
     writable: botWritableOps_(ctx),
     pending: pending ? pending.summary : '',
@@ -8353,6 +8384,9 @@ function botStaffCall_(ctx, action, params) {
     var itext = inquiryText_(iq.obj, ihist.length ? ihist[0] : null, params.quantity);
     return { to: iq.obj['SupplierContactEmail'] || '', supplier: iq.obj['Supplier'] || '', subject: itext.subject, body: itext.body, note: '這只是文字草稿，還沒有建立 Gmail 草稿；要建立請用 create_inquiry_draft（會先請同事確認）' };
   }
+
+  if (action === 'kbChunks') return botStaffKnowledge_(); // 公司知識庫：每位已開通的同事都能查（客服能看的，同事一定也能看）
+  if (action === 'kbVectors') return csVectors_({ after: params.after, limit: params.limit });
 
   if (action === 'copyPosts') {
     botNeed_(ctx, 'copy', 'view');

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import type { StaffInfo } from "../src/gas.js";
 import type { LineEvent } from "../src/line.js";
-import { briefingText, handleStaffEvent, pushBriefings, staffConverse, staffSystemPrompt } from "../src/staff.js";
+import { briefingText, handleStaffEvent, pushBriefings, resetStaffKnowledgeCache, staffConverse, staffSystemPrompt } from "../src/staff.js";
 
 process.env.LINE_CHANNEL_SECRET = "staff-secret";
 process.env.LINE_CHANNEL_ACCESS_TOKEN = "staff-token";
@@ -45,6 +45,7 @@ function baseInfo(over: Partial<StaffInfo> = {}): StaffInfo {
 }
 
 beforeEach(() => {
+  resetStaffKnowledgeCache();
   state = {
     info: {}, gas: [], line: [], aiRound: 0, aiCalls: [], stageError: "", pending: "", history: [],
     ai: () => text("好的"),
@@ -61,6 +62,8 @@ beforeEach(() => {
         case "call":
           if (body.call === "customers") return ok({ total: 1, items: [{ CompanyName: "甲公司", Phone: "0912" }] });
           if (body.call === "cases" && body.lineUserId.startsWith("Ulimited")) return err("你沒有「案件與評估」的查看權限");
+          if (body.call === "kbChunks") return ok([{ id: "k1", source: "常見問題", title: "光源", category: "光源", topic: "環形", text: "問：有光源嗎\n答：有環形光源" }, { id: "k2", source: "文件", title: "簡介", text: "公司簡介內容" }]);
+          if (body.call === "kbVectors") return ok({ model: "gemini:gemini-embedding-001:256", items: [{ id: "k1", v: [1, 0] }, { id: "k2", v: [0, 1] }], total: 2, next: 2 });
           if (body.call === "me") return ok({ name: "小明" });
           if (body.call === "overview") return ok({ followups: { total: 2, items: [{ CompanyName: "乙公司", NextFollowUpDate: "2026-11-01", status: "已逾期" }, { CompanyName: "甲公司", NextFollowUpDate: "2026-11-04", NextFollowUpTime: "14:30", NextFollowUpNote: "報價確認", status: "今天" }] }, openCases: { total: 3, byStatus: { 需求單已發出: 2, 評估單已發出: 1 }, high: [{ CaseID: "C-1", CustomerName: "甲公司" }] } });
           return ok({});
@@ -455,4 +458,38 @@ test("寫入類工具：欄位名稱轉成管理系統的格式，只送有填�
     assert.deepEqual(op.data, data, tool);
     assert.equal(gasOps("commit").length, 0, tool + " 不能直接寫入");
   }
+});
+
+test("員工助理可以查公司知識庫（含向量）：search_knowledge → 取全部啟用中的段落與向量 → 依搜尋流程檢索", async () => {
+  state.info = { search: { mode: "vector", threshold: 0.6, topK: 6 }, embedAi: { provider: "gemini", apiKey: "K", endpoint: "https://ai.example/v1beta", model: "gemini-embedding-001", dim: 2, key: "k" } as never };
+  const realFetch2 = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("batchEmbedContents")) return new Response(JSON.stringify({ embeddings: [{ values: [1, 0] }] }));
+    return realFetch2(input, init);
+  }) as typeof fetch;
+  state.ai = (round) => (round === 0 ? toolCall("search_knowledge", { query: "有沒有光源" }) : text("知識庫說有環形光源"));
+  await handleStaffEvent(evMsg("客人問有沒有光源我們怎麼回"));
+  globalThis.fetch = realFetch2;
+  const calls = gasOps("call").map((g) => g.call);
+  assert.ok(calls.includes("kbChunks") && calls.includes("kbVectors"), "向管理系統取知識庫與向量：" + calls.join());
+  const names = (state.aiCalls[0].tools[0].functionDeclarations as { name: string }[]).map((t) => t.name);
+  assert.ok(names.includes("search_knowledge"), "每位已開通的同事都有知識庫工具");
+  const toolResult = JSON.stringify(state.aiCalls[1].contents.at(-1));
+  assert.match(toolResult, /環形光源/);
+  assert.doesNotMatch(toolResult, /公司簡介內容/, "向量相似度低於閥值的段落不採用");
+  // 第二次查詢用快取，不再向管理系統取資料
+  const before = gasOps("call").filter((g) => g.call === "kbChunks").length;
+  state.aiRound = 0;
+  state.ai = (round) => (round === 0 ? toolCall("search_knowledge", { query: "簡介" }) : text("ok"));
+  await handleStaffEvent(evMsg("公司簡介"));
+  assert.equal(gasOps("call").filter((g) => g.call === "kbChunks").length, before, "5 分鐘內快取");
+});
+
+test("沒有向量也能查知識庫（退回關鍵字）；提示詞說明知識庫與客服的差別", async () => {
+  state.info = {};
+  state.ai = (round) => (round === 0 ? toolCall("search_knowledge", { query: "公司簡介" }) : text("ok"));
+  await handleStaffEvent(evMsg("公司簡介是什麼"));
+  assert.match(JSON.stringify(state.aiCalls[1].contents.at(-1)), /公司簡介內容/);
+  assert.match(staffSystemPrompt(baseInfo()), /search_knowledge/);
+  assert.match(staffSystemPrompt(baseInfo()), /客服只看得到知識庫/);
 });

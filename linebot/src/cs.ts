@@ -4,7 +4,7 @@ import { cleanReply, processEvents } from "./common.js";
 import { gas, type CsInfo, type CsStyle, type CsTopic, type EmbedConfig } from "./gas.js";
 import { choicesTool, humanPause } from "./human.js";
 import { channels, getProfile, replyText, showLoading, type LineEvent } from "./line.js";
-import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, searchKnowledge, type Hit, type SearchConfig, type SearchResult } from "./rag.js";
+import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, loadVectorMap, searchKnowledge, type Hit, type SearchConfig, type SearchResult } from "./rag.js";
 import { nowLocal } from "./time.js";
 
 // 客服機器人（對外 LINE 官方帳號 + 網站右下角客服視窗，同一套邏輯）：任何人都能問
@@ -37,27 +37,9 @@ let cached: { at: number; index: KnowledgeIndex } | null = null;
 export async function knowledge(force = false): Promise<KnowledgeIndex> {
   if (!force && cached && Date.now() - cached.at < KNOWLEDGE_TTL_MS) return cached.index;
   const chunks = await gas.csKnowledge();
-  const index = new KnowledgeIndex(chunks, await loadVectors(chunks));
+  const index = new KnowledgeIndex(chunks, await loadVectorMap(chunks, (after, limit) => gas.csVectors(after, limit)));
   cached = { at: Date.now(), index };
   return index;
-}
-
-/** 知識庫向量（分頁取）。取不到（舊版管理系統、還沒算向量）就是空的，檢索會自動退回關鍵字。 */
-async function loadVectors(chunks: { id: string }[]): Promise<Map<string, number[]>> {
-  const map = new Map<string, number[]>();
-  const alive = new Set(chunks.map((c) => c.id));
-  try {
-    let after = 0;
-    for (let page = 0; page < 40; page++) {
-      const r = await gas.csVectors(after, 300);
-      for (const item of r.items) if (alive.has(item.id) && item.v.length) map.set(item.id, item.v);
-      if (!r.items.length || r.next >= r.total) break;
-      after = r.next;
-    }
-  } catch (error) {
-    console.warn("取得知識庫向量失敗，改用關鍵字檢索", (error as Error).message);
-  }
-  return map;
 }
 
 let catalogCache: { at: number; value: Promise<import("./calc.js").Catalog> } | null = null;

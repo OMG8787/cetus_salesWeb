@@ -1,7 +1,8 @@
-import { generate, type Tool, type Turn } from "./ai.js";
+import { embed, generate, type Tool, type Turn } from "./ai.js";
 import { calcTool, CALC_RULES } from "./calc-tool.js";
 import type { Catalog } from "./calc.js";
 import { cleanReply, processEvents } from "./common.js";
+import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, loadVectorMap, searchKnowledge } from "./rag.js";
 import { GasError, gas, type StaffInfo, type StaffWrite } from "./gas.js";
 import { choicesTool } from "./human.js";
 import { channels, getProfile, pushText, replyText, showLoading, type Choice, type LineEvent, type Profile } from "./line.js";
@@ -48,6 +49,28 @@ export interface StaffInput {
   reset?: boolean;
 }
 
+// 公司知識庫（客服機器人用的那份：常見問答、文件、公司資訊，含向量）：每位已開通的同事都能查；同一個執行個體內快取 5 分鐘
+const KB_TTL_MS = 5 * 60_000;
+let kbCache: { at: number; index: Promise<KnowledgeIndex> } | null = null;
+
+function staffKnowledge(uid: string): Promise<KnowledgeIndex> {
+  if (kbCache && Date.now() - kbCache.at < KB_TTL_MS) return kbCache.index;
+  const index = (async () => {
+    const chunks = (await gas.staffCall(uid, "kbChunks")) as ConstructorParameters<typeof KnowledgeIndex>[0];
+    const vectors = await loadVectorMap(chunks, (after, limit) => gas.staffCall(uid, "kbVectors", { after, limit }) as Promise<{ items: { id: string; v: number[] }[]; total: number; next: number }>);
+    return new KnowledgeIndex(chunks, vectors);
+  })();
+  index.catch(() => {
+    kbCache = null;
+  });
+  kbCache = { at: Date.now(), index };
+  return index;
+}
+
+export function resetStaffKnowledgeCache(): void {
+  kbCache = null;
+}
+
 const clip = (text: string) => (text.length > MAX_RESULT_CHARS ? text.slice(0, MAX_RESULT_CHARS) + "…（資料太多，已截斷；請用更精確的條件再查）" : text);
 
 // ------------------------------------------------------------
@@ -68,6 +91,7 @@ export function staffSystemPrompt(info: StaffInfo): string {
     blocks ? `這位同事的權限：${blocks}。` : "",
     "",
     "【規則】",
+    "0. 公司知識庫（客服機器人回答客人用的常見問答、文件、公司資訊）用 search_knowledge 查；客服只看得到知識庫，同事除了知識庫還能查客戶、案件、產品等（依權限）。",
     "1. 客戶、案件、產品、行程等資料一律用工具查，不要憑印象回答，也不要編造任何客戶資料、電話、金額、規格、日期；工具查不到就老實說查不到。",
     "2. 沒有權限的資料，工具會回報沒有權限，照實告訴同事需要請管理員開放，不要想辦法繞過。你不能刪除任何資料。",
     w.length
@@ -127,6 +151,22 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
       description: "查同事的行事曆未來幾天的行程（自己的 + 別人分享給他的；客戶下次追蹤也會在裡面，標示 followup）。需要綁定網站帳號。",
       parameters: { type: "object", properties: { days: { type: "number", description: "未來幾天，預設 7" } } },
       handler: (a) => query(uid, "calendar", { days: a.days }),
+    },
+    {
+      name: "search_knowledge",
+      description: "查公司知識庫（客服機器人用來回答客人的那份資料：常見問答、文件、公司資訊，含向量檢索）。同事問「客人問 XX 我們怎麼回答」「公司簡介」「產品怎麼用」「有沒有寫過 XX」時用。查產品規格與報價請用 search_products / get_product。",
+      parameters: { type: "object", properties: { query: str("關鍵字或完整的問題") }, required: ["query"] },
+      handler: async (a) => {
+        try {
+          const index = await staffKnowledge(uid);
+          const search = { ...DEFAULT_SEARCH, ...info.search };
+          const result = await searchKnowledge(index, String(a.query ?? ""), search, info.embedAi ? async (q) => (await embed(info.embedAi!, [q], "query"))[0] : undefined);
+          return clip(formatHits(result.hits) || "知識庫裡沒有找到相關資料");
+        } catch (error) {
+          if (error instanceof GasError) return `查詢失敗：${error.message}`;
+          throw error;
+        }
+      },
     },
     {
       name: "list_todos",

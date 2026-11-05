@@ -73,7 +73,7 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 
 | 類型 | 工具 |
 |---|---|
-| 查詢 | `overview`、`list_memos`、`list_calendar`、`list_todos`、`search_customers`、`get_customer`、`followups_due`、`contact_logs`、`search_cases`、`get_case`、`search_products`、`get_product`、`price_history`、`inquiry_draft`、`calc_selection`、`copy_posts`、`copy_style` |
+| 查詢 | `overview`、`list_memos`、`list_calendar`、`list_todos`、`search_knowledge`、`search_customers`、`get_customer`、`followups_due`、`contact_logs`、`search_cases`、`get_case`、`search_products`、`get_product`、`price_history`、`inquiry_draft`、`calc_selection`、`copy_posts`、`copy_style` |
 | 提出修改（暫存 15 分鐘，本人確認才寫入） | `add_memo`、`log_followup`、`update_customer`、`add_customer`、`add_contact`、`create_case`、`update_case`、`update_case_info`、`add_price_record`、`add_product`、`update_product`、`create_inquiry_draft`、`save_copy_post`、`add_event`、`add_todo`、`complete_todo`、`remember` |
 
 工具依這個人的權限與管理員設定的上限出現；**沒有任何刪除工具**。
@@ -83,7 +83,7 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 ```bash
 npm install
 npm run typecheck
-npm test          # 62 組：檢索 / 向量、選型計算、客服與員工助理、金鑰分流…
+npm test          # 64 組：檢索 / 向量、選型計算、客服與員工助理、金鑰分流…
 npx tsx test/calc-compare.ts <cases.json> <網站算出的結果.json>   # 選用：與網站 calc.js 逐項比對
 ```
 

@@ -162,6 +162,9 @@ export interface StaffInfo {
   prompt?: string;
   ai?: AiConfig | null;
   aiFallback?: AiConfig[];
+  /** 知識庫搜尋流程與向量模型（跟客服同一套） */
+  search?: SearchSettings;
+  embedAi?: EmbedConfig | null;
   history?: { u: boolean; t: string }[];
   /** 這個人可以提出的寫入動作（addMemo、logFollowUp…） */
   writable?: string[];

@@ -247,3 +247,24 @@ export function formatHits(hits: Hit[]): string {
 }
 
 export const hasCjk = (s: string) => CJK.test(s);
+
+/** 知識庫向量（分頁取）。取不到（舊版管理系統、還沒算向量）就是空的，檢索會自動退回關鍵字。 */
+export async function loadVectorMap(
+  chunks: { id: string }[],
+  fetchPage: (after: number, limit: number) => Promise<{ items: { id: string; v: number[] }[]; total: number; next: number }>,
+): Promise<Map<string, number[]>> {
+  const map = new Map<string, number[]>();
+  const alive = new Set(chunks.map((c) => c.id));
+  try {
+    let after = 0;
+    for (let page = 0; page < 40; page++) {
+      const r = await fetchPage(after, 300);
+      for (const item of r.items) if (alive.has(item.id) && item.v.length) map.set(item.id, item.v);
+      if (!r.items.length || r.next >= r.total) break;
+      after = r.next;
+    }
+  } catch (error) {
+    console.warn("取得知識庫向量失敗，改用關鍵字檢索", (error as Error).message);
+  }
+  return map;
+}
