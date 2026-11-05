@@ -283,14 +283,14 @@ https://docs.google.com/document/d/【這一段就是文件ID】/edit
 - **客戶聯絡窗口（支援多筆）**：客戶列表本身的聯絡人/電話/Email 是「主要聯絡人」；一間公司如果有好幾個窗口（不同電話、不同信箱、不同承辦人），按客戶列表的「聯絡窗口」可以開一個小視窗新增/刪除多筆聯絡人資料，存在獨立的 `CustomerContacts` 分頁
 - **客戶聯繫紀錄**：每次跟客戶聯繫完（電話/Email/拜訪），在客戶管理分頁「新增客戶聯繫紀錄」填一筆，公司名稱打好之後，「聯絡人」欄位會自動帶出這間公司的聯絡窗口清單、「所屬案件」下拉選單也會自動列出這間公司名下的案件（同一個客戶有多個案件在進行時，可以指定這筆聯繫是針對哪一個）下方「聯繫紀錄列表」可以照公司篩選、查看歷史紀錄、刪除，有指定案件的話會顯示案件編號連結，點下去直接跳到那個案件的詳情頁
 
-## 官網小機器人（兩支 JS，放在官網專案 `aoitools-main`）
+## 官網小機器人（兩支 JS，放在這個儲存庫的根目錄）
 
 官網右下角固定浮著一隻小機器人，滑鼠移上去（手機是點一下）展開選單：**💬 智能客服**、**✉️ 聯繫我**、**🎧 專員客服**、**🧭 選型工具**。
 
 | 檔案 | 放哪裡 | 用途 |
 |---|---|---|
 | `robot-loader.js` | 官網每一頁（`<script src="robot-loader.js"></script>`，`index.html` 已加） | 只負責載入 GitHub 上的 `robot-widget.js`，**建好後幾乎不用再改** |
-| `robot-widget.js` | 你的 GitHub 儲存庫（經由 jsDelivr 載入） | 小機器人本體與選單設定，**常常改的是這支**（改完推到 GitHub 就生效，jsDelivr 約有幾分鐘快取） |
+| `robot-widget.js` | 這個 GitHub 儲存庫根目錄（經由 jsDelivr 載入：`https://cdn.jsdelivr.net/gh/OMG8787/cetus_salesWeb@main/robot-widget.js`） | 小機器人本體與選單設定，**常常改的是這支**。改完 `git push`，**jsDelivr 對 `@main` 最多快取 12 小時**，要馬上生效就開 `https://purge.jsdelivr.net/gh/OMG8787/cetus_salesWeb@main/robot-widget.js` 清快取；或把 `robot-loader.js` 的 `ref` 改成 tag / commit 編號（不會被快取卡住，但每次發版要改一次） |
 
 設定一次：`robot-loader.js` 最上面填 `user`（GitHub 帳號）、`repo`（儲存庫）、`ref`（分支，預設 `main`）。`robot-widget.js` 最上面 `CONFIG`：
 
