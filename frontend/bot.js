@@ -300,178 +300,350 @@ function kbSnippet(t, n) {
   return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
-/** 知識庫每一筆「誰看得到」：對外客服 / 員工助理 */
+/** 知識庫每一筆「誰看得到」：對外客服 / 員工助理（兩個都可以 = 預設） */
 const audOf = (k) => (Array.isArray(k.audience) ? k.audience : ['cs', 'staff']);
-const audText = (a) => (a.length === 2 ? '客服＋助理' : !a.length ? '都不開放' : a[0] === 'cs' ? '僅對外客服' : '僅員工助理');
 function audBadge(a) {
-  return `<span class="bot-badge ${a.length === 2 ? '' : a.length ? 'aud-part' : 'warn'}" title="誰可以看到這筆">${audText(a)}</span>`;
+  if (a.length === 2) return '';
+  return ` <span class="bot-badge ${a.length ? 'aud-part' : 'warn'}" title="給誰看">${!a.length ? '🚫 都不給看' : a[0] === 'cs' ? '🛎️ 只給對外客服' : '🧑‍💼 只給小助手'}</span>`;
+}
+
+const DOC_CHUNK = 500;
+const DOC_OVERLAP = 100;
+let kbEditing = null; // { type:'qa', row } / { type:'doc', key, rows }
+
+const kbDocTitle = (r) => String(r.Title || '').replace(/（\d+\/\d+）(｜.*)?$/, '');
+const kbPartTitle = (r) => (String(r.Title || '').match(/（\d+\/\d+）｜(.+)$/) || [])[1] || '';
+
+/** 文件依文件代號（舊資料用文件名稱）合併成一份；常見問題一筆一張卡 */
+function kbCards() {
+  const docs = new Map();
+  const cards = [];
+  kbItems
+    .slice()
+    .sort((a, b) => (a.SortOrder || 0) - (b.SortOrder || 0) || a.ID - b.ID)
+    .forEach((r) => {
+      if (r.Type !== 'doc') return cards.push({ type: 'qa', row: r });
+      const key = r.FileName || r.Source || 'id' + r.ID;
+      if (!docs.has(key)) {
+        docs.set(key, { type: 'doc', key, rows: [] });
+        cards.push(docs.get(key));
+      }
+      docs.get(key).rows.push(r);
+    });
+  return cards;
 }
 
 function renderKb() {
   if (!kbItems) return;
   const kw = val('kb-keyword').trim().toLowerCase();
   const type = val('kb-type');
-  const match = (k) => !kw || [k.Title, k.Question, k.Content, k.Tags, k.Source].join(' ').toLowerCase().includes(kw);
-  const faqs = kbItems.filter((k) => k.Type === 'qa' && (!type || type === 'qa') && match(k));
-  const docs = {};
-  kbItems
-    .filter((k) => k.Type === 'doc' && (!type || type === 'doc') && match(k))
-    .forEach((k) => {
-      const key = k.Source || k.Title || '（未命名文件）';
-      (docs[key] = docs[key] || []).push(k);
-    });
-  $('kb-count').textContent = `（常見問題 ${kbItems.filter((k) => k.Type === 'qa').length}、文件段落 ${kbItems.filter((k) => k.Type === 'doc').length}）`;
-  const argOf = (v) => `decodeURIComponent('${encodeURIComponent(v)}')`;
-  let html = '';
-  if (faqs.length) {
-    html += '<table class="bot-table"><thead><tr><th>常見問題</th><th>答案</th><th>分類 / 主題</th><th>向量</th><th>可見對象</th><th>啟用</th><th></th></tr></thead><tbody>';
-    faqs.forEach((k) => {
-      html += `<tr class="${k.IsActive ? '' : 'off'}"><td><b>${htmlEsc(k.Question || k.Title)}</b></td><td>${htmlEsc(kbSnippet(k.Content, 120))}${k.Notes ? `<div class="calc-hint">📝 ${htmlEsc(kbSnippet(k.Notes, 60))}</div>` : ''}</td><td>${htmlEsc([k.BigCategory, k.Topic].filter(Boolean).join(' / '))}${k.Tags ? `<div class="calc-hint">${htmlEsc(k.Tags)}</div>` : ''}</td><td>${k.HasVector ? '✓' : kbEmbed ? '<span style="color:#c0392b;">—</span>' : ''}</td><td>${audBadge(audOf(k))}</td>
-        <td><input type="checkbox" class="bot-write" ${k.IsActive ? 'checked' : ''} ${readOnly() ? 'disabled' : ''} onchange="toggleKbActive(${k.ID}, this.checked)" /></td>
-        <td class="nowrap"><button type="button" class="btn-mini bot-write" onclick="openFaqModal(${k.ID})">編輯</button> <button type="button" class="btn-mini" onclick="deleteBotItem(${k.ID})">刪除</button></td></tr>`;
-    });
-    html += '</tbody></table>';
+  const all = kbCards();
+  const cards = all
+    .filter((x) => !type || x.type === type)
+    .filter((x) => !kw || (x.type === 'qa' ? [x.row.Question, x.row.Content, x.row.Tags, x.row.Title] : x.rows.flatMap((r) => [r.Title, r.Content, r.Tags])).some((v) => String(v || '').toLowerCase().includes(kw)));
+  $('kb-count').textContent = `（${all.length} 筆）`;
+  $('kb-list').innerHTML =
+    cards
+      .map((x, i) => {
+        if (x.type === 'qa') {
+          const r = x.row;
+          return `<div class="kb-card ${r.IsActive ? '' : 'off'}" onclick="openKb(kbCards()[${all.indexOf(x)}])">
+            <div class="kb-card-head"><b>❓ ${htmlEsc(r.Question || r.Title || '（沒有問題）')}</b><span class="nowrap">${r.HasVector ? '<span class="bot-badge" title="已有向量">🧬</span>' : kbEmbed ? '<span class="bot-badge warn" title="還沒有向量">無向量</span>' : ''}${audBadge(audOf(r))}${r.IsActive ? '' : ' <span class="bot-badge warn">停用</span>'}</span></div>
+            <div class="calc-hint">${htmlEsc(kbSnippet(r.Content, 160))}</div>
+            ${r.BigCategory || r.Topic ? `<div class="calc-hint">📂 ${htmlEsc([r.BigCategory, r.Topic].filter(Boolean).join(' / '))}${r.Notes ? ` ・ 💡 ${htmlEsc(kbSnippet(r.Notes, 80))}` : ''}</div>` : ''}
+            ${r.Tags ? `<div class="calc-hint">🏷️ ${htmlEsc(r.Tags)}</div>` : ''}
+          </div>`;
+        }
+        const first = x.rows[0];
+        const len = x.rows.reduce((t, r) => t + String(r.Content || '').length - (Number(r.Overlap) || 0), 0);
+        const noVec = x.rows.filter((r) => !r.HasVector).length;
+        return `<div class="kb-card ${first.IsActive ? '' : 'off'}" onclick="openKb(kbCards()[${all.indexOf(x)}])">
+          <div class="kb-card-head"><b>📄 ${htmlEsc(kbDocTitle(first) || '未命名文件')}</b><span class="calc-hint nowrap">${x.rows.length} 段、${len.toLocaleString()} 字${kbEmbed && noVec ? ` <span class="bot-badge warn" title="還沒有向量的段落">${noVec} 段無向量</span>` : ''}${audBadge(audOf(first))}${first.IsActive ? '' : ' <span class="bot-badge warn">停用</span>'}</span></div>
+          <div class="calc-hint">${htmlEsc(kbSnippet(first.Content, 120))}</div>
+          ${first.BigCategory || first.Topic ? `<div class="calc-hint">📂 ${htmlEsc([first.BigCategory, first.Topic].filter(Boolean).join(' / '))}</div>` : ''}
+        </div>`;
+      })
+      .join('') || `<div class="calc-hint" style="padding:10px 0;">${kbItems.length ? '沒有符合的資料' : '還沒有資料。按「＋ 常見問題」新增第一筆，例如：問「你們有賣光源嗎？」答「有，環形、條形、同軸光源都有…」。'}</div>`;
+}
+
+/** 文件的段落接回原文：新版用每段記的重疊字數去掉；舊匯入的段落之間空一行 */
+function kbJoinDoc(rows) {
+  if (rows.length && rows.every((r) => r.ChunkSize !== '' && r.ChunkSize != null)) return rows.map((r) => String(r.Content || '').slice(Number(r.Overlap) || 0)).join('');
+  return rows.map((r) => r.Content || '').join('\n\n');
+}
+
+function openKb(item) {
+  kbEditing = item;
+  const isDoc = item.type === 'doc';
+  const editing = !!(item.row || item.rows);
+  $('kb-title').textContent = (editing ? '編輯' : '新增') + (isDoc ? '文件' : '常見問題');
+  $('kb-qa-box').style.display = isDoc ? 'none' : '';
+  $('kb-doc-box').style.display = isDoc ? '' : 'none';
+  $('kb-file').value = '';
+  $('kb-file-info').textContent = '';
+  $('kb-chunk-preview').style.display = 'none';
+  $('kb-ai-msg').textContent = '';
+  aiSplit = null;
+  let r = {};
+  if (isDoc) {
+    const rows = item.rows || [];
+    r = rows[0] || {};
+    setVal('kb-doc-title', rows.length ? kbDocTitle(rows[0]) : '');
+    setVal('kb-doc-text', kbJoinDoc(rows));
+    setVal('kb-chunk-size', (rows[0] && rows[0].ChunkSize) || DOC_CHUNK);
+    setVal('kb-overlap', rows.length > 1 && rows[0] && rows[0].ChunkSize ? Math.max(0, ...rows.map((x) => Number(x.Overlap) || 0)) : DOC_OVERLAP);
+    $('kb-ai-split').checked = rows.some((x) => kbPartTitle(x));
+    if ($('kb-ai-split').checked) aiSplit = { key: aiKey(kbJoinDoc(rows), val('kb-chunk-size')), chunks: rows.map((x) => ({ text: String(x.Content || '').slice(Number(x.Overlap) || 0), title: kbPartTitle(x) })) };
+    fillAiProfiles();
+    renderAiBox();
+    renderChunkInfo();
+  } else {
+    r = item.row || {};
+    setVal('kb-question', r.Question || '');
+    setVal('kb-answer', r.Content || '');
   }
-  Object.keys(docs).forEach((name) => {
-    const list = docs[name];
-    const kinds = [...new Set(list.map((k) => audText(audOf(k))))];
-    html += `<details class="bot-doc"><summary>📄 <b>${htmlEsc(name)}</b> <span class="calc-hint">${list.length} 段</span> ${kinds.length === 1 ? audBadge(audOf(list[0])) : '<span class="bot-badge aud-part">可見對象不一致</span>'}
-      <button type="button" class="btn-mini bot-write" onclick="event.preventDefault();openAudModal(${argOf(name)})">🔒 可見對象</button>
-      <button type="button" class="btn-mini" onclick="event.preventDefault();deleteBotDoc(${argOf(name)}, ${list.length})">刪除整份文件</button></summary>
-      <table class="bot-table"><tbody>${list
-        .map(
-          (k) => `<tr class="${k.IsActive ? '' : 'off'}"><td style="width:28%;">${htmlEsc(k.Title)}</td><td>${htmlEsc(kbSnippet(k.Content, 160))}</td>
-          <td><input type="checkbox" class="bot-write" ${k.IsActive ? 'checked' : ''} ${readOnly() ? 'disabled' : ''} onchange="toggleKbActive(${k.ID}, this.checked)" /></td>
-          <td class="nowrap"><button type="button" class="btn-mini bot-write" onclick="openFaqModal(${k.ID})">編輯</button> <button type="button" class="btn-mini" onclick="deleteBotItem(${k.ID})">刪除</button></td></tr>`
-        )
-        .join('')}</tbody></table></details>`;
-  });
-  $('kb-list').innerHTML = html || '<div class="calc-hint" style="padding:10px 0;">還沒有資料。按「＋ 常見問題」新增第一筆，例如：問「你們有賣光源嗎？」答「有，環形、條形、同軸光源都有…」。</div>';
-}
-
-async function toggleKbActive(id, on) {
-  const k = kbItems.find((x) => x.ID === id);
-  if (!k) return;
-  const r = await callApi('botKbSave', { rowIndex: k.RowIndex, id: k.ID, type: k.Type, title: k.Title, question: k.Question, content: k.Content, tags: k.Tags, source: k.Source, bigCategory: k.BigCategory, topic: k.Topic, notes: k.Notes, isActive: on });
-  if (!r.success) alert(r.message);
-  loadKb();
-}
-
-function openFaqModal(id) {
-  const k = id ? kbItems.find((x) => x.ID === id) : null;
-  const isDoc = k && k.Type === 'doc';
-  $('faq-modal').dataset.id = k ? k.ID : '';
-  $('faq-title').textContent = k ? (isDoc ? '編輯文件段落' : '編輯常見問題') : '新增常見問題';
-  $('faq-q-wrap').style.display = isDoc ? 'none' : '';
-  $('faq-a-label').textContent = isDoc ? '內容' : '答案';
-  setVal('faq-question', k ? k.Question : '');
-  setVal('faq-content', k ? k.Content : '');
-  setVal('faq-tags', k ? k.Tags : '');
-  setVal('faq-cat', k ? k.BigCategory : '');
-  setVal('faq-topic', k ? k.Topic : '');
-  setVal('faq-notes', k ? k.Notes : '');
-  $('faq-active').checked = k ? k.IsActive : true;
-  const aud = k ? audOf(k) : ['cs', 'staff'];
-  $('faq-aud-cs').checked = aud.includes('cs');
-  $('faq-aud-staff').checked = aud.includes('staff');
-  $('faq-modal').style.display = 'flex';
+  setVal('kb-tags', r.Tags || '');
+  setVal('kb-cat', r.BigCategory || '');
+  setVal('kb-topic', r.Topic || '');
+  setVal('kb-notes', r.Notes || '');
+  $('kb-active').checked = editing ? r.IsActive !== false : true;
+  const aud = editing ? audOf(r) : ['cs', 'staff'];
+  $('kb-vis-cs').checked = aud.includes('cs');
+  $('kb-vis-staff').checked = aud.includes('staff');
+  $('kb-delete').style.display = editing ? '' : 'none';
+  $('kb-modal').style.display = 'flex';
 }
 
 function closeModal(id) {
   $(id).style.display = 'none';
 }
 
-async function saveFaq() {
-  const id = Number($('faq-modal').dataset.id) || 0;
-  const k = id ? kbItems.find((x) => x.ID === id) : null;
-  const isDoc = k && k.Type === 'doc';
-  const body = { type: isDoc ? 'doc' : 'qa', question: val('faq-question').trim(), content: val('faq-content').trim(), tags: val('faq-tags').trim(), bigCategory: val('faq-cat').trim(), topic: val('faq-topic').trim(), notes: val('faq-notes').trim(), isActive: $('faq-active').checked, audience: ['cs', 'staff'].filter((x) => $('faq-aud-' + x).checked) };
-  if (!isDoc && !body.question) return alert('請填問題');
-  if (!body.content) return alert('請填答案 / 內容');
-  if (k) Object.assign(body, { rowIndex: k.RowIndex, id: k.ID, title: k.Title, source: k.Source });
-  const r = await callApi('botKbSave', body);
-  if (!r.success) return alert(r.message);
-  if (r.embedError) alert('已儲存，但向量計算失敗：' + r.embedError + '\n之後可以按「補算還沒有向量的」重試。');
-  closeModal('faq-modal');
-  loadKb();
-}
-
-let audIds = [];
-function openAudModal(docName) {
-  const list = kbItems.filter((k) => k.Type === 'doc' && (k.Source || k.Title || '（未命名文件）') === docName);
-  if (!list.length) return;
-  audIds = list.map((k) => k.ID);
-  const first = audOf(list[0]);
-  $('aud-target').textContent = `文件「${docName}」共 ${list.length} 段，一次設定整份。`;
-  $('aud-cs').checked = first.includes('cs');
-  $('aud-staff').checked = first.includes('staff');
-  $('aud-modal').style.display = 'flex';
-}
-
-async function saveAudience() {
-  const audience = ['cs', 'staff'].filter((x) => $('aud-' + x).checked);
-  if (!audience.length && !confirm('兩個都不勾，客服與員工助理都看不到這份文件。確定嗎？')) return;
-  const r = await callApi('botKbSetAudience', { ids: audIds, audience });
-  if (!r.success) return alert(r.message);
-  closeModal('aud-modal');
-  loadKb();
-}
-
-async function deleteBotItem(id) {
-  const k = kbItems.find((x) => x.ID === id);
-  if (!k || !confirm('確定要刪除這筆嗎？\n\n' + kbSnippet(k.Question || k.Title, 40))) return;
-  const r = await callApi('botKbDelete', { ids: [id] });
-  if (!r.success) return alert(r.message);
-  loadKb();
-}
-
-async function deleteBotDoc(name, n) {
-  if (!confirm(`確定要刪除整份文件「${name}」（${n} 段）嗎？`)) return;
-  const r = await callApi('botKbDelete', { source: name });
-  if (!r.success) return alert(r.message);
-  loadKb();
-}
-
-// ---- 文件匯入：切段 + 檔案解析 ----
-function chunkText(text, size) {
-  const paras = String(text || '')
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean);
+/** 長文件切段：每段約 size 字，盡量在段落 / 句號切開；每段開頭重複上一段結尾 ov 個字。回傳 [{ content, overlap }]；去掉每段開頭的 overlap 字再接起來 = 原文 */
+function splitDoc(text, size, ov) {
+  text = String(text || '').replace(/\r/g, '').trim();
+  size = Math.max(100, Math.round(Number(size) || DOC_CHUNK));
+  ov = Math.min(Math.floor(size / 2), Math.max(0, Math.round(Number(ov) || 0)));
   const out = [];
-  let cur = '';
-  paras.forEach((p0) => {
-    let p = p0;
-    while (p.length > size) {
-      if (cur) {
-        out.push(cur);
-        cur = '';
-      }
-      out.push(p.slice(0, size));
-      p = p.slice(size);
+  let a = 0;
+  while (a < text.length) {
+    let b = Math.min(text.length, a + size);
+    if (b < text.length) {
+      const from = a + Math.floor(size * 0.6);
+      const win = text.slice(from, b);
+      const last = (re) => {
+        let m;
+        let k = -1;
+        while ((m = re.exec(win))) k = m.index + m[0].length;
+        return k;
+      };
+      let cut = last(/\n\s*\n/g);
+      if (cut <= 0) cut = last(/[。！？!?；;\n]/g);
+      if (cut <= 0) cut = last(/[，,、\s]/g);
+      if (cut > 0) b = from + cut;
     }
-    if ((cur + '\n' + p).length > size && cur) {
-      out.push(cur);
-      cur = p;
-    } else cur = cur ? cur + '\n' + p : p;
-  });
-  if (cur) out.push(cur);
+    const prev = out.length ? text.slice(Math.max(0, a - ov), a) : '';
+    out.push({ content: prev + text.slice(a, b), overlap: prev.length });
+    a = b;
+  }
   return out;
 }
 
-function openDocModal() {
-  setVal('doc-name', '');
-  setVal('doc-text', '');
-  setVal('doc-file', '');
-  $('doc-aud-cs').checked = true;
-  $('doc-aud-staff').checked = true;
-  updateDocPreview();
-  $('doc-modal').style.display = 'flex';
+const chunkOpts = () => ({ size: Number(val('kb-chunk-size')) || DOC_CHUNK, ov: val('kb-overlap') === '' ? DOC_OVERLAP : Number(val('kb-overlap')) });
+
+/** 切段資訊：會切成幾段；預覽每段的開頭（重疊的部分標灰） */
+function renderChunkInfo() {
+  const o = chunkOpts();
+  const len = val('kb-doc-text').trim().length;
+  const ai = $('kb-ai-split').checked;
+  const ready = ai && aiReady();
+  const parts = ai ? (ready ? withOverlap(aiSplit.chunks, o.ov) : []) : splitDoc(val('kb-doc-text'), o.size, o.ov);
+  $('kb-chunk-info').textContent = !len ? '' : ai ? (ready ? `共 ${len.toLocaleString()} 字 → 🤖 AI 切成 ${parts.length} 段` : '🤖 按下方「讓 AI 切段並預覽」，或儲存時自動切') : `共 ${len.toLocaleString()} 字 → 切成 ${parts.length} 段`;
+  if (ai) renderAiBox();
+  if ($('kb-chunk-preview').style.display !== 'none') {
+    $('kb-chunk-preview').innerHTML =
+      parts
+        .map(
+          (p, i) => `<div class="kb-prev-row"><b>第 ${i + 1} 段${p.title ? '｜' + htmlEsc(p.title) : ''}</b>（${p.content.length} 字${p.overlap ? `，重疊 ${p.overlap} 字` : ''}）<br>${p.overlap ? `<span class="calc-hint">${htmlEsc(p.content.slice(0, p.overlap))}</span>` : ''}${htmlEsc(p.content.slice(p.overlap, p.overlap + 160))}${p.content.length > p.overlap + 160 ? '…' : ''}</div>`
+        )
+        .join('') || '<span class="calc-hint">還沒有內容</span>';
+  }
 }
 
-function updateDocPreview() {
-  const n = chunkText(val('doc-text'), Number(val('doc-size')) || 500).length;
-  $('doc-preview').textContent = n ? `會切成 ${n} 段` : '';
+function toggleChunkPreview() {
+  const el = $('kb-chunk-preview');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+  renderChunkInfo();
+}
+
+// ---- 🤖 讓 AI 來切：AI 讀過整份文件，只回傳每段從第幾句開始與小標（不改寫內容）；費用記在選的那組 API Key ----
+const AI_SPLIT_MODELS = [
+  { id: 'gemini-3.8-flash', label: '⭐ Gemini 3.8 Flash（首推）', desc: '速度與效能平衡的主力模型。切段只需要讀懂每一段在講什麼，Flash 就夠準，而且最快、最省費用。<b>一般文件建議用它。</b>' },
+  { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro', desc: '適合專業文件、條列和表格很多的說明書；準確度比 Flash 高，費用介於 Flash 與旗艦之間。' },
+  { id: 'gemini-3-pro', label: 'Gemini 3 Pro', desc: '上一代 Pro，能力接近 3.1 Pro；3.1 Pro 不能用時的替代選擇。' },
+  { id: 'custom', label: '自訂模型名稱…', desc: '填你的 API 可以用的模型名稱（例如新出的模型）。' },
+];
+let aiSplit = null; // { key, chunks: [{ text, title }], model }
+const aiKey = (text, size) => String(text || '').replace(/\r/g, '').trim() + '|' + Number(size || DOC_CHUNK);
+const aiReady = () => !!aiSplit && aiSplit.key === aiKey(val('kb-doc-text'), val('kb-chunk-size'));
+
+/** 段落加上重疊：每段開頭重複上一段結尾 ov 個字 */
+function withOverlap(chunks, ov) {
+  const all = chunks.map((c) => c.text).join('');
+  let pos = 0;
+  return chunks.map((c, i) => {
+    const prev = i ? all.slice(Math.max(0, pos - ov), pos) : '';
+    pos += c.text.length;
+    return { content: prev + c.text, overlap: prev.length, title: c.title || '' };
+  });
+}
+
+/** 可以用的 AI：預設 = 整個系統那組；清單裡有金鑰的每一組；系統共用 Gemini */
+function fillAiProfiles() {
+  const P = (botData && botData.aiProviders) || {};
+  const opts = ['<option value="" data-provider="">預設（整個系統那組）</option>'];
+  ((botData && botData.ai) || []).forEach((m, i) => {
+    if (m.hasKey) opts.push(`<option value="${i}" data-provider="${htmlEsc(m.provider)}" data-model="${htmlEsc(m.model || '')}">${htmlEsc(m.name || '未命名')}（${htmlEsc((P[m.provider] || {}).name || m.provider)}${m.model ? ' ' + htmlEsc(m.model) : ''}）</option>`);
+  });
+  if (botData && botData.aiSystem) opts.push('<option value="sys" data-provider="gemini">系統共用 Gemini</option>');
+  $('kb-ai-profile').innerHTML = opts.join('');
+  renderAiModels();
+}
+
+/** 模型：Gemini 可以選（預設首推 Flash）；其他服務用那組設定的模型；預設那組不確定是誰，就用那組設定的模型 */
+function renderAiModels() {
+  const o = $('kb-ai-profile').selectedOptions[0];
+  const gemini = o && o.dataset.provider === 'gemini';
+  $('kb-ai-model').innerHTML = gemini ? AI_SPLIT_MODELS.map((m) => `<option value="${m.id}">${htmlEsc(m.label)}</option>`).join('') : `<option value="">使用這一組設定的模型${o && o.dataset.model ? '（' + htmlEsc(o.dataset.model) + '）' : ''}</option>`;
+  $('kb-ai-model').value = gemini ? AI_SPLIT_MODELS[0].id : '';
+}
+
+const aiModelId = () => ($('kb-ai-model').value === 'custom' ? val('kb-ai-model-custom').trim() : $('kb-ai-model').value);
+
+/** 預估 token：中文大約 1 個字 ≈ 1 token；讀入 = 整份文件＋句子編號與說明，回覆只有段落編號和小標 */
+function aiCost() {
+  const len = val('kb-doc-text').trim().length;
+  const size = Number(val('kb-chunk-size')) || DOC_CHUNK;
+  const units = Math.ceil(len / Math.max(30, size / 4));
+  const input = Math.round(len * 1.1 + units * 4 + 400);
+  const output = Math.ceil(len / size) * 25 + 30;
+  return { input, output, total: input + output };
+}
+
+function renderAiBox() {
+  const on = $('kb-ai-split').checked;
+  $('kb-ai-box').style.display = on ? '' : 'none';
+  if (!on) return;
+  $('kb-ai-model-custom').style.display = $('kb-ai-model').value === 'custom' ? '' : 'none';
+  const m = AI_SPLIT_MODELS.find((x) => x.id === $('kb-ai-model').value);
+  $('kb-ai-model-info').innerHTML = m ? m.desc : '會用這一組 AI 原本設定的模型。';
+  const c = aiCost();
+  const who = ($('kb-ai-profile').selectedOptions[0] || {}).textContent || '選的那組';
+  $('kb-ai-cost').innerHTML = val('kb-doc-text').trim()
+    ? `💰 <b>會消耗 token</b>：這份文件預估約 <b>${c.total.toLocaleString()}</b> tokens（讀入約 ${c.input.toLocaleString()}、回覆約 ${c.output.toLocaleString()}），費用依模型計價，記在「${htmlEsc(who)}」的 API Key。AI 只回傳「從第幾句切開」和小標，不會改寫你的內容；內容沒改就不會重切。`
+    : '💰 會消耗 token：大約等於文件字數（中文 1 個字約 1 token），費用記在選的那組 API Key。';
+}
+
+async function runAiSplit() {
+  const text = val('kb-doc-text').replace(/\r/g, '').trim();
+  if (!text) return alert('請先貼上或上傳文件內容');
+  if ($('kb-ai-model').value === 'custom' && !aiModelId()) return alert('請輸入模型名稱');
+  const size = Number(val('kb-chunk-size')) || DOC_CHUNK;
+  $('kb-ai-run').disabled = true;
+  $('kb-ai-msg').textContent = '🤖 AI 讀文件中…（長文件可能要一分鐘）';
+  try {
+    const r = await callApi('botKbAiSplit', { text, target: size, profile: val('kb-ai-profile'), model: aiModelId() });
+    if (!r.success) throw new Error(r.message || 'AI 切段失敗');
+    if (r.chunks.map((c) => c.text).join('') !== text) throw new Error('AI 切出來的段落接不回原文，請再試一次');
+    aiSplit = { key: aiKey(text, size), chunks: r.chunks, model: r.model };
+    $('kb-ai-msg').textContent = `✅ ${r.name ? r.name + '・' : ''}${r.model} 切成 ${r.chunks.length} 段`;
+    $('kb-chunk-preview').style.display = '';
+    renderChunkInfo();
+    return true;
+  } catch (e) {
+    $('kb-ai-msg').textContent = '';
+    alert(e.message || String(e));
+    return false;
+  } finally {
+    $('kb-ai-run').disabled = false;
+  }
+}
+
+async function saveKb() {
+  const item = kbEditing;
+  const common = { tags: val('kb-tags').trim(), bigCategory: val('kb-cat').trim(), topic: val('kb-topic').trim(), notes: val('kb-notes').trim(), isActive: $('kb-active').checked, audience: ['staff', 'cs'].filter((x) => $('kb-vis-' + x).checked) };
+  if (!common.audience.length && !confirm('小助手和對外客服都沒有勾，這筆資料不會被任何機器人用到。確定嗎？')) return;
+  if (item.type === 'qa') {
+    const q = val('kb-question').trim();
+    const a = val('kb-answer').trim();
+    if (!q || !a) return alert('請輸入問題與回答');
+    const body = Object.assign({ type: 'qa', question: q, content: a }, common);
+    if (item.row) Object.assign(body, { rowIndex: item.row.RowIndex, id: item.row.ID, title: item.row.Title, source: item.row.Source });
+    const r = await callApi('botKbSave', body);
+    if (!r.success) return alert(r.message);
+    if (r.embedError) alert('已儲存，但向量計算失敗：' + r.embedError + '\n之後可以按「補算還沒有向量的」重試。');
+  } else {
+    const title = val('kb-doc-title').trim();
+    const o = chunkOpts();
+    if (!(o.size >= 100 && o.size <= 3000)) return alert('每段字數請輸入 100 ~ 3000');
+    if (!(o.ov >= 0 && o.ov <= o.size / 2)) return alert('重疊字數請輸入 0 ~ 每段字數的一半');
+    if (!title || !val('kb-doc-text').trim()) return alert('請輸入文件名稱與內容');
+    if ($('kb-ai-split').checked && !aiReady()) {
+      if (!confirm(`要讓 AI 切段，預估約 ${aiCost().total.toLocaleString()} tokens（記在選的那組 API Key）。確定嗎？\n（不想花 token 可以按取消，再取消勾選「讓 AI 來切」）`)) return;
+      if (!(await runAiSplit())) return;
+    }
+    const chunks = $('kb-ai-split').checked ? withOverlap(aiSplit.chunks, o.ov) : splitDoc(val('kb-doc-text'), o.size, o.ov);
+    if (!chunks.length) return alert('沒有可儲存的內容');
+    const r = await callApi('botKbDocSave', Object.assign({ key: item.key || '', title, chunks, chunkSize: o.size }, common));
+    if (!r.success) return alert(r.message);
+    if (r.embedError) alert('已儲存，但向量計算失敗：' + r.embedError + '\n之後可以按「補算還沒有向量的」重試。');
+  }
+  closeModal('kb-modal');
+  await loadKb();
+  if (kbEmbed && kbPending) embedAll(false);
+}
+
+async function deleteKb() {
+  const item = kbEditing;
+  const rows = item.rows || (item.row ? [item.row] : []);
+  if (!rows.length || !confirm(`刪除這筆${item.type === 'doc' ? '文件（' + rows.length + ' 段）' : '常見問題'}？`)) return;
+  const r = await callApi('botKbDelete', { ids: rows.map((x) => x.ID) });
+  if (!r.success) return alert(r.message);
+  closeModal('kb-modal');
+  loadKb();
+}
+
+/** 上傳文件：文字檔直接讀；PDF 用 pdf.js 取出文字（掃描的圖片 PDF 讀不到字） */
+async function onKbFile() {
+  const f = $('kb-file').files[0];
+  if (!f) return;
+  $('kb-file-info').textContent = '讀取中…';
+  try {
+    let text;
+    if (/\.pdf$/i.test(f.name)) text = await readPdfText(f);
+    else {
+      text = await f.text();
+      if (/\.html?$/i.test(f.name)) {
+        const d = new DOMParser().parseFromString(text, 'text/html');
+        d.querySelectorAll('script,style,noscript').forEach((e) => e.remove());
+        text = (d.body ? d.body.innerText || d.body.textContent : text).replace(/\n{3,}/g, '\n\n');
+      } else if (/\.json$/i.test(f.name)) {
+        try {
+          text = JSON.stringify(JSON.parse(text), null, 2);
+        } catch (e) {}
+      }
+    }
+    text = String(text).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!text) {
+      $('kb-file-info').textContent = '⚠️ 這個檔案讀不到文字（可能是掃描的圖片，需要先轉成文字）';
+      return;
+    }
+    setVal('kb-doc-text', (val('kb-doc-text').trim() ? val('kb-doc-text').trim() + '\n\n' : '') + text);
+    if (!val('kb-doc-title').trim()) setVal('kb-doc-title', f.name.replace(/\.[^.]+$/, ''));
+    $('kb-file-info').textContent = `✅ ${f.name}：${text.length.toLocaleString()} 字`;
+    renderChunkInfo();
+  } catch (e) {
+    $('kb-file-info').textContent = '⚠️ 讀取失敗：' + (e.message || e);
+  }
 }
 
 function loadScriptOnce(src) {
@@ -495,55 +667,6 @@ async function readPdfText(file) {
     pages.push(content.items.map((it) => it.str).join(' ').replace(/[ \t]+/g, ' ').trim());
   }
   return pages.filter(Boolean).join('\n\n');
-}
-
-async function onDocFile(input) {
-  const f = input.files && input.files[0];
-  if (!f) return;
-  if (!val('doc-name')) setVal('doc-name', f.name.replace(/\.[^.]+$/, ''));
-  try {
-    let text;
-    if (/\.pdf$/i.test(f.name)) text = await readPdfText(f);
-    else {
-      text = await f.text();
-      if (/\.html?$/i.test(f.name)) {
-        const d = new DOMParser().parseFromString(text, 'text/html');
-        d.querySelectorAll('script,style,noscript').forEach((e) => e.remove());
-        text = (d.body ? d.body.innerText || d.body.textContent : text).replace(/\n{3,}/g, '\n\n');
-      } else if (/\.json$/i.test(f.name)) {
-        try {
-          text = JSON.stringify(JSON.parse(text), null, 2);
-        } catch (e) {}
-      }
-    }
-    setVal('doc-text', String(text).trim());
-    updateDocPreview();
-    if (!String(text).trim()) alert('這個檔案讀不到文字內容（掃描的 PDF 是圖片，需要先轉成文字）');
-  } catch (e) {
-    alert('讀取檔案失敗：' + (e.message || e));
-  }
-}
-
-async function importDoc() {
-  const name = val('doc-name').trim();
-  const text = val('doc-text').trim();
-  if (!name) return alert('請填文件名稱');
-  if (!text) return alert('沒有內容可以匯入');
-  const chunks = chunkText(text, Number(val('doc-size')) || 500);
-  if (!chunks.length) return alert('沒有內容可以匯入');
-  if (chunks.length > 1000) return alert('這份文件太大了（超過 1000 段），請拆成幾份再匯入');
-  if (!confirm(`要把「${name}」匯入知識庫嗎？會切成 ${chunks.length} 段。`)) return;
-  let done = 0;
-  for (let i = 0; i < chunks.length; i += 200) {
-    const part = chunks.slice(i, i + 200).map((c, j) => ({ title: `${name}（${i + j + 1}/${chunks.length}）`, content: c, source: name }));
-    const r = await callApi('botKbImport', { rows: part, bigCategory: val('doc-cat').trim(), topic: val('doc-topic').trim(), notes: val('doc-notes').trim(), audience: ['cs', 'staff'].filter((x) => $('doc-aud-' + x).checked) });
-    if (!r.success) return alert(`匯入到第 ${done} 段時失敗：${r.message}`);
-    done += r.count;
-  }
-  closeModal('doc-modal');
-  alert(`已匯入 ${done} 段` + (kbEmbed ? '，接著計算向量…' : ''));
-  await loadKb();
-  if (kbEmbed) embedAll(false);
 }
 
 // ------------------------------------------------------------

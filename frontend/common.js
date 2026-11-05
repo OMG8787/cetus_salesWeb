@@ -291,7 +291,7 @@ function applyAdminOnlyVisibility() {
 }
 
 // 刪除按鈕：編輯者 / 查看 / 特定角色看不到（伺服器端也會擋）。只認「刪除後端資料」的按鈕，不影響編輯器裡的「刪除這個區塊」。
-const DELETE_ONCLICK = /\b(deleteCustomerRow|deleteCase|deleteProduct|deleteSelectedProducts|deleteContactLog|deleteCustomerContact|deleteAttachment|deletePriceRecord|deleteSoftwareName|deleteStaffRow|deleteBotItem|deleteBotDoc|deleteCopyItem|deletePost|deleteLibItem)\b/;
+const DELETE_ONCLICK = /\b(deleteCustomerRow|deleteCase|deleteProduct|deleteSelectedProducts|deleteContactLog|deleteCustomerContact|deleteAttachment|deletePriceRecord|deleteSoftwareName|deleteStaffRow|deleteBotItem|deleteBotDoc|deleteKb|deleteCopyItem|deletePost|deleteLibItem)\b/;
 
 function hideDeleteButtons(root) {
   if (canDelete()) return;

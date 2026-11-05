@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261105b"></script>
+<script src="theme.js?v=20261105c"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261105b" />
-<link rel="stylesheet" href="dark.css?v=20261105b" />
+<link rel="stylesheet" href="style.css?v=20261105c" />
+<link rel="stylesheet" href="dark.css?v=20261105c" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -218,8 +218,8 @@
         <div class="bot-row">
           <input id="kb-keyword" placeholder="搜尋問題 / 內容" style="width:180px;margin:0;" oninput="renderKb()" />
           <select id="kb-type" onchange="renderKb()" style="margin:0;"><option value="">全部</option><option value="qa">常見問題</option><option value="doc">文件</option></select>
-          <button type="button" class="bot-write" onclick="openFaqModal()">＋ 常見問題</button>
-          <button type="button" class="bot-write btn-secondary" onclick="openDocModal()">＋ 文件（貼上 / 上傳）</button>
+          <button type="button" class="bot-write" onclick="openKb({ type: 'qa' })">＋ 常見問題</button>
+          <button type="button" class="bot-write btn-secondary" onclick="openKb({ type: 'doc' })">＋ 文件（貼上 / 上傳）</button>
         </div>
       </div>
       <div class="calc-hint">常見問題：一問一答，最準確。文件：貼上或上傳 txt / md / csv / json / html / PDF，系統會自動切成小段，客人問到相關內容才會用到。後台修改最多 5 分鐘後生效。<br>
@@ -510,82 +510,76 @@
   </div>
 </div>
 
-<!-- 常見問題 / 知識庫段落 編輯 -->
-<div id="faq-modal" class="modal-overlay" style="display:none;">
-  <div class="modal-box" style="max-width:640px;">
-    <div class="modal-header"><h3 style="margin:0;" id="faq-title">常見問題</h3><button type="button" onclick="closeModal('faq-modal')">關閉</button></div>
-    <div id="faq-q-wrap"><label>問題（客人會怎麼問）</label><input id="faq-question" maxlength="300" /></div>
-    <label id="faq-a-label">答案 / 內容</label>
-    <textarea id="faq-content" rows="6" maxlength="20000"></textarea>
-    <label>關鍵字（選填，以空白分隔；幫助搜尋命中）</label>
-    <input id="faq-tags" maxlength="200" />
+<!-- 知識庫：新增 / 編輯（常見問題與文件共用） -->
+<div id="kb-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:760px;">
+    <div class="modal-header"><h3 style="margin:0;" id="kb-title">常見問題</h3><button type="button" onclick="closeModal('kb-modal')">✕</button></div>
+    <div id="kb-qa-box">
+      <label>問題</label>
+      <input id="kb-question" maxlength="300" placeholder="例如：可以宅配嗎？" />
+      <label>回答</label>
+      <textarea id="kb-answer" rows="5" maxlength="20000"></textarea>
+    </div>
+    <div id="kb-doc-box">
+      <label>文件名稱</label>
+      <input id="kb-doc-title" maxlength="100" placeholder="例如：保存與退換貨說明" />
+      <div class="bot-row">
+        <label class="btn-secondary kb-file-btn" for="kb-file">📎 上傳 .txt / .md / .csv / .json / .html / .pdf</label>
+        <input id="kb-file" type="file" accept=".txt,.md,.csv,.json,.html,.htm,.pdf,text/*" style="display:none;" onchange="onKbFile()" />
+        <span id="kb-file-info" class="calc-hint"></span>
+      </div>
+      <label>內容（可以直接貼上；長文件會自動切成多段，方便查找）</label>
+      <textarea id="kb-doc-text" rows="10" oninput="renderChunkInfo()"></textarea>
+      <div class="kb-chunk-box">
+        <div class="bot-row">
+          <b title="長文件會切成好幾段，每段各自算向量、各自被找到；重疊 = 每段開頭重複上一段結尾的字，避免重點剛好被切斷">✂️ 切段（向量）</b>
+          <label class="kb-inline">每段 <input type="number" id="kb-chunk-size" min="100" max="3000" step="50" value="500" oninput="renderChunkInfo()" /> 字</label>
+          <label class="kb-inline">重疊 <input type="number" id="kb-overlap" min="0" max="1000" step="10" value="100" oninput="renderChunkInfo()" /> 字</label>
+          <span id="kb-chunk-info" class="calc-hint"></span>
+          <button type="button" class="btn-secondary" style="margin-left:auto;" onclick="toggleChunkPreview()">👁 預覽切段</button>
+        </div>
+        <div class="calc-hint">預設每段 500 字、重疊 100 字。會盡量在段落或句號切開；段數越多找得越準，但算向量要比較久。</div>
+        <label class="bot-check" title="AI 先讀過整份文件，依「主題」決定在哪裡切，每段大約上面設定的字數，並幫每段下小標；會消耗 AI 的 token"><input type="checkbox" id="kb-ai-split" onchange="renderAiBox(); renderChunkInfo()" /> 🤖 讓 AI 來切（先讀過整份文件，依主題分段、每段大約上面的字數，並幫每段下小標）</label>
+        <div id="kb-ai-box" class="kb-ai-box" style="display:none;">
+          <div class="bot-grid">
+            <div><label>用哪一組 AI（費用記在這一組的 API Key）</label><select id="kb-ai-profile" onchange="renderAiModels(); renderAiBox()"></select></div>
+            <div><label>模型</label><select id="kb-ai-model" onchange="renderAiBox()"></select><input id="kb-ai-model-custom" style="display:none;" maxlength="100" placeholder="模型名稱，例如 gemini-3.8-flash" oninput="renderAiBox()" /></div>
+          </div>
+          <div id="kb-ai-model-info" class="calc-hint"></div>
+          <div id="kb-ai-cost" class="calc-hint"></div>
+          <div class="bot-row"><button type="button" class="btn-secondary" id="kb-ai-run" onclick="runAiSplit()">🤖 讓 AI 切段並預覽</button><span id="kb-ai-msg" class="calc-hint"></span></div>
+        </div>
+        <div id="kb-chunk-preview" class="kb-preview" style="display:none;"></div>
+      </div>
+    </div>
     <div class="bot-grid">
-      <div><label>大分類（例如：光源、相機、公司）</label><input id="faq-cat" list="kb-cats" maxlength="40" /></div>
-      <div><label>主題（例如：環形光源、選型）</label><input id="faq-topic" maxlength="60" /></div>
+      <div><label>大分類（選填，例如：配送、保存、產品）</label><input id="kb-cat" list="kb-cats" maxlength="40" placeholder="例如：配送" /></div>
+      <div><label>主題（選填，比大分類再細一層）</label><input id="kb-topic" maxlength="60" placeholder="例如：宅配" /></div>
     </div>
     <datalist id="kb-cats"></datalist>
-    <label>備註（寫給 AI 看的分流提示，例如「客人問打光、照明時使用」；客人看不到）</label>
-    <textarea id="faq-notes" rows="2" maxlength="1000"></textarea>
-    <label>誰可以看到這筆（可複選，預設都開放）</label>
-    <div class="bot-row">
-      <label class="bot-check"><input type="checkbox" id="faq-aud-cs" checked /> 🛎️ 對外客服機器人</label>
-      <label class="bot-check"><input type="checkbox" id="faq-aud-staff" checked /> 🧑‍💼 員工助理</label>
+    <label>備註（寫給 AI 看的提示，選填；客人看不到）</label>
+    <input id="kb-notes" maxlength="1000" placeholder="例如：客人問運送、寄送、到貨時使用" />
+    <label>關鍵字（選填，空白分隔；幫助找到這筆）</label>
+    <input id="kb-tags" maxlength="200" placeholder="例如：運費 宅配 冷凍" />
+    <div class="bot-row" style="margin-top:6px;">
+      <b title="這筆資料可以給哪個機器人用；預設兩個都可以。對外客服只看得到勾了「對外客服」的資料">給誰看：</b>
+      <label class="bot-check"><input type="checkbox" id="kb-vis-staff" checked /> 🧑‍💼 小助手（員工 LINE、網站右下角）</label>
+      <label class="bot-check"><input type="checkbox" id="kb-vis-cs" checked /> 🛎️ 對外客服</label>
     </div>
-    <div class="calc-hint">用來控制資料給誰看：只勾「員工助理」= 內部資料，客人問不到；兩個都不勾 = 兩邊都看不到（等於停用）。客服機器人除了知識庫以外什麼資料都看不到。</div>
-    <label class="bot-check"><input type="checkbox" id="faq-active" checked /> 啟用（沒勾 = 機器人不會用到這一筆）</label>
-    <div style="margin-top:10px;"><button type="button" onclick="saveFaq()">儲存</button></div>
+    <label class="bot-check"><input type="checkbox" id="kb-active" checked /> 啟用（取消勾選就不會用來回答）</label>
+    <div class="kb-foot">
+      <button type="button" id="kb-delete" class="btn-secondary" style="margin-right:auto;" onclick="deleteKb()">🗑 刪除</button>
+      <button type="button" class="btn-secondary" onclick="closeModal('kb-modal')">取消</button>
+      <button type="button" class="bot-write" onclick="saveKb()">💾 儲存</button>
+    </div>
   </div>
 </div>
 
-<!-- 批次設定可見對象 -->
-<div id="aud-modal" class="modal-overlay" style="display:none;">
-  <div class="modal-box" style="max-width:460px;">
-    <div class="modal-header"><h3 style="margin:0;">誰可以看到</h3><button type="button" onclick="closeModal('aud-modal')">關閉</button></div>
-    <div id="aud-target" class="calc-hint"></div>
-    <div class="bot-row">
-      <label class="bot-check"><input type="checkbox" id="aud-cs" /> 🛎️ 對外客服機器人</label>
-      <label class="bot-check"><input type="checkbox" id="aud-staff" /> 🧑‍💼 員工助理</label>
-    </div>
-    <div class="calc-hint">兩個都不勾 = 兩邊都看不到。儲存後最多 5 分鐘生效。</div>
-    <div style="margin-top:10px;"><button type="button" onclick="saveAudience()">儲存</button></div>
-  </div>
-</div>
-
-<!-- 文件匯入 -->
-<div id="doc-modal" class="modal-overlay" style="display:none;">
-  <div class="modal-box" style="max-width:680px;">
-    <div class="modal-header"><h3 style="margin:0;">匯入文件</h3><button type="button" onclick="closeModal('doc-modal')">關閉</button></div>
-    <label>文件名稱</label>
-    <input id="doc-name" maxlength="100" placeholder="例如：AOI 檢測服務介紹" />
-    <div class="bot-grid">
-      <div><label>大分類（選填，整份文件共用）</label><input id="doc-cat" list="kb-cats" maxlength="40" /></div>
-      <div><label>主題（選填）</label><input id="doc-topic" maxlength="60" /></div>
-    </div>
-    <label>備註（選填，寫給 AI 看的分流提示）</label>
-    <input id="doc-notes" maxlength="500" />
-    <label>誰可以看到這份文件（可複選，預設都開放）</label>
-    <div class="bot-row">
-      <label class="bot-check"><input type="checkbox" id="doc-aud-cs" checked /> 🛎️ 對外客服機器人</label>
-      <label class="bot-check"><input type="checkbox" id="doc-aud-staff" checked /> 🧑‍💼 員工助理</label>
-    </div>
-    <div class="calc-hint">用來控制資料給誰看：只勾「員工助理」= 內部資料，客人問不到；兩個都不勾 = 兩邊都看不到（等於停用）。客服機器人除了知識庫以外什麼資料都看不到。</div>
-    <label>上傳檔案（txt / md / csv / json / html / PDF，可選）</label>
-    <input type="file" id="doc-file" accept=".txt,.md,.csv,.json,.html,.htm,.pdf,text/*" onchange="onDocFile(this)" />
-    <label>內容（貼上，或上傳後自動帶入，可以修改）</label>
-    <textarea id="doc-text" rows="10" maxlength="200000" oninput="updateDocPreview()"></textarea>
-    <div class="bot-row">
-      <label>每段約 <input type="number" id="doc-size" value="500" min="200" max="1500" step="50" style="width:90px;display:inline-block;" oninput="updateDocPreview()" /> 字</label>
-      <span id="doc-preview" class="calc-hint"></span>
-    </div>
-    <div style="margin-top:10px;"><button type="button" onclick="importDoc()">匯入</button></div>
-  </div>
-</div>
-
-<script src="config.js?v=20261105b"></script>
-<script src="demo.js?v=20261105b"></script>
-<script src="common.js?v=20261105b"></script>
-<script src="assistant.js?v=20261105b"></script>
-<script src="bot.js?v=20261105b"></script>
-<script src="botstaff.js?v=20261105b"></script>
+<script src="config.js?v=20261105c"></script>
+<script src="demo.js?v=20261105c"></script>
+<script src="common.js?v=20261105c"></script>
+<script src="assistant.js?v=20261105c"></script>
+<script src="bot.js?v=20261105c"></script>
+<script src="botstaff.js?v=20261105c"></script>
 </body>
 </html>

@@ -257,6 +257,30 @@ function demoBotApi(action, params, db) {
       save();
       return { success: true, count: (params.rows || []).length };
     }
+    case 'botKbDocSave': {
+      const title = String(params.title || '').trim();
+      const chunks = (params.chunks || []).filter((c) => c && String(c.content || '').trim());
+      if (!title) return { success: false, message: '請填文件名稱' };
+      if (!chunks.length) return { success: false, message: '沒有可儲存的內容' };
+      const key = params.key || 'doc-' + Date.now();
+      b.kb = b.kb.filter((k) => !(k.Type === 'doc' && (k.FileName === key || (!k.FileName && k.Source === key))));
+      let id = b.kb.reduce((m, k) => Math.max(m, k.ID), 0);
+      chunks.forEach((c, i) =>
+        b.kb.push({
+          ID: ++id, Type: 'doc', Title: c.title ? `${title}（${i + 1}/${chunks.length}）｜${c.title}` : chunks.length > 1 ? `${title}（${i + 1}/${chunks.length}）` : title, Question: '', Content: c.content, Tags: params.tags || '',
+          Source: title, IsActive: params.isActive !== false, UpdatedAt: nowStr(), BigCategory: params.bigCategory || '', Topic: params.topic || '', Notes: params.notes || '', HasVector: false,
+          Overlap: c.overlap || 0, ChunkSize: params.chunkSize || 500, SortOrder: i + 1, FileName: key, audience: (params.audience || ['cs', 'staff']).filter((x) => x === 'cs' || x === 'staff'),
+        })
+      );
+      save();
+      return { success: true, key, count: chunks.length, embedded: 0, embedError: '' };
+    }
+    case 'botKbAiSplit': {
+      const text = String(params.text || '').trim();
+      if (!text) return { success: false, message: '請先貼上文件內容' };
+      const parts = text.split(/\n{2,}/).filter(Boolean);
+      return { success: true, chunks: parts.map((p, i) => ({ text: p + (i < parts.length - 1 ? '\n\n' : ''), title: '（示範）小標 ' + (i + 1) })), model: 'gemini-3.8-flash', name: '示範', units: parts.length };
+    }
     case 'botKbSetAudience': {
       const ids = params.ids || [];
       if (!ids.length) return { success: false, message: '沒有選任何項目' };
@@ -1093,6 +1117,8 @@ function handleDemoApi(action, params) {
     case 'botKbList':
     case 'botKbSave':
     case 'botKbSetAudience':
+    case 'botKbDocSave':
+    case 'botKbAiSplit':
     case 'botKbImport':
     case 'botKbDelete':
     case 'botGenKey':

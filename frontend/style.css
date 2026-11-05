@@ -656,3 +656,29 @@ header, .tabs { position: relative; z-index: 300; }
 .bot-ai-uses { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 2px; }
 .bot-ai-edit { border-top: 1px dashed #d8dde6; margin-top: 8px; padding-top: 6px; }
 .bot-badge.aud-part { background: #fff3e0; color: #b45309; }
+
+/* 知識庫卡片與新增 / 編輯視窗 */
+.kb-card { border: 1px solid #d8dde6; border-radius: 8px; padding: 8px 10px; margin: 8px 0; cursor: pointer; background: #fff; }
+.kb-card:hover { background: #f4f8ff; }
+.kb-card.off { opacity: .55; }
+.kb-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.kb-chunk-box { border: 1px solid #d8dde6; border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.kb-ai-box { border: 1px solid #d8dde6; border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+.kb-preview { max-height: 260px; overflow: auto; margin-top: 8px; font-size: 13px; }
+.kb-prev-row { border-bottom: 1px solid #eef0f4; padding: 4px 0; }
+.kb-inline input { width: 80px; display: inline-block; margin: 0 4px; }
+.kb-file-btn { display: inline-block; padding: 6px 12px; border-radius: 6px; cursor: pointer; margin: 6px 0; font-size: 14px; }
+.kb-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; border-top: 1px solid #eef0f4; padding-top: 10px; }
+#kb-modal input:not([type=checkbox]):not([type=radio]):not([type=file]), #kb-modal textarea, #kb-modal select { display: block; width: 100%; padding: 8px; margin: 6px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+#kb-modal textarea { min-height: 70px; }
+#kb-modal label { display: block; font-size: 14px; margin-top: 8px; }
+#kb-modal label.bot-check, #kb-modal label.kb-inline { display: inline-flex; align-items: center; gap: 4px; margin: 4px 12px 4px 0; }
+#kb-modal .kb-inline input { display: inline-block; width: 80px; margin: 0 4px; }
+#kb-modal input[type=checkbox] { width: auto; margin: 0 4px 0 0; }
+#kb-modal button { padding: 8px 16px; background: #2c5aa0; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+#kb-modal button.btn-secondary, #kb-modal label.btn-secondary { background: #64748b; color: #fff; }
+#kb-modal .modal-header button { padding: 4px 10px; background: #64748b; }
+#kb-modal .bot-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+#kb-modal .bot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 640px) { #kb-modal .bot-grid { grid-template-columns: 1fr; } }
+#kb-modal label.kb-inline { white-space: nowrap; }

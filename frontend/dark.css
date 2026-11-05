@@ -219,6 +219,10 @@ html[data-theme="dark"] .bot-ai-card { background: #1d232b; border-color: #323b4
 html[data-theme="dark"] .bot-ai-card .bot-ai-no { border-color: #3a4452; }
 html[data-theme="dark"] .bot-ai-edit { border-top-color: #3a4452; }
 html[data-theme="dark"] .bot-badge.aud-part { background: rgba(230,126,34,.2); color: #f5b573; }
+html[data-theme="dark"] .kb-card, html[data-theme="dark"] .kb-chunk-box, html[data-theme="dark"] .kb-ai-box { background: #1d232b; border-color: #323b48; }
+html[data-theme="dark"] .kb-card:hover { background: #252c36; }
+html[data-theme="dark"] .kb-prev-row, html[data-theme="dark"] .kb-foot { border-color: #2b333e; }
+html[data-theme="dark"] #kb-modal input, html[data-theme="dark"] #kb-modal textarea, html[data-theme="dark"] #kb-modal select { background: #14181d; color: #e5e7eb; border-color: #3a4452; }
 }
 
 /* 列印：一律淺色，不印出切換按鈕 */
