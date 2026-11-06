@@ -355,6 +355,10 @@ export const CONTACT_ASK_TEXT = "📇 方便留下您的姓名、公司和電話
 /** 「轉真人」按鈕上的字 */
 export const handoffLabel = (info: CsInfo) => `🙋 轉${callWord(info)}`;
 
+/** 背景寫入中的對話紀錄（訪客編號 → 寫入工作）；只在同一個執行個體內有效 */
+const pendingRemember = new Map<string, Promise<unknown>>();
+const PENDING_WAIT_MS = 8000;
+
 /**
  * 處理客人的一則訊息（LINE、網站視窗、後台測試共用）：
  * 沒啟用 / 專人服務時間 / 小編接手中 → 不回；重新開始；轉真人關鍵字；指定問題；知識庫 + AI 回答。
@@ -362,6 +366,9 @@ export const handoffLabel = (info: CsInfo) => `🙋 轉${callWord(info)}`;
  */
 export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string>; human?: boolean; defer?: (job: Promise<unknown>) => void }): Promise<CsResult> {
   const t0 = Date.now();
+  // 同一位訪客上一則的對話紀錄還在背景寫入時，先等它寫完再讀歷史（否則 AI 會看不到上一輪）；最多等 8 秒
+  const pending = pendingRemember.get(uid);
+  if (pending) await Promise.race([pending, new Promise((r) => setTimeout(r, PENDING_WAIT_MS))]);
   const info = await gas.csStart(uid);
   const tStart = Date.now() - t0;
   const testing = opts.channel === "test";
@@ -386,8 +393,11 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
         console.warn("記錄客服對話失敗", err);
       }
     })();
-    if (opts.defer) opts.defer(job);
-    else await job;
+    if (opts.defer) {
+      pendingRemember.set(uid, job);
+      void job.then(() => { if (pendingRemember.get(uid) === job) pendingRemember.delete(uid); });
+      opts.defer(job);
+    } else await job;
   };
   const handoff = async (topic = ""): Promise<CsResult> => {
     const displayName = (await opts.displayName?.()) ?? "";

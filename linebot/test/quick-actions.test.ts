@@ -93,3 +93,25 @@ test("一般問題不附「看更多」", async () => {
   const r = await csConverse(V, "保固多久", { channel: "web" });
   assert.equal(r.seeMore, false);
 });
+
+test("背景寫入對話紀錄時，同一位訪客的下一則會先等它寫完再讀歷史", async () => {
+  const log: string[] = [];
+  const inner = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    if (String(input) === process.env.GAS_URL && body.op === "csRemember") {
+      log.push("remember:start");
+      await new Promise((r) => setTimeout(r, 150));
+      log.push("remember:end");
+    }
+    if (String(input) === process.env.GAS_URL && body.op === "csStart") log.push("start");
+    return inner(input, init);
+  }) as typeof fetch;
+  const jobs: Promise<unknown>[] = [];
+  const U = "V" + "d".repeat(32);
+  answer = () => text("保固一年。");
+  await csConverse(U, "保固多久", { channel: "web", defer: (j) => jobs.push(j) });
+  await csConverse(U, "那維修呢", { channel: "web", defer: (j) => jobs.push(j) }); // 立刻送下一則
+  await Promise.all(jobs);
+  assert.deepEqual(log.slice(0, 4), ["start", "remember:start", "remember:end", "start"], "第二則的 csStart 要在第一則的 csRemember 結束之後");
+});
