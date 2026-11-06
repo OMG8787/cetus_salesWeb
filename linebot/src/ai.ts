@@ -32,6 +32,8 @@ export interface AiRequest {
   system: string;
   turns: Turn[];
   tools?: Tool[];
+  /** 要快：Gemini 2.5 Flash 不先「思考」再回答（省 1～3 秒；客服問答用，不影響工具呼叫） */
+  fast?: boolean;
 }
 
 export class AiError extends Error {}
@@ -96,21 +98,33 @@ interface GeminiPart {
   [key: string]: unknown;
 }
 
-async function gemini({ ai, system, turns, tools = [] }: AiRequest): Promise<string> {
+/** 工具一起跑（同一輪 AI 要呼叫好幾個工具時不用排隊），結果依原本順序回傳 */
+async function runTools(tools: Tool[], calls: { name: string; args: Record<string, unknown> }[]): Promise<string[]> {
+  return Promise.all(calls.map((c) => runTool(tools, c.name, c.args)));
+}
+
+async function gemini({ ai, system, turns, tools = [], fast }: AiRequest): Promise<string> {
   const contents: { role: string; parts: GeminiPart[] }[] = normalizeTurns(turns).map((t) => ({
     role: t.isUser ? "user" : "model",
     parts: [{ text: t.text }, ...(t.images ?? []).map((im) => ({ inlineData: { mimeType: im.mime, data: im.data } }))],
   }));
   const body: Record<string, unknown> = { systemInstruction: { parts: [{ text: system }] }, contents };
   if (tools.length) body.tools = [{ functionDeclarations: tools.map(({ name, description, parameters }) => ({ name, description, parameters })) }];
+  // 2.5 Flash 預設會先思考再回答，客服問答不需要：把思考預算設成 0（其他型號不支援這個參數就不送）
+  if (fast && /gemini-2\.5-flash/i.test(ai.model)) body.generationConfig = { thinkingConfig: { thinkingBudget: 0 } };
   const url = `${ai.endpoint.replace(/\/+$/, "")}/models/${encodeURIComponent(ai.model)}:generateContent`;
 
   for (let round = 0; round <= maxRounds(ai); round++) {
-    const { status, text } = await fetchAi(url, {
+    let { status, text } = await fetchAi(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey },
       body: JSON.stringify(body),
     });
+    if (status === 400 && body.generationConfig && /thinking/i.test(text)) {
+      // 這個型號不接受思考設定：拿掉再送一次
+      delete body.generationConfig;
+      ({ status, text } = await fetchAi(url, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey }, body: JSON.stringify(body) }));
+    }
     if (status < 200 || status >= 300) throw new AiError(`Gemini 錯誤 ${status}：${hideKey(text, ai.apiKey).slice(0, 300)}`);
 
     const content = (JSON.parse(text) as { candidates?: { content?: { role: string; parts: GeminiPart[] } }[] }).candidates?.[0]?.content;
@@ -121,9 +135,8 @@ async function gemini({ ai, system, turns, tools = [] }: AiRequest): Promise<str
 
     // 原樣保留模型回覆（含 thoughtSignature），再附上工具結果
     contents.push(content);
-    const results: GeminiPart[] = [];
-    for (const call of calls) results.push({ functionResponse: { name: call.name, response: { result: await runTool(tools, call.name, call.args ?? {}) } } });
-    contents.push({ role: "user", parts: results });
+    const outputs = await runTools(tools, calls.map((c) => ({ name: c.name, args: c.args ?? {} })));
+    contents.push({ role: "user", parts: calls.map((call, i) => ({ functionResponse: { name: call.name, response: { result: outputs[i] } } })) });
   }
   throw new AiError("工具呼叫次數過多");
 }
@@ -157,12 +170,9 @@ async function claude({ ai, system, turns, tools = [] }: AiRequest): Promise<str
     if (res.stop_reason !== "tool_use") return content.filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
 
     messages.push({ role: "assistant", content });
-    const results: ClaudeBlock[] = [];
-    for (const block of content) {
-      if (block.type !== "tool_use") continue;
-      results.push({ type: "tool_result", tool_use_id: block.id, content: await runTool(tools, block.name ?? "", block.input ?? {}) });
-    }
-    messages.push({ role: "user", content: results });
+    const uses = content.filter((b) => b.type === "tool_use");
+    const outputs = await runTools(tools, uses.map((b) => ({ name: b.name ?? "", args: b.input ?? {} })));
+    messages.push({ role: "user", content: uses.map((b, i) => ({ type: "tool_result", tool_use_id: b.id, content: outputs[i] })) });
   }
   throw new AiError("工具呼叫次數過多");
 }
@@ -200,15 +210,17 @@ async function openai({ ai, system, turns, tools = [] }: AiRequest): Promise<str
     if (!message.tool_calls?.length) return typeof message.content === "string" ? message.content.trim() : "";
 
     messages.push({ role: "assistant", content: message.content ?? null, tool_calls: message.tool_calls });
-    for (const call of message.tool_calls) {
+    const parsed = message.tool_calls.map((call) => {
       let args: Record<string, unknown> = {};
       try {
         args = JSON.parse(call.function.arguments || "{}");
       } catch {
         // 參數不是合法 JSON 就當作沒有參數
       }
-      messages.push({ role: "tool", tool_call_id: call.id, content: await runTool(tools, call.function.name, args) });
-    }
+      return { name: call.function.name, args };
+    });
+    const outputs = await runTools(tools, parsed);
+    message.tool_calls.forEach((call, i) => messages.push({ role: "tool", tool_call_id: call.id, content: outputs[i] }));
   }
   throw new AiError("工具呼叫次數過多");
 }

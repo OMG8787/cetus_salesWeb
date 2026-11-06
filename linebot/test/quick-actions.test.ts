@@ -115,3 +115,58 @@ test("背景寫入對話紀錄時，同一位訪客的下一則會先等它寫�
   await Promise.all(jobs);
   assert.deepEqual(log.slice(0, 4), ["start", "remember:start", "remember:end", "start"], "第二則的 csStart 要在第一則的 csRemember 結束之後");
 });
+
+test("Gemini 2.5 Flash：客服回覆關閉思考；型號不支援時自動拿掉再送", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const inner = globalThis.fetch;
+  let reject = false;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/v1beta/")) {
+      const b = JSON.parse(String(init?.body));
+      bodies.push(b);
+      if (reject && b.generationConfig) return new Response(JSON.stringify({ error: { message: "Thinking is not supported by this model" } }), { status: 400 });
+      return new Response(JSON.stringify(text("好的")));
+    }
+    return inner(input, init);
+  }) as typeof fetch;
+  try {
+    const ai = (model: string) => ({ source: "bot" as const, provider: "gemini" as const, apiKey: "KEY", model, endpoint: "https://ai.example/v1beta" });
+    const { generate } = await import("../src/ai.js");
+    await generate({ ai: ai("gemini-2.5-flash"), system: "s", turns: [{ isUser: true, text: "hi" }], fast: true });
+    assert.deepEqual((bodies.at(-1) as { generationConfig: unknown }).generationConfig, { thinkingConfig: { thinkingBudget: 0 } });
+    await generate({ ai: ai("gemini-2.5-pro"), system: "s", turns: [{ isUser: true, text: "hi" }], fast: true });
+    assert.equal((bodies.at(-1) as { generationConfig?: unknown }).generationConfig, undefined, "非 2.5 Flash 不送思考設定");
+    reject = true;
+    const before = bodies.length;
+    assert.equal(await generate({ ai: ai("gemini-2.5-flash-lite"), system: "s", turns: [{ isUser: true, text: "hi" }], fast: true }), "好的");
+    assert.equal(bodies.length - before, 2, "被拒絕後拿掉思考設定重送一次");
+  } finally {
+    globalThis.fetch = inner;
+  }
+});
+
+test("同一輪的多個工具一起跑，結果順序不變", async () => {
+  const { generate } = await import("../src/ai.js");
+  const calls = [{ functionCall: { name: "slow", args: {} } }, { functionCall: { name: "fast", args: {} } }];
+  let n = 0;
+  const inner = globalThis.fetch;
+  const started: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input).includes("/v1beta/")) return new Response(JSON.stringify(n++ === 0 ? { candidates: [{ content: { role: "model", parts: calls } }] } : text("完成")));
+    return inner(input);
+  }) as typeof fetch;
+  try {
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const tools = [
+      { name: "slow", description: "", parameters: { type: "object", properties: {} }, handler: async () => { started.push("slow"); await wait(60); return "S"; } },
+      { name: "fast", description: "", parameters: { type: "object", properties: {} }, handler: async () => { started.push("fast"); return "F"; } },
+    ];
+    const t0 = Date.now();
+    const out = await generate({ ai: { source: "bot", provider: "gemini", apiKey: "K", model: "m", endpoint: "https://ai.example/v1beta" }, system: "s", turns: [{ isUser: true, text: "hi" }], tools });
+    assert.equal(out, "完成");
+    assert.deepEqual(started, ["slow", "fast"], "兩個工具同時開始");
+    assert.ok(Date.now() - t0 < 200);
+  } finally {
+    globalThis.fetch = inner;
+  }
+});

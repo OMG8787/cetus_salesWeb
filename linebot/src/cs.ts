@@ -70,6 +70,11 @@ export async function runSearch(index: KnowledgeIndex, query: string, search: Se
   return searchKnowledge(index, query, cfg, embedAi ? async (q) => (await embed(embedAi, [q], "query"))[0] : undefined);
 }
 
+/** 預熱：客人一打開視窗就先把知識庫、向量、選型型錄讀進這個執行個體的記憶體，第一則訊息就不用等（失敗不影響） */
+export async function prewarmCs(): Promise<void> {
+  await Promise.allSettled([knowledge(false), catalogOnce()]);
+}
+
 export function resetKnowledgeCache(): void {
   cached = null;
   catalogCache = null;
@@ -263,6 +268,7 @@ export async function groundCheck(info: CsInfo, questions: string[], refs: strin
       ai: info.checkAi ?? info.ai!,
       fallback: info.aiFallback,
       system: GROUND_PROMPT,
+      fast: true,
       turns: [{ isUser: true, text: `【客人最近的問題】\n${questions.join("\n")}\n\n【參考資料】\n${refs || "（沒有找到相關資料）"}\n\n【回覆】\n${reply}` }],
     });
     const m = out.match(/\{[\s\S]*\}/);
@@ -301,7 +307,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const turns: Turn[] = [...history.map((h) => ({ isUser: h.u, text: h.t })), { isUser: true, text }];
   let reply: string;
   try {
-    reply = cleanReply(await generate({ ai: info.ai!, fallback: info.aiFallback, system: csSystemPrompt(info, formatHits(hits)), turns, tools }));
+    reply = cleanReply(await generate({ ai: info.ai!, fallback: info.aiFallback, system: csSystemPrompt(info, formatHits(hits)), turns, tools, fast: true }));
     if (!reply) {
       reply = `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`;
       quick.on = true;
