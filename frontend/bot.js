@@ -834,12 +834,12 @@ async function loadTalk(silent) {
   talkCache = r;
   const list = r.conversations;
   $('talk-pauses').textContent = r.pauses.length ? `🛎️ 小編接手中：${r.pauses.map((p) => p.name || '客人').join('、')}` : '目前沒有客人在等專人回覆';
-  $('talk-total').textContent = `共 ${r.total} 筆對話紀錄（上限 ${r.max}，超過會自動刪掉最舊的）`;
+  $('talk-total').textContent = `共 ${r.total} 筆對話紀錄（上限 ${r.max}，超過會自動刪掉最舊的；上限可到「🔌 連線與設定」調整）`;
   $('talk-list').innerHTML = list.length
     ? list
         .map(
-          (c) => `<div class="bot-conv ${selectedConv === c.id ? 'sel' : ''}" onclick="openThread('${htmlEsc(c.id)}')">
-        <div><b>${htmlEsc(c.name || (c.channel === 'web' ? '網站訪客' : 'LINE 客人'))}</b> <span class="bot-badge">${c.channel === 'web' ? '網站' : 'LINE'}</span>${c.paused ? ' <span class="bot-badge warn">待專人</span>' : ''}</div>
+          (c) => `<div class="bot-conv ${c.lead ? 'lead' : ''} ${selectedConv === c.id ? 'sel' : ''}" onclick="openThread('${htmlEsc(c.id)}')">
+        <div class="bot-conv-top"><span><b>${htmlEsc(convLabel(c))}</b> <span class="bot-badge">${c.channel === 'web' ? '網站' : 'LINE'}</span>${c.lead ? ' <span class="bot-badge ok">📇 已留資料</span>' : ''}${c.paused ? ' <span class="bot-badge warn">待專人</span>' : ''}</span>${isAdminUser() ? `<button type="button" class="bot-conv-del" title="刪除這位客人的對話紀錄" onclick="event.stopPropagation();deleteConversation('${htmlEsc(c.id)}')">🗑</button>` : ''}</div>
         <div class="calc-hint">${htmlEsc(String(c.lastAt).slice(5, 16))}・${c.count} 則${c.topic ? '・' + htmlEsc(c.topic) : ''}</div>
         <div class="calc-hint bot-snip">${c.lastRole === 'user' ? '客人：' : c.lastRole === 'human' ? '專人：' : '機器人：'}${htmlEsc(c.lastText)}</div>
       </div>`
@@ -850,13 +850,50 @@ async function loadTalk(silent) {
   if (selectedConv) openThread(selectedConv, true);
 }
 
+/** 客人在列表上顯示的名字：留過聯繫資料的用他填的姓名（公司），沒有就用機器人記到的名字 / 網站訪客。 */
+function leadLabel(lead) {
+  if (!lead) return '';
+  const who = lead.name || lead.company || lead.phone || lead.email || '';
+  return lead.name && lead.company ? `${lead.name}（${lead.company}）` : who;
+}
+
+function convLabel(c) {
+  return leadLabel(c.lead) || c.name || (c.channel === 'web' ? '網站訪客' : 'LINE 客人');
+}
+
+/** 刪除某位客人的對話紀錄（連同短期記憶、小編接手狀態、「客人找真人」通知）；聯繫名單裡留下的資料不會刪。 */
+async function deleteConversation(id) {
+  if (!id) return;
+  const info = (talkCache && talkCache.conversations.find((c) => c.id === id)) || {};
+  const NL = String.fromCharCode(10);
+  if (!confirm('刪除「' + (info.id ? convLabel(info) : '這位客人') + '」的 ' + (info.count || '') + ' 則對話紀錄？' + NL + '（只刪對話；他在「🧾 聯繫名單」留下的資料不會刪。刪了無法復原）')) return;
+  const r = await callApi('botClear', { options: { messages: true, history: true, pauses: true, memos: true, target: id } });
+  if (!r.success) return alert(r.message);
+  if (selectedConv === id) {
+    selectedConv = null;
+    $('thread-title').textContent = '選一位客人查看對話';
+    $('thread-box').innerHTML = '';
+    $('thread-lead').style.display = 'none';
+    $('thread-resume').style.display = 'none';
+    $('thread-delete').style.display = 'none';
+  }
+  await loadTalk(true);
+}
+
 async function openThread(id, keepScroll) {
   selectedConv = id;
   document.querySelectorAll('.bot-conv').forEach((el) => el.classList.toggle('sel', el.getAttribute('onclick') === `openThread('${id}')`));
   const r = await callApi('botThread', { userId: id }, { silent: true });
   if (!r.success) return alert(r.message);
   const info = (talkCache && talkCache.conversations.find((c) => c.id === id)) || {};
-  $('thread-title').textContent = (info.name || (id.charAt(0) === 'V' ? '網站訪客' : 'LINE 客人')) + (r.paused ? '（小編接手中）' : '');
+  const lead = r.lead || info.lead || null;
+  $('thread-title').textContent = (leadLabel(lead) || info.name || (id.charAt(0) === 'V' ? '網站訪客' : 'LINE 客人')) + (r.paused ? '（小編接手中）' : '');
+  const card = $('thread-lead');
+  card.style.display = lead ? '' : 'none';
+  if (lead) {
+    card.innerHTML = '📇 客人留下的聯繫資料：' + [lead.name && '姓名 ' + htmlEsc(lead.name), lead.company && '公司 ' + htmlEsc(lead.company), lead.phone && `電話 <a href="tel:${htmlEsc(lead.phone)}">${htmlEsc(lead.phone)}</a>`, lead.email && `Email <a href="mailto:${htmlEsc(lead.email)}">${htmlEsc(lead.email)}</a>`].filter(Boolean).join('　');
+  }
+  $('thread-delete').style.display = isAdminUser() ? '' : 'none';
   const box = $('thread-box');
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.innerHTML = r.messages
@@ -1194,6 +1231,7 @@ function fillConn() {
   setVal('conn-boturl', g.botUrl);
   setVal('gen-brand', g.brand);
   setVal('gen-delay', g.replyDelay);
+  setVal('gen-logmax', g.logMax);
   setVal('gen-mem-turns', g.memory.turns);
   setVal('gen-mem-hours', g.memory.hours);
   setVal('gen-mem-chars', g.memory.chars);
@@ -1258,11 +1296,17 @@ async function previewCs() {
 
 async function saveGeneral() {
   if (readOnly()) return;
+  // 對話紀錄上限改小會立刻刪掉最舊的多餘紀錄：先問清楚
+  const wantMax = Number(val('gen-logmax'));
+  if (wantMax > 0) {
+    const cur = await callApi('botConversations', {}, { silent: true });
+    if (cur.success && wantMax < cur.total && !confirm('目前有 ' + cur.total + ' 筆對話紀錄，上限改成 ' + wantMax + ' 筆會立刻刪掉最舊的 ' + (cur.total - wantMax) + ' 筆（無法復原）。確定要儲存嗎？')) return;
+  }
   const r = await callApi('botSaveSettings', {
-    general: { brand: val('gen-brand'), replyDelay: val('gen-delay'), botUrl: val('conn-boturl'), memory: { turns: val('gen-mem-turns'), hours: val('gen-mem-hours'), chars: val('gen-mem-chars') } },
+    general: { brand: val('gen-brand'), replyDelay: val('gen-delay'), logMax: val('gen-logmax'), botUrl: val('conn-boturl'), memory: { turns: val('gen-mem-turns'), hours: val('gen-mem-hours'), chars: val('gen-mem-chars') } },
   });
   if (!r.success) return alert(r.message);
-  $('gen-msg').textContent = '✓ 已儲存';
+  $('gen-msg').textContent = r.trimmed ? '✓ 已儲存，並刪除了最舊的 ' + r.trimmed + ' 筆對話紀錄' : '✓ 已儲存';
   setTimeout(() => ($('gen-msg').textContent = ''), 3000);
   await loadAll(true);
   fillConn();

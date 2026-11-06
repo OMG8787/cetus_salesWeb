@@ -247,3 +247,8 @@ html[data-theme="dark"] .nc-table .nc-act { background: #1d232b; border-color: #
 html[data-theme="dark"] .nc-badge { background: #4a3a14; color: #f0c36d; }
 html[data-theme="dark"] .nc-badge.ok { background: #1c3a26; color: #7fd49a; }
 html[data-theme="dark"] .nc-hint { color: #8db8f5; }
+
+html[data-theme="dark"] .bot-conv.lead { background: rgba(30,142,56,.14); border-left-color: #3fb860; }
+html[data-theme="dark"] .bot-conv.lead:hover, html[data-theme="dark"] .bot-conv.lead.sel { background: rgba(30,142,56,.26); }
+html[data-theme="dark"] .bot-badge.ok { background: rgba(30,142,56,.28); color: #8fe0a6; }
+html[data-theme="dark"] .bot-lead-card { background: rgba(30,142,56,.14); border-color: rgba(63,184,96,.4); color: #cfeed8; }

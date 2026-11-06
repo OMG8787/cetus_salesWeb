@@ -389,8 +389,8 @@ function demoBotApi(action, params, db) {
       const o = params.options || {};
       const counts = { messages: o.messages ? b.messages.length : 0, memos: 0, pauses: b.pauses.length };
       if (!params.dryRun) {
-        if (o.messages) b.messages = [];
-        if (o.pauses) b.pauses = [];
+        if (o.messages) b.messages = o.target ? b.messages.filter((m) => m.UserId !== o.target) : [];
+        if (o.pauses) b.pauses = o.target ? b.pauses.filter((p) => p.id !== o.target) : [];
         save();
       }
       return { success: true, dryRun: !!params.dryRun, counts };

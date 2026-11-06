@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261106c"></script>
+<script src="theme.js?v=20261106d"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261106c" />
-<link rel="stylesheet" href="dark.css?v=20261106c" />
+<link rel="stylesheet" href="style.css?v=20261106d" />
+<link rel="stylesheet" href="dark.css?v=20261106d" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -331,8 +331,9 @@
       <div class="panel bot-talk-thread">
         <div class="bot-row" style="justify-content:space-between;">
           <h3 style="margin:0;" id="thread-title">選一位客人查看對話</h3>
-          <span><button type="button" class="btn-mini bot-write" id="thread-resume" style="display:none;" onclick="resumeSelected()">▶ 恢復機器人</button></span>
+          <span><button type="button" class="btn-mini bot-write" id="thread-resume" style="display:none;" onclick="resumeSelected()">▶ 恢復機器人</button> <button type="button" class="btn-mini" id="thread-delete" style="display:none;" onclick="deleteConversation(selectedConv)">🗑 刪除這位客人的對話</button></span>
         </div>
+        <div id="thread-lead" class="bot-lead-card" style="display:none;"></div>
         <div id="thread-box" class="bot-thread"></div>
         <div id="thread-reply" style="display:none;">
           <textarea id="thread-text" rows="2" maxlength="1500" placeholder="用真人身分回覆這位網站訪客（客人視窗會自動顯示）"></textarea>
@@ -497,6 +498,7 @@
         <div>
           <label>公司 / 品牌名稱（機器人自稱）</label><input id="gen-brand" maxlength="60" />
           <label>回覆最少等待 <input type="number" id="gen-delay" min="0" max="10" style="width:80px;display:inline-block;" /> 秒（像真人打字，不會秒回；處理比較久就不再多等）</label>
+          <label>對話紀錄最多保留 <input type="number" id="gen-logmax" min="50" max="20000" style="width:100px;display:inline-block;" /> 筆（客人說一句、機器人回一句各算 1 筆；超過會自動刪掉最舊的，調小會<b>立刻</b>刪掉多的）</label>
         </div>
         <div>
           <label>短期記憶：記得最近 <input type="number" id="gen-mem-turns" min="2" max="40" style="width:80px;display:inline-block;" /> 則</label>
@@ -612,12 +614,12 @@
   </div>
 </div>
 
-<script src="config.js?v=20261106c"></script>
-<script src="demo.js?v=20261106c"></script>
-<script src="common.js?v=20261106c"></script>
-<script src="assistant.js?v=20261106c"></script>
-<script src="alerts.js?v=20261106c"></script>
-<script src="bot.js?v=20261106c"></script>
-<script src="botstaff.js?v=20261106c"></script>
+<script src="config.js?v=20261106d"></script>
+<script src="demo.js?v=20261106d"></script>
+<script src="common.js?v=20261106d"></script>
+<script src="assistant.js?v=20261106d"></script>
+<script src="alerts.js?v=20261106d"></script>
+<script src="bot.js?v=20261106d"></script>
+<script src="botstaff.js?v=20261106d"></script>
 </body>
 </html>

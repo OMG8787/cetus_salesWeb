@@ -6655,7 +6655,7 @@ var BOT_CS_PRODUCT_FIELDS = [
   ['FPS', '影格率 fps'], ['Mount', '接口'], ['FocalLength', '焦距 mm'], ['Magnification', '放大倍率'], ['WD', '工作距離 WD'], ['DOF', '景深 DOF'], ['FocusWD', '最近對焦距離'], ['EffectivePixels', '有效像素'],
 ];
 var BOT_GEN_PROP = 'BOT_HIST_GEN';
-var BOT_LOG_MAX = 4000; // 對話紀錄最多留幾筆（超過會自動刪最舊的）
+var BOT_LOG_MAX = 4000; // 對話紀錄最多留幾筆的「預設值」（BOT 設定 → 連線與設定可以自己改；超過會自動刪最舊的）
 
 var BOT_AI_PROVIDERS = {
   gemini: { name: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' },
@@ -6980,6 +6980,7 @@ function botGeneral_() {
     replyDelay: botInt_(g.replyDelay, 0, 10, 2), // 回覆最少等待秒數（像真人打字）
     botUrl: String(g.botUrl || ''),
     memory: { turns: botInt_((g.memory || {}).turns, 2, 40, 10), hours: botInt_((g.memory || {}).hours, 1, 6, 6), chars: botInt_((g.memory || {}).chars, 50, 2000, 600) },
+    logMax: botInt_(g.logMax, 50, 20000, BOT_LOG_MAX), // 對話紀錄最多留幾筆
   };
 }
 
@@ -7559,9 +7560,38 @@ function botLogTurns_(channel, userId, name, items, topic) {
     var range = sheet.getRange(start, 1, rows.length, header.length);
     range.setNumberFormat('@');
     range.setValues(rows);
-    var total = sheet.getLastRow() - 1;
-    if (total > BOT_LOG_MAX + 300) sheet.deleteRows(2, total - BOT_LOG_MAX);
+    botLogTrim_(sheet, false);
   });
+}
+
+/**
+ * 對話紀錄超過上限（BOT 設定可調）就刪掉最舊的。寫入時多留一點緩衝（上限的 10%，最少 10 筆、最多 300 筆）不用每則都刪；
+ * force = true（上限改小時）立刻刪到剛好等於上限。回傳刪了幾筆。
+ */
+function botLogTrim_(sheet, force) {
+  var max = botGeneral_().logMax;
+  var total = sheet.getLastRow() - 1;
+  var slack = force ? 0 : Math.min(300, Math.max(10, Math.floor(max * 0.1)));
+  if (total <= max + slack) return 0;
+  var n = total - max;
+  sheet.deleteRows(2, n);
+  return n;
+}
+
+/** 客人留下的聯繫資料：客人編號 → { name, company, phone, email, time }（同一位多次留，後面的覆蓋前面的）。 */
+function botLeadMap_() {
+  var map = {};
+  sheetToObjects(SHEET_BOT_LEADS).rows.forEach(function (r) {
+    var id = String(r['UserId'] || '');
+    if (!id) return;
+    var cur = map[id] || { name: '', company: '', phone: '', email: '', time: '' };
+    ['Name', 'Company', 'Phone', 'Email'].forEach(function (k) {
+      if (String(r[k] || '').trim()) cur[k.toLowerCase()] = String(r[k]).trim();
+    });
+    cur.time = String(r['Time'] || '');
+    map[id] = cur;
+  });
+  return map;
 }
 
 // ---- 轉真人 / 小編接手 ----
@@ -7985,7 +8015,7 @@ function handleBotGetSettings(body) {
   return {
     success: true,
     cs: cs,
-    general: { replyDelay: gen.replyDelay, botUrl: gen.botUrl, brand: csBrand_(), memory: gen.memory },
+    general: { replyDelay: gen.replyDelay, botUrl: gen.botUrl, brand: csBrand_(), memory: gen.memory, logMax: gen.logMax },
     ai: botMaskedAi_(),
     aiFeatures: BOT_AI_FEATURES,
     aiSystem: !!PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY'),
@@ -8010,6 +8040,7 @@ function handleBotGetSettings(body) {
 function handleBotSaveSettings(body) {
   botKbBump_(); // 客服可用來源 / 公司資訊 / 搜尋設定有變，機器人要重讀
   return withLock_(function () {
+    var trimmed = 0;
     if (body.cs) {
       var cs = body.cs;
       // 表單送上來的 topics 是陣列 [{key,on,words,ask,askPos}]：轉成存檔格式再整理
@@ -8044,9 +8075,12 @@ function handleBotSaveSettings(body) {
       }
       if (gg.brand !== undefined) g.brand = botClip_(gg.brand, 60);
       if (gg.memory) g.memory = { turns: botInt_(gg.memory.turns, 2, 40, 10), hours: botInt_(gg.memory.hours, 1, 6, 6), chars: botInt_(gg.memory.chars, 50, 2000, 600) };
+      if (gg.logMax !== undefined) g.logMax = botInt_(gg.logMax, 50, 20000, BOT_LOG_MAX);
       botCfgSet_('general', g);
+      // 對話紀錄上限改小：立刻把超過的最舊紀錄刪掉
+      if (gg.logMax !== undefined) trimmed = botLogTrim_(getSheet(SHEET_BOT_MSG), true);
     }
-    return { success: true };
+    return { success: true, trimmed: trimmed };
   });
 }
 
@@ -8498,9 +8532,10 @@ function handleBotConversations(body) {
   }
   var paused = {};
   csPauseList_().forEach(function (p) { paused[p.id] = p; });
-  var list = order.map(function (id) { return Object.assign(groups[id], { paused: !!paused[id] }); });
+  var leads = botLeadMap_();
+  var list = order.map(function (id) { return Object.assign(groups[id], { paused: !!paused[id], lead: leads[id] || null }); });
   list.sort(function (a, b) { return String(b.lastAt).localeCompare(String(a.lastAt)); });
-  return { success: true, conversations: list.slice(0, 100), pauses: csPauseList_(), total: Math.max(0, last - 1), max: BOT_LOG_MAX };
+  return { success: true, conversations: list.slice(0, 100), pauses: csPauseList_(), total: Math.max(0, last - 1), max: botGeneral_().logMax };
 }
 
 function handleBotThread(body) {
@@ -8514,7 +8549,7 @@ function handleBotThread(body) {
       if (String(r[3]) === id) out.push({ id: Number(r[0]), time: String(r[1]), channel: String(r[2]), name: String(r[4]), role: String(r[5]), text: String(r[6]), topic: String(r[7]) });
     });
   }
-  return { success: true, messages: out.slice(-150), paused: !!botCache_().get('cspause:' + id) };
+  return { success: true, messages: out.slice(-150), paused: !!botCache_().get('cspause:' + id), lead: botLeadMap_()[id] || null };
 }
 
 /** 小編在後台回覆網站訪客：存成「真人」訊息，訪客視窗輪詢時會看到；LINE 客人請到官方帳號後台回覆。 */

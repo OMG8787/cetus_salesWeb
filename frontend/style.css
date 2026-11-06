@@ -741,3 +741,11 @@ header, .tabs { position: relative; z-index: 300; }
 .cc-item .cc-sub { font-size:13px; white-space:nowrap; }
 
 .inline-row{display:flex;gap:6px;align-items:center}.inline-row input{flex:1;min-width:0}.inline-row button{flex:none;white-space:nowrap}
+
+.bot-conv.lead { border-left: 4px solid #1e8e3e; background: #f1faf3; }
+.bot-conv.lead:hover, .bot-conv.lead.sel { background: #e1f4e6; }
+.bot-conv-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.bot-conv-del { border: 0; background: transparent; cursor: pointer; font-size: 14px; opacity: .45; padding: 0 4px; }
+.bot-conv-del:hover { opacity: 1; }
+.bot-badge.ok { background: #dff3e4; color: #1e7a38; }
+.bot-lead-card { background: #f1faf3; border: 1px solid #bfe3c8; border-radius: 6px; padding: 6px 10px; margin-top: 8px; font-size: 13px; }
