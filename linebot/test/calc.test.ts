@@ -215,3 +215,34 @@ test("優先推薦 Cetus：相機與鏡頭都排在前面並標註；沒有 Cetu
   const plain = calcSelection({ fovA: 50, fovB: 40, accuracy: 200, accuracyUnit: "um" }, { cameras: cams.map((c) => ({ ...c, pref: undefined })), fa: [], tele: [] });
   assert.equal(plain.cameraRecs[0].name, "OTHER-5MP");
 });
+
+test("依有效像素找相機：列出最接近的幾款，Cetus 優先、最接近的 Cetus 一定列出", async () => {
+  const { findCamerasByPixels, effPxOf, cameraPixelTool } = await import("../src/calc-tool.js");
+  const cam = (name: string, effPx: number | undefined, w: number, h: number, extra: Partial<Camera> = {}): Camera => ({ name, resW: w, resH: h, pixelW: 3.45, pixelH: 3.45, fps: 30, iface: "GigE", mp: (w * h) / 1e6, effPx, ...extra });
+  const cams = [
+    cam("OTHER-30", 30, 640, 480),
+    cam("CETUS-30", 30, 640, 480, { pref: true }),
+    cam("OTHER-36", 36, 752, 480),
+    cam("CETUS-122", 122, 1280, 960, { pref: true }),
+    cam("OTHER-5MP", undefined, 2448, 2048), // 沒填有效像素 → 用解析度算 501 萬
+  ];
+  assert.equal(effPxOf(cams[4]), 501);
+  const r = findCamerasByPixels(cams, 30, { limit: 3 });
+  const lines = r.text.split("\n").filter((l) => l.startsWith("・"));
+  assert.match(lines[0], /CETUS-30 ⭐Cetus 優先推薦.*剛好/, "同樣接近時 Cetus 排前面");
+  assert.match(lines[1], /OTHER-30/);
+  assert.match(r.text, /最接近 30 萬/);
+  // 前幾名沒有 Cetus 時，最接近的 Cetus 要補進來
+  const r2 = findCamerasByPixels([cam("A", 30, 640, 480), cam("B", 31, 640, 480), cam("C", 32, 640, 480), cam("CETUS-122", 122, 1280, 960, { pref: true })], 30, { limit: 3 });
+  assert.match(r2.text, /CETUS-122/);
+  // 介面篩選
+  const r3 = findCamerasByPixels([cam("U", 30, 640, 480, { iface: "USB3.0" }), cam("G", 30, 640, 480)], 30, { iface: "usb3" });
+  assert.equal(r3.count, 1);
+  // 工具：回傳並通知
+  let notified = 0;
+  const tool = cameraPixelTool(async () => ({ cameras: cams, fa: [], tele: [] }), () => { notified++; });
+  const out = (await tool.handler({ target_wan: 30 })) as string;
+  assert.match(out, /CETUS-30/);
+  assert.equal(notified, 1);
+  assert.match((await tool.handler({})) as string, /失敗/);
+});

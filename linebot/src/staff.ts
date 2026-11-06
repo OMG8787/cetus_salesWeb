@@ -1,5 +1,5 @@
 import { embed, generate, type Tool, type Turn } from "./ai.js";
-import { calcTool, CALC_RULES } from "./calc-tool.js";
+import { calcTool, cameraPixelTool, CALC_RULES } from "./calc-tool.js";
 import { CardError, cardIntakeReply, extractCards } from "./cards.js";
 import type { Catalog } from "./calc.js";
 import { cleanReply, processEvents } from "./common.js";
@@ -237,6 +237,7 @@ function readTools(uid: string, info: StaffInfo): Tool[] {
       return runCalc(a);
     };
     tools.push(calc);
+    tools.push(cameraPixelTool(async () => (await gas.staffCall(uid, "calcCatalog")) as Catalog));
     tools.push({
       name: "search_products",
       description: "查產品資料庫（型號、品牌、規格、介面、解析度…）；有權限的人才看得到供應商與參考底價，絕對不要把底價告訴客戶。",

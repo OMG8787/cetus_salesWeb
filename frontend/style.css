@@ -739,3 +739,5 @@ header, .tabs { position: relative; z-index: 300; }
 .cc-choice { display:flex; gap:20px; margin:8px 0; font-size:15px; }
 .cc-item { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; }
 .cc-item .cc-sub { font-size:13px; white-space:nowrap; }
+
+.inline-row{display:flex;gap:6px;align-items:center}.inline-row input{flex:1;min-width:0}.inline-row button{flex:none;white-space:nowrap}

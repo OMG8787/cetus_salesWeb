@@ -6,7 +6,7 @@
 //   ⑤ 飛拍：最大曝光、最高速度、拖影 px、所需幀率
 // AI 不自己心算：一律呼叫這裡，結果附完整算式；輸入有疑義的地方列在「假設」裡讓使用者確認。
 
-export interface Camera { name: string; brand?: string; resW: number; resH: number; pixelW: number; pixelH: number; fps: number; iface?: string; size?: string; mp: number; pref?: boolean }
+export interface Camera { name: string; brand?: string; resW: number; resH: number; pixelW: number; pixelH: number; fps: number; iface?: string; size?: string; mp: number; effPx?: number; pref?: boolean }
 export interface FaLens { name: string; brand?: string; f: number; sensorSize?: string; resolution?: string; focusWd?: number; pref?: boolean }
 export interface TeleLens { name: string; brand?: string; mag: number; wd?: string; dof?: string; sensorSize?: string; resolution?: string; pref?: boolean }
 export interface Catalog { cameras: Camera[]; fa: FaLens[]; tele: TeleLens[] }

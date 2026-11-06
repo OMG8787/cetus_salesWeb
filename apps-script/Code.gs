@@ -26,7 +26,7 @@
  * 試算表分頁與欄位(詳見 README.md)：
  *   Products      - InternalModel, SupplierModel, Supplier, SupplierContact,
  *                    SupplierContactEmail, Origin, Category, CompatibleGroup, RefPrice, Notes, LastUpdated, SourceUrl, Specs
- *                    Brand, Interface, Resolution, PixelSize, SensorSize, FPS, Mount, FocalLength, Magnification, WD, DOF, FocusWD
+ *                    Brand, Interface, Resolution, PixelSize, SensorSize, FPS, Mount, FocalLength, Magnification, WD, DOF, FocusWD, EffectivePixels（有效像素，例如 30萬）
  *                    （LastUpdated=上次修改日期，前端用來提醒資料多久沒更新、要不要重新詢價；
  *                    SourceUrl=資料來源網址，Specs=官網抓到的完整規格(JSON)；
  *                    後 12 欄是「選型規格」：相機/鏡頭的型號、價格、規格都放在 Products 這一張表，選型計算直接從這裡讀，
@@ -128,6 +128,8 @@ var ROUTES = {
   importBaslerProducts:    { auth: true, fn: handleImportBaslerProducts },
   importMindvisionProducts: { auth: true, fn: handleImportMindvisionProducts },
   importMyutronProducts:   { auth: true, fn: handleImportMyutronProducts },
+  importCetusProducts:     { auth: true, fn: handleImportCetusProducts },
+  fillEffectivePixels:     { auth: true, fn: handleFillEffectivePixels },
   dbStatus:                { auth: true,  fn: handleDbStatus },
   dbTrim:                  { auth: true,  fn: handleDbTrim },
   getCalcCatalog:          { auth: true, fn: handleGetCalcCatalog },
@@ -270,7 +272,7 @@ function jsonOutput(obj) {
  * 之後要加新欄位，改這裡再重新執行一次 setup 就好。
  */
 var SCHEMA = {};
-SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated', 'SourceUrl', 'Specs', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD'];
+SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated', 'SourceUrl', 'Specs', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD', 'EffectivePixels'];
 SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Price', 'Currency', 'CaseID', 'Notes'];
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency', 'CloseResult', 'CloseDate', 'CloseAmount', 'CloseNote', 'OrderItems'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
@@ -308,7 +310,7 @@ TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday'];
 TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
 TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash', 'LoginTime', 'LastSeenTime'];
 TEXT_COLUMNS[SHEET_PRICE_HISTORY] = ['ProductInternalModel', 'CaseID'];
-TEXT_COLUMNS[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD'];
+TEXT_COLUMNS[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD', 'EffectivePixels'];
 TEXT_COLUMNS[SHEET_FAVORITES] = ['Username', 'InternalModel'];
 TEXT_COLUMNS[SHEET_SHORTCUTS] = ['Username'];
 TEXT_COLUMNS[SHEET_MEMOS] = ['Owner', 'ShareWith'];
@@ -372,7 +374,7 @@ var ACTION_PERM = {
   searchProducts: ['products', 'r'], getProduct: ['products', 'r'], getCalcCatalog: ['products', 'r'], getPriceHistory: ['products', 'r'], generateQuoteDoc: ['products', 'r'],
   addProduct: ['products', 'w'], updateProduct: ['products', 'w'], deleteProduct: ['products', 'd'], deleteProducts: ['products', 'd'],
   importCatalogProducts: ['products', 'w'], importDehongProducts: ['products', 'w'], importFlirProducts: ['products', 'w'], importBaslerProducts: ['products', 'w'],
-  importMindvisionProducts: ['products', 'w'], importMyutronProducts: ['products', 'w'], syncCalcCatalog: ['products', 'w'],
+  importMindvisionProducts: ['products', 'w'], importMyutronProducts: ['products', 'w'], importCetusProducts: ['products', 'w'], fillEffectivePixels: ['products', 'w'], syncCalcCatalog: ['products', 'w'],
   addPriceRecord: ['products', 'w'], updatePriceRecord: ['products', 'w'], deletePriceRecord: ['products', 'd'],
   generateInquiryDraft: ['products', 'w'], createGmailDraft: ['products', 'w'],
   // 案件
@@ -389,7 +391,7 @@ var ACTION_PERM = {
 /** 舊版「只有這些角色能做」的限制（舊角色 sales / fae 還沒遷移前沿用，行為跟以前一模一樣）。 */
 var LEGACY_PERMISSIONS = {
   deleteProduct: ['sales'], deleteProducts: ['sales'], importCatalogProducts: ['sales'], importDehongProducts: ['sales'], importFlirProducts: ['sales'],
-  importBaslerProducts: ['sales'], importMindvisionProducts: ['sales'], importMyutronProducts: ['sales'], syncCalcCatalog: ['sales'],
+  importBaslerProducts: ['sales'], importMindvisionProducts: ['sales'], importMyutronProducts: ['sales'], importCetusProducts: ['sales'], fillEffectivePixels: ['sales'], syncCalcCatalog: ['sales'],
   deleteCustomer: ['sales'], deleteCase: ['sales'], renameCase: ['sales'], deletePriceRecord: ['sales'], deleteContactLog: ['sales'],
   deleteCustomerContact: ['sales'], deleteCaseAttachment: ['sales'],
 };
@@ -1714,6 +1716,7 @@ function handleAddProduct(body) {
     WD: body.wd || '',
     DOF: body.dof || '',
     FocusWD: body.focusWd || '',
+    EffectivePixels: body.effectivePixels || '',
   });
   return { success: true };
 }
@@ -1975,7 +1978,7 @@ function hwKey_(v) {
  * 回傳 { updated, created }。
  */
 function upsertHardware_(records) {
-  var fieldMap = { Brand: 'brand', Interface: 'interface', Resolution: 'resolution', PixelSize: 'pixel', SensorSize: 'sensorSize', FPS: 'fps', Mount: 'mount', FocalLength: 'focal', Magnification: 'mag', WD: 'wd', DOF: 'dof', FocusWD: 'focusWd' };
+  var fieldMap = { Brand: 'brand', Interface: 'interface', Resolution: 'resolution', PixelSize: 'pixel', SensorSize: 'sensorSize', FPS: 'fps', Mount: 'mount', FocalLength: 'focal', Magnification: 'mag', WD: 'wd', DOF: 'dof', FocusWD: 'focusWd', EffectivePixels: 'effPx' };
   var numeric = { PixelSize: 1, FPS: 1, FocalLength: 1, Magnification: 1, FocusWD: 1 };
   var sheet = getSheet(SHEET_PRODUCTS);
   var fullHeader = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
@@ -4113,6 +4116,225 @@ function handleImportMyutronProducts(body) {
   var r = importMyutronProducts_(Number(body.offset) || 0);
   r.success = true;
   return r;
+}
+
+// ------------------------------------------------------------
+// Cetus 官網工業相機（www.cetus.tw 產品頁的六個分頁）＋「有效像素」
+// ------------------------------------------------------------
+var CETUS_BRAND = 'Cetus';
+var CETUS_TABS = [
+  { tab: 1458, iface: 'GigE', color: '黑白' },
+  { tab: 1488, iface: 'GigE', color: '彩色' },
+  { tab: 1500, iface: 'USB3.0', color: '彩色' },
+  { tab: 1512, iface: 'USB3.0', color: '黑白' },
+  { tab: 1530, iface: 'USB2.0', color: '彩色' },
+  { tab: 1560, iface: 'USB2.0', color: '黑白' },
+];
+
+function cetusTabUrl_(tab) {
+  return 'https://www.cetus.tw/product_d.php?lang=tw&tb=1&id=287&tab=' + tab;
+}
+
+/** 取出某個分頁（id="tab-xxxx"）裡的規格表（第一個表頭同時有「型號」「畫素」的表格）→ 二維陣列，第一列是表頭；找不到回傳空陣列。 */
+function cetusParsePane_(html, tab) {
+  var start = html.indexOf('id="tab-' + tab + '"');
+  if (start < 0) return [];
+  var next = html.indexOf('<li class="tab-con"', start + 10);
+  var tables = parseHtmlTables_(html.substring(start, next > -1 ? next : html.length));
+  for (var i = 0; i < tables.length; i++) {
+    var head = tables[i][0].join('|');
+    if (head.indexOf('型號') > -1 && head.indexOf('畫素') > -1) return tables[i];
+  }
+  return [];
+}
+
+/** 官網規格表的一列 → 產品紀錄（給 upsertHardware_）。型號裡的空白拿掉（官網偶爾寫成 "CV3-2000 M -19RT"）。 */
+function cetusBuildRec_(head, cells, def) {
+  var at = function (kw) {
+    var i = headerCol_(head, [kw]);
+    return i > -1 && cells[i] !== undefined ? String(cells[i]).trim() : '';
+  };
+  var model = at('型號').replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9]/.test(model)) return null;
+  var res = parseResolution_(at('分辨率'));
+  var effPx = at('畫素').replace(/\s+/g, '');
+  var specs = {};
+  head.forEach(function (h, i) {
+    if (cells[i] !== undefined && String(cells[i]).trim()) specs[h] = String(cells[i]).trim();
+  });
+  specs['色彩'] = def.color;
+  specs['介面'] = def.iface;
+  var resText = res ? res.w + 'x' + res.h : '';
+  return {
+    model: model,
+    brand: CETUS_BRAND,
+    interface: def.iface,
+    resolution: resText,
+    pixel: at('像素尺寸'),
+    sensorSize: at('Sensor Size').replace(/\s+/g, ''),
+    fps: at('FPS'),
+    effPx: effPx,
+    base: {
+      Supplier: CETUS_BRAND,
+      Category: '相機',
+      Notes: 'Cetus 官網 ' + def.iface + def.color + '工業相機；' + [effPx, resText, at('Sensor型號')].filter(Boolean).join(' '),
+      SourceUrl: cetusTabUrl_(def.tab),
+      Specs: JSON.stringify(specs),
+    },
+  };
+}
+
+/** 匯入 Cetus 官網六個分頁（GigE / USB3.0 / USB2.0 × 黑白 / 彩色）的相機型號：新增還沒有的型號，已有的只補空白欄位（含有效像素）。不含價格。 */
+function handleImportCetusProducts() {
+  var recs = [];
+  var errors = [];
+  var pages = 0;
+  CETUS_TABS.forEach(function (def) {
+    try {
+      var html = fetchUrl_(cetusTabUrl_(def.tab));
+      pages++;
+      var rows = cetusParsePane_(html, def.tab);
+      if (!rows.length) {
+        errors.push('分頁 ' + def.tab + ' 找不到規格表（官網改版？）');
+        return;
+      }
+      for (var i = 1; i < rows.length; i++) {
+        var rec = cetusBuildRec_(rows[0], rows[i], def);
+        if (rec) recs.push(rec);
+      }
+    } catch (e) {
+      errors.push('分頁 ' + def.tab + '（' + e.message + '）');
+    }
+  });
+  var r = recs.length ? upsertHardware_(recs) : { updated: 0, created: 0 };
+  return { success: true, added: r.created, enriched: r.updated, camAdded: r.created, done: true, total: recs.length, pages: pages, errors: errors.slice(0, 6) };
+}
+
+/** 解析度文字 → {w, h}（長邊在前）；看不出來回傳 null。 */
+function parseResolution_(s) {
+  var m = String(s == null ? '' : s).match(/(\d{3,5})\s*[xX*×]\s*(\d{3,5})/);
+  if (!m) return null;
+  var a = Number(m[1]);
+  var b = Number(m[2]);
+  return { w: Math.max(a, b), h: Math.min(a, b) };
+}
+
+/** 解析度 → 有效像素文字：640x480 = 307,200 → '30萬'（取整數萬、無條件捨去，跟官網寫法一致）。 */
+function effPixFromRes_(w, h) {
+  var n = Math.floor((w * h) / 10000);
+  return n > 0 ? n + '萬' : '';
+}
+
+/** 有效像素文字 → 數字（單位：萬）。'30萬' → 30、'5MP' → 500、'2.3 百萬像素' → 230、'307200' → 30.72；看不懂回傳 0。 */
+function effPixToWan_(s) {
+  var t = String(s == null ? '' : s).replace(/,/g, '');
+  var m = t.match(/(\d+(?:\.\d+)?)\s*(萬|万|MP|百萬|百万|M\b)?/i);
+  if (!m) return 0;
+  var n = parseFloat(m[1]);
+  var u = (m[2] || '').toLowerCase();
+  if (u === '萬' || u === '万') return n;
+  if (u === 'mp' || u === 'm' || u === '百萬' || u === '百万') return Math.round(n * 100 * 1000) / 1000;
+  return n >= 10000 ? n / 10000 : 0; // 沒單位：>= 1 萬才當作像素總數
+}
+
+/** 從 Specs（JSON）或備註文字裡找解析度、有效像素。找不到就是空字串 / null。 */
+function findPixelInfo_(specsText, notesText) {
+  var out = { res: null, eff: '' };
+  var specs = {};
+  try {
+    specs = specsText ? JSON.parse(specsText) : {};
+  } catch (e) {
+    specs = {};
+  }
+  Object.keys(specs).forEach(function (k) {
+    var v = String(specs[k]);
+    if (!out.res && /分辨率|分辩率|解析度|resolution/i.test(k)) out.res = parseResolution_(v);
+    if (!out.eff && /畫素|画素|像素數|有效像素|effective/i.test(k) && !/尺寸|大小|size/i.test(k)) {
+      var w = effPixToWan_(v);
+      if (w) out.eff = Math.round(w) + '萬';
+    }
+  });
+  var blob = String(notesText || '');
+  if (!out.res) out.res = parseResolution_(blob);
+  if (!out.eff) {
+    var m = blob.match(/(\d+(?:\.\d+)?)\s*[萬万]\s*(?:畫素|画素|像素)?/);
+    if (m) out.eff = Math.round(parseFloat(m[1])) + '萬';
+  }
+  return out;
+}
+
+/**
+ * 推算相機畫素：逐台相機，缺「解析度」就從規格 / 備註找，缺「有效像素」就用規格寫的萬畫素，沒有再用解析度算（長 × 寬 ÷ 1 萬，捨去）。
+ * 只補空白，你填過的不會被覆蓋。
+ */
+function handleFillEffectivePixels() {
+  return withLock_(function () {
+    var sheet = getSheet(SHEET_PRODUCTS);
+    var last = sheet.getLastRow();
+    if (last < 2) return { success: true, checked: 0, effFilled: 0, resFilled: 0, unresolved: 0 };
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+    var col = {};
+    header.forEach(function (h, i) {
+      col[h] = i;
+    });
+    if (col['EffectivePixels'] === undefined || col['Resolution'] === undefined || col['Category'] === undefined) {
+      return { success: false, message: '產品表還沒有「有效像素」欄位，請先到 Apps Script 執行一次 setup' };
+    }
+    var n = last - 1;
+    var read = function (name) {
+      return col[name] === undefined ? null : sheet.getRange(2, col[name] + 1, n, 1).getValues();
+    };
+    var cat = read('Category');
+    var res = read('Resolution');
+    var eff = read('EffectivePixels');
+    var notes = read('Notes');
+    var specs = read('Specs');
+    var checked = 0;
+    var effFilled = 0;
+    var resFilled = 0;
+    var unresolved = 0;
+    for (var i = 0; i < n; i++) {
+      if (String(cat[i][0]).trim() !== '相機') continue;
+      checked++;
+      var curRes = String(res[i][0] == null ? '' : res[i][0]).trim();
+      var curEff = String(eff[i][0] == null ? '' : eff[i][0]).trim();
+      if (curRes && curEff) continue;
+      var pr = parseResolution_(curRes);
+      var info = null;
+      var lazy = function () {
+        if (!info) info = findPixelInfo_(specs ? specs[i][0] : '', notes ? notes[i][0] : '');
+        return info;
+      };
+      if (!pr && !curRes) {
+        pr = lazy().res;
+        if (pr) {
+          res[i][0] = pr.w + 'x' + pr.h;
+          resFilled++;
+        }
+      }
+      if (!curEff) {
+        var e = lazy().eff || (pr ? effPixFromRes_(pr.w, pr.h) : '');
+        if (e) {
+          eff[i][0] = e;
+          effFilled++;
+        } else {
+          unresolved++;
+        }
+      }
+    }
+    var put = function (name, values) {
+      var range = sheet.getRange(2, col[name] + 1, n, 1);
+      range.setNumberFormat('@');
+      range.setValues(
+        values.map(function (r) {
+          return [r[0] === '' || r[0] == null ? '' : String(r[0])];
+        })
+      );
+    };
+    if (resFilled) put('Resolution', res);
+    if (effFilled) put('EffectivePixels', eff);
+    return { success: true, checked: checked, effFilled: effFilled, resFilled: resFilled, unresolved: unresolved };
+  });
 }
 
 // ------------------------------------------------------------
@@ -6430,7 +6652,7 @@ var BOT_SEARCH_MODES = ['vector', 'meta_vector', 'meta', 'both'];
 // 客服機器人（對外）能看到的產品欄位白名單：底價、供應商、備註永遠不在裡面
 var BOT_CS_PRODUCT_FIELDS = [
   ['SupplierModel', '原廠型號'], ['Category', '類別'], ['Brand', '品牌'], ['Interface', '介面'], ['Resolution', '解析度'], ['PixelSize', '像元尺寸 µm'], ['SensorSize', '靶面'],
-  ['FPS', '影格率 fps'], ['Mount', '接口'], ['FocalLength', '焦距 mm'], ['Magnification', '放大倍率'], ['WD', '工作距離 WD'], ['DOF', '景深 DOF'], ['FocusWD', '最近對焦距離'],
+  ['FPS', '影格率 fps'], ['Mount', '接口'], ['FocalLength', '焦距 mm'], ['Magnification', '放大倍率'], ['WD', '工作距離 WD'], ['DOF', '景深 DOF'], ['FocusWD', '最近對焦距離'], ['EffectivePixels', '有效像素'],
 ];
 var BOT_GEN_PROP = 'BOT_HIST_GEN';
 var BOT_LOG_MAX = 4000; // 對話紀錄最多留幾筆（超過會自動刪最舊的）
@@ -7150,7 +7372,7 @@ function botCalcCatalog_(categories) {
       var pixelW = pm ? parseFloat(pm[1]) : single ? parseFloat(single[1]) : 0;
       var pixelH = pm ? parseFloat(pm[2]) : pixelW;
       if (!(pixelW > 0)) return;
-      cams.push({ name: name, brand: brand, resW: resW, resH: resH, pixelW: pixelW, pixelH: pixelH, size: t(r['SensorSize']), iface: isUsb ? 'USB3.0' : 'GigE', fps: parseFloat(t(r['FPS'])) || 0, mp: (resW * resH) / 1e6, pref: pref || undefined });
+      cams.push({ name: name, brand: brand, resW: resW, resH: resH, pixelW: pixelW, pixelH: pixelH, size: t(r['SensorSize']), iface: isUsb ? 'USB3.0' : 'GigE', fps: parseFloat(t(r['FPS'])) || 0, mp: (resW * resH) / 1e6, effPx: effPixToWan_(t(r['EffectivePixels'])) || Math.floor((resW * resH) / 10000), pref: pref || undefined });
       return;
     }
     var mag = parseFloat(hwNum_(r['Magnification']));
@@ -8858,7 +9080,7 @@ function botTrimRow_(obj, keys, noteLimit) {
 
 var BOT_CUSTOMER_KEYS = ['CompanyName', 'Contact', 'Phone', 'CompanyPhone', 'Email', 'Address', 'TaxId', 'Website', 'Category', 'Urgency', 'NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote', 'Notes', 'HasTransacted', 'LastTransactionDate'];
 var BOT_CASE_KEYS = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Status', 'Urgency', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'CreatedDate', 'RequirementDetails', 'EvaluationResult'];
-var BOT_PRODUCT_KEYS = ['InternalModel', 'SupplierModel', 'Brand', 'Category', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD', 'Notes'];
+var BOT_PRODUCT_KEYS = ['InternalModel', 'SupplierModel', 'Brand', 'Category', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD', 'EffectivePixels', 'Notes'];
 
 /** 用內部型號（不分大小寫）或供應商型號找產品；找不到回傳 near（名稱相近的）。 */
 function botFindProduct_(model) {
@@ -9208,7 +9430,7 @@ var BOT_STAFF_WRITES = {
 };
 var BOT_PRICE_WRITES = ['addPriceRecord', 'createInquiryDraft', 'deletePriceRecord']; // 管理員設定「助理不顯示價格」時，這些也不開放
 var BOT_CASE_EDITABLE = { ProjectContact: '專案聯絡人', ContactPhone: '聯絡電話', EndCustomerName: '終端客戶', Salesperson: '業務', FAE: 'FAE', RequirementDetails: '需求說明', EvaluationResult: '評估結果' };
-var BOT_PRODUCT_EDITABLE = { SupplierModel: '供應商型號', Brand: '品牌', Category: '類別', Interface: '介面', Resolution: '解析度', PixelSize: '像素尺寸', SensorSize: '靶面', FPS: '幀率', Mount: '接口', FocalLength: '焦距', Magnification: '倍率', WD: '工作距離', DOF: '景深', FocusWD: '對焦距離', CompatibleGroup: '相容群組', Origin: '產地', Notes: '備註' };
+var BOT_PRODUCT_EDITABLE = { SupplierModel: '供應商型號', Brand: '品牌', Category: '類別', Interface: '介面', Resolution: '解析度', PixelSize: '像素尺寸', SensorSize: '靶面', FPS: '幀率', Mount: '接口', FocalLength: '焦距', Magnification: '倍率', WD: '工作距離', DOF: '景深', FocusWD: '對焦距離', EffectivePixels: '有效像素', CompatibleGroup: '相容群組', Origin: '產地', Notes: '備註' };
 var BOT_PRODUCT_PRICEY = { Supplier: '供應商', SupplierContact: '供應商聯絡人', SupplierContactEmail: '供應商 Email', RefPrice: '參考底價' }; // 有價格權限（沒被隱藏）才能改
 var BOT_CUSTOMER_EDITABLE = { Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', Address: '地址', TaxId: '統一編號', Website: '公司網址', Category: '分類', Urgency: '急迫性', Notes: '客戶備註' };
 

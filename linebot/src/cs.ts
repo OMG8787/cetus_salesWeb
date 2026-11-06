@@ -1,5 +1,5 @@
 import { embed, generate, type Tool, type Turn } from "./ai.js";
-import { calcTool, CALC_RULES } from "./calc-tool.js";
+import { calcTool, cameraPixelTool, CALC_RULES } from "./calc-tool.js";
 import { cleanReply, processEvents } from "./common.js";
 import { gas, type CsInfo, type CsStyle, type CsTopic, type EmbedConfig } from "./gas.js";
 import { imageUrl, type ReplyImage } from "./img.js";
@@ -292,7 +292,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const hits = (await runSearch(index, query, search, info.embedAi)).hits;
 
   const seen: Hit[] = [...hits];
-  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(() => catalogOnce(info.kbVer), () => { calcDone.on = true; }), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
+  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(() => catalogOnce(info.kbVer), () => { calcDone.on = true; }), cameraPixelTool(() => catalogOnce(info.kbVer), () => { calcDone.on = true; }), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
   tools.push(quickActionsTool(quick));
   if (info.topics?.length || info.unsure === "handoff") tools.push(transferTool(info, handed));
   if (info.sendImages !== false) tools.push(imageTool(seen, images));

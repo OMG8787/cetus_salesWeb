@@ -47,12 +47,13 @@ async function addProduct() {
     wd: document.getElementById('np-wd').value,
     dof: document.getElementById('np-dof').value,
     focusWd: document.getElementById('np-focuswd').value,
+    effectivePixels: document.getElementById('np-effpx').value,
   });
   if (!result.success) return alert(result.message);
   clearCached('products_all');
   alert('已新增產品');
   document.getElementById('new-product-form').style.display = 'none';
-  ['np-internal-model', 'np-supplier-model', 'np-supplier', 'np-supplier-contact', 'np-supplier-email', 'np-origin', 'np-compatible-group', 'np-ref-price', 'np-list-price', 'np-notes', 'np-brand', 'np-interface', 'np-resolution', 'np-pixel', 'np-sensor', 'np-fps', 'np-mount', 'np-focal', 'np-mag', 'np-wd', 'np-dof', 'np-focuswd'].forEach(
+  ['np-internal-model', 'np-supplier-model', 'np-supplier', 'np-supplier-contact', 'np-supplier-email', 'np-origin', 'np-compatible-group', 'np-ref-price', 'np-list-price', 'np-notes', 'np-brand', 'np-interface', 'np-resolution', 'np-pixel', 'np-sensor', 'np-fps', 'np-mount', 'np-focal', 'np-mag', 'np-wd', 'np-dof', 'np-focuswd', 'np-effpx'].forEach(
     (id) => (document.getElementById(id).value = '')
   );
   searchProducts();
@@ -375,6 +376,7 @@ async function viewProduct(internalModel, rowIndex) {
   document.getElementById('ep-wd').value = result.product.WD || '';
   document.getElementById('ep-dof').value = result.product.DOF || '';
   document.getElementById('ep-focuswd').value = result.product.FocusWD || '';
+  document.getElementById('ep-effpx').value = result.product.EffectivePixels || '';
 
   renderPriceHistoryTable(result.priceHistory || []);
 }
@@ -398,10 +400,10 @@ function renderProductFields(p) {
   ];
   const isLens = p.Category === '鏡頭';
   const sel = [
-    ['品牌', p.Brand], ['介面', p.Interface], ['解析度', p.Resolution], ['像元尺寸 µm', p.PixelSize], ['靶面', p.SensorSize],
+    ['品牌', p.Brand], ['介面', p.Interface], ['解析度', p.Resolution], ['有效像素', p.EffectivePixels], ['像元尺寸 µm', p.PixelSize], ['靶面', p.SensorSize],
     ['影格率 fps', p.FPS], ['接口', p.Mount], ['焦距 mm', p.FocalLength], ['放大倍率', p.Magnification],
     ['工作距離 WD', p.WD], ['景深 DOF', p.DOF], ['最近對焦距離', p.FocusWD],
-  ].filter(([k, v]) => v || (isLens ? !/像元|影格|介面/.test(k) : !/焦距|倍率|WD|DOF|最近/.test(k)));
+  ].filter(([k, v]) => v || (isLens ? !/像元|影格|介面|有效像素/.test(k) : !/焦距|倍率|WD|DOF|最近/.test(k)));
   let html = '<div class="pd-section-title">基本資料</div>' + grid(basic);
   html += '<div class="pd-section-title">選型規格（選型計算用）</div>' + grid(sel);
   let specs = null;
@@ -484,6 +486,7 @@ async function saveProductEdit() {
     WD: document.getElementById('ep-wd').value,
     DOF: document.getElementById('ep-dof').value,
     FocusWD: document.getElementById('ep-focuswd').value,
+    EffectivePixels: document.getElementById('ep-effpx').value,
   };
   const result = await callApi('updateProduct', { rowIndex: currentProductRow, internalModel: currentInternalModel, fields });
   if (result.success) {
@@ -920,6 +923,46 @@ async function importMyutron() {
   searchProducts();
 }
 
+/** 新增 / 修改產品表單：用解析度算有效像素（640x480 → 30萬，長 × 寬 ÷ 1 萬，捨去） */
+function fillEffPxFromResolution(prefix) {
+  const m = String(document.getElementById(prefix + '-resolution').value).match(/(\d{3,5})\s*[xX*×]\s*(\d{3,5})/);
+  if (!m) return alert('請先在上面的「相機解析度」填長 × 寬，例：1920X1200');
+  const n = Math.floor((Number(m[1]) * Number(m[2])) / 10000);
+  document.getElementById(prefix + '-effpx').value = n > 0 ? n + '萬' : '';
+}
+
+async function importCetus() {
+  if (!confirm('要從 Cetus 官網（www.cetus.tw）抓工業相機嗎？包含 GigE / USB3.0 / USB2.0 的黑白與彩色共六個分頁，約 130 個型號，會寫入有效像素、解析度、影格率、靶面、像元尺寸，並同時進選型計算。只會新增還沒有的型號、補空白欄位，不含價格，約需 1 分鐘。')) return;
+  try {
+    const r = await callApi('importCetusProducts', {});
+    if (!r.success) throw new Error(r.message || '匯入失敗');
+    const lines = ['匯入完成：新增 ' + r.added + ' 筆相機、替既有產品補上 ' + (r.enriched || 0) + ' 筆規格（官網共讀到 ' + (r.total || 0) + ' 個型號）。'];
+    if (r.errors && r.errors.length) lines.push('部分分頁讀取失敗：' + r.errors.join('、') + '（可以再按一次補抓）');
+    alert(lines.join(String.fromCharCode(10)));
+  } catch (e) {
+    alert('匯入失敗：' + (e.message || e));
+  }
+  clearCached('products_all');
+  clearCached('visionCatalog_v5');
+  searchProducts();
+}
+
+async function fillEffectivePixels() {
+  if (!confirm('要自動推算相機畫素嗎？逐台相機處理：缺「解析度」就從規格 / 備註找，缺「有效像素」就用規格寫的萬畫素，沒有再用解析度算出來（長 × 寬 ÷ 1 萬，捨去）。只補空白，已經填的不會被改。')) return;
+  try {
+    const r = await callApi('fillEffectivePixels', {});
+    if (!r.success) throw new Error(r.message || '推算失敗');
+    const lines = ['處理完成：檢查 ' + r.checked + ' 台相機，補上有效像素 ' + r.effFilled + ' 台、補上解析度 ' + r.resFilled + ' 台。'];
+    if (r.unresolved) lines.push(r.unresolved + ' 台找不到解析度也沒有寫萬畫素，無法推算，請手動補。');
+    alert(lines.join(String.fromCharCode(10)));
+  } catch (e) {
+    alert('推算失敗：' + (e.message || e));
+  }
+  clearCached('products_all');
+  clearCached('visionCatalog_v5');
+  searchProducts();
+}
+
 async function importMindvision() {
   if (!confirm('要從邁德威視官網（mindvision.com.cn）抓全系列產品嗎？約 665 筆（面陣/線陣/智能/3D 相機、鏡頭、光源、光源控制器、圖像採集卡），面陣相機會同時寫進選型規格。只會新增還沒有的型號，分段執行約需 5～10 分鐘，請不要關閉頁面，不含價格。')) return;
   const NL = String.fromCharCode(10);
@@ -961,7 +1004,7 @@ async function importMindvision() {
 
 /** 一次跑完全部官網匯入：每家各自分段執行，失敗的不影響其他家，最後整理各家新增多少。 */
 async function importAllMissing() {
-  if (!confirm('要一次匯入全部官網的硬體嗎？依序跑：公開型錄 → 德鴻 → FLIR → Basler → 邁德威視 → Myutron。只會新增還沒有的型號、補空白規格，不含價格。全部約需 10～25 分鐘，請不要關閉頁面。')) return;
+  if (!confirm('要一次匯入全部官網的硬體嗎？依序跑：公開型錄 → 德鴻 → FLIR → Basler → 邁德威視 → Myutron → Cetus。只會新增還沒有的型號、補空白規格，不含價格。全部約需 10～25 分鐘，請不要關閉頁面。')) return;
   const NL = String.fromCharCode(10);
   const results = [];
   const failNote = (r) => (r && r.errors && r.errors.length ? r.errors.length + ' 個頁面失敗' : '');
@@ -1028,6 +1071,12 @@ async function importAllMissing() {
   await run('Basler', () => loop('Basler', 'importBaslerProducts', {}));
   await run('邁德威視', () => loop('邁德威視', 'importMindvisionProducts', {}));
   await run('Myutron', () => loop('Myutron', 'importMyutronProducts', {}));
+  await run('Cetus', async () => {
+    setLoadingText('匯入 Cetus 官網...');
+    const r = await callApi('importCetusProducts', {});
+    if (!r.success) throw new Error(r.message);
+    return { added: r.added || 0, enriched: r.enriched || 0, camAdded: r.camAdded || 0, notes: r.errors || [] };
+  });
 
   setLoadingText('處理中，請稍候...');
   let total = 0;

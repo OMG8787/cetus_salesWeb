@@ -961,8 +961,12 @@ function handleDemoApi(action, params) {
       return { success: true, added: 0, enriched: 0, camAdded: 0, done: true, message: '示範模式不會真的抓取官網，正式模式才會匯入。' };
 
     case 'importMyutronProducts':
+    case 'importCetusProducts':
     case 'importMindvisionProducts':
       return { success: true, added: 0, enriched: 0, camAdded: 0, done: true, message: '示範模式不會真的抓取官網，正式模式才會匯入。' };
+
+    case 'fillEffectivePixels':
+      return { success: true, checked: 0, effFilled: 0, resFilled: 0, unresolved: 0, message: '示範模式不會真的推算。' };
 
     case 'deleteProducts': {
       const set = new Set((params.rowIndexes || []).map(Number));
