@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { calcSelection, formatCalc, type Catalog } from "../src/calc.js";
+import { calcSelection, formatCalc, type Camera, type Catalog } from "../src/calc.js";
 import { calcTool, CALC_RULES } from "../src/calc-tool.js";
 import { csConverse, resetKnowledgeCache } from "../src/cs.js";
 import type { CsInfo } from "../src/gas.js";
@@ -200,4 +200,18 @@ test("每個問題最多查幾輪資料：用管理系統設定的 maxRounds（�
   assert.equal(await run(), 7, "預設 6 輪（+ 最後一次）");
   assert.equal(await run(2), 3);
   assert.equal(await run(99), 13, "上限 12");
+});
+
+test("優先推薦 Cetus：相機與鏡頭都排在前面並標註；沒有 Cetus 型號時維持原排序", () => {
+  const cams: Camera[] = [
+    { name: "OTHER-5MP", resW: 2448, resH: 2048, pixelW: 3.45, pixelH: 3.45, fps: 30, iface: "GigE", mp: 5 },
+    { name: "CETUS-12MP", resW: 4096, resH: 3000, pixelW: 3.45, pixelH: 3.45, fps: 20, iface: "GigE", mp: 12.3, pref: true },
+  ];
+  const cat = { cameras: cams, fa: [], tele: [] };
+  const r = calcSelection({ fovA: 50, fovB: 40, accuracy: 200, accuracyUnit: "um" }, cat);
+  assert.equal(r.cameraRecs[0].name, "CETUS-12MP");
+  assert.match(formatCalc(r), /CETUS-12MP ⭐Cetus 優先推薦/);
+  assert.doesNotMatch(formatCalc(r), /OTHER-5MP ⭐/);
+  const plain = calcSelection({ fovA: 50, fovB: 40, accuracy: 200, accuracyUnit: "um" }, { cameras: cams.map((c) => ({ ...c, pref: undefined })), fa: [], tele: [] });
+  assert.equal(plain.cameraRecs[0].name, "OTHER-5MP");
 });

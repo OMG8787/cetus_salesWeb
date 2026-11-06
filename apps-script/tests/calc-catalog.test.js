@@ -65,4 +65,12 @@ call('handleBotSaveStaff', { config: { ceiling: { products: 'edit' } } });
 ctx.appendObjectRow('BotMembers', { LineUserId: 'U' + '8'.repeat(32), DisplayName: '無產品權限', Status: '已開通', Role: 'limited', Perms: JSON.stringify({ customers: 'view' }), IsFollowing: true });
 s = api(stKey, 'call', 'U' + '8'.repeat(32), { call: 'calcCatalog', params: {} });
 ok(!s.success, '成員沒有產品權限 → 不能取型錄');
+
+// 優先推薦的供應商 Cetus：型錄只帶 pref 旗標，不帶供應商名稱
+ctx.appendObjectRow('Products', { InternalModel: 'CAM-CETUS', Supplier: 'Cetus 自家', Category: '相機', Brand: 'Hik', Resolution: '1920x1200', PixelSize: '4.8', Interface: 'GigE' });
+ctx.appendObjectRow('Products', { InternalModel: 'LENS-CETUS', Supplier: 'x', Category: '鏡頭', Brand: 'CETUS', FocalLength: '16mm', SensorSize: '2/3"', Resolution: '5MP' });
+const cat2 = ctx.botCalcCatalog_(null);
+ok(cat2.cameras.find((c) => c.name === 'CAM-CETUS').pref === true && !cat2.cameras.find((c) => c.name === 'CAM-A').pref, '供應商含 Cetus 的相機 pref = true，其他沒有');
+ok(cat2.fa.find((l) => l.name === 'LENS-CETUS').pref === true && !cat2.fa.find((l) => l.name === 'LENS25').pref, '品牌含 Cetus（不分大小寫）的鏡頭 pref = true');
+ok(!JSON.stringify(cat2).includes('Cetus 自家'), '型錄仍不含供應商名稱');
 console.log('calc catalog checks passed:', pass);

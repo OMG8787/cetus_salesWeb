@@ -6,9 +6,9 @@
 //   ⑤ 飛拍：最大曝光、最高速度、拖影 px、所需幀率
 // AI 不自己心算：一律呼叫這裡，結果附完整算式；輸入有疑義的地方列在「假設」裡讓使用者確認。
 
-export interface Camera { name: string; brand?: string; resW: number; resH: number; pixelW: number; pixelH: number; fps: number; iface?: string; size?: string; mp: number }
-export interface FaLens { name: string; brand?: string; f: number; sensorSize?: string; resolution?: string; focusWd?: number }
-export interface TeleLens { name: string; brand?: string; mag: number; wd?: string; dof?: string; sensorSize?: string; resolution?: string }
+export interface Camera { name: string; brand?: string; resW: number; resH: number; pixelW: number; pixelH: number; fps: number; iface?: string; size?: string; mp: number; pref?: boolean }
+export interface FaLens { name: string; brand?: string; f: number; sensorSize?: string; resolution?: string; focusWd?: number; pref?: boolean }
+export interface TeleLens { name: string; brand?: string; mag: number; wd?: string; dof?: string; sensorSize?: string; resolution?: string; pref?: boolean }
 export interface Catalog { cameras: Camera[]; fa: FaLens[]; tele: TeleLens[] }
 
 export interface CalcInput {
@@ -70,7 +70,7 @@ export interface UsedCamera extends Camera {
   sensorW: number; sensorH: number; side: "s" | "l"; sideName: string; otherName: string; sensorSide: number; fovSide: number; resSide: number; k: number; pxIdeal: number; resOk: boolean;
   source: "手動輸入" | "指定型號" | "型錄自動挑選";
 }
-export interface LensRec { name: string; brand?: string; score: number; detail: string; f?: number; mag?: number; wd?: number; wdText?: string; focusWd?: number; ring?: number; errors: string[]; warnings: string[]; virtual?: boolean; resolution?: string }
+export interface LensRec { name: string; brand?: string; score: number; detail: string; f?: number; mag?: number; wd?: number; wdText?: string; focusWd?: number; ring?: number; errors: string[]; warnings: string[]; virtual?: boolean; resolution?: string; pref?: boolean }
 
 export interface CalcResult {
   ok: boolean;
@@ -168,7 +168,7 @@ export function calcSelection(input: CalcInput, catalog: Catalog): CalcResult {
   const pool = [...catalog.cameras];
   const recs = pool
     .filter((c) => c.resW >= req.reqW && c.resH >= req.reqH)
-    .sort((a, b) => a.mp - b.mp || (String(a.iface).toLowerCase().includes("gige") ? 0 : 1) - (String(b.iface).toLowerCase().includes("gige") ? 0 : 1));
+    .sort((a, b) => Number(!!b.pref) - Number(!!a.pref) || a.mp - b.mp || (String(a.iface).toLowerCase().includes("gige") ? 0 : 1) - (String(b.iface).toLowerCase().includes("gige") ? 0 : 1));
   out.cameraRecs = recs.slice(0, 3);
   let cam: UsedCamera | null = null;
   const toUsed = (c: Camera, source: UsedCamera["source"]): UsedCamera => ({ ...c, sensorW: NaN, sensorH: NaN, side: base, sideName: "", otherName: "", sensorSide: NaN, fovSide: NaN, resSide: NaN, k: NaN, pxIdeal: NaN, resOk: false, source });
@@ -395,6 +395,11 @@ export function calcSelection(input: CalcInput, catalog: Catalog): CalcResult {
   }
 }
 
+/** 鏡頭排序：能拍滿視野的先，其中優先推薦的供應商（Cetus）排前面，再依分數 */
+function byPreferred(a: LensRec, b: LensRec): number {
+  return Number(a.errors.length > 0) - Number(b.errors.length > 0) || Number(!!b.pref) - Number(!!a.pref) || b.score - a.score;
+}
+
 function scoreFa(pool: FaLens[], req: Requirement, cam: UsedCamera, targetF: number, wdFor: (f: number) => number): LensRec[] {
   if (req.wd > 0 && targetF >= req.wd) return [];
   return pool
@@ -422,10 +427,10 @@ function scoreFa(pool: FaLens[], req: Requirement, cam: UsedCamera, targetF: num
         score -= 30;
         errors.push("視野拍不滿");
       }
-      return { name: l.name, brand: l.brand, f: l.f, focusWd, ring, resolution: l.resolution, score: Math.max(0, score), errors, warnings, detail: `焦距 ${l.f} mm / 靶面 ${l.sensorSize || "-"} / 解析力 ${l.resolution || "-"} / WD ${fmt(wd)}${req.wd > 0 ? "" : "（反推）"} 時視野 ${fmt(fovL)}×${fmt(fovS)} mm` } as LensRec;
+      return { name: l.name, brand: l.brand, pref: l.pref, f: l.f, focusWd, ring, resolution: l.resolution, score: Math.max(0, score), errors, warnings, detail: `焦距 ${l.f} mm / 靶面 ${l.sensorSize || "-"} / 解析力 ${l.resolution || "-"} / WD ${fmt(wd)}${req.wd > 0 ? "" : "（反推）"} 時視野 ${fmt(fovL)}×${fmt(fovS)} mm` } as LensRec;
     })
     .filter((l) => l.score >= 25)
-    .sort((a, b) => b.score - a.score)
+    .sort(byPreferred)
     .slice(0, 3);
 }
 
@@ -447,12 +452,14 @@ function scoreTele(pool: TeleLens[], req: Requirement, cam: UsedCamera, targetMa
         score -= 30;
         errors.push("視野拍不滿");
       }
-      return { name: l.name, brand: l.brand, mag: l.mag, wdText: l.wd, resolution: l.resolution, score: Math.max(0, score), errors, warnings, detail: `倍率 ${l.mag}x / WD ${l.wd || "-"} mm / 景深 ${l.dof || "-"} mm / 視野 ${fmt(fovL)}×${fmt(fovS)} mm` } as LensRec;
+      return { name: l.name, brand: l.brand, pref: l.pref, mag: l.mag, wdText: l.wd, resolution: l.resolution, score: Math.max(0, score), errors, warnings, detail: `倍率 ${l.mag}x / WD ${l.wd || "-"} mm / 景深 ${l.dof || "-"} mm / 視野 ${fmt(fovL)}×${fmt(fovS)} mm` } as LensRec;
     })
     .filter((l) => l.score >= 15)
-    .sort((a, b) => b.score - a.score)
+    .sort(byPreferred)
     .slice(0, 3);
 }
+
+const PREF_TAG = " ⭐Cetus 優先推薦";
 
 /** 給 AI / 使用者看的完整結果：先重述需求，再列結果與算式，最後是建議型號與提醒（不含任何價格）。 */
 export function formatCalc(r: CalcResult): string {
@@ -477,8 +484,8 @@ export function formatCalc(r: CalcResult): string {
       if (isFinite(r.fly.fpsReq)) lines.push(`・所需幀率 ${fmt(r.fly.fpsReq, 1)} fps`);
     }
   }
-  if (r.cameraRecs.length) lines.push("", "【符合需求的相機（由小到大）】", ...r.cameraRecs.map((c) => `・${c.name}｜${c.resW} × ${c.resH}（${fmt(c.mp, 1)} MP）｜像素 ${c.pixelW} µm｜${c.iface || "-"}${c.fps ? `｜${c.fps} fps` : ""}`));
-  if (r.lens?.recs.length) lines.push("", "【建議鏡頭】", ...r.lens.recs.map((l, i) => `${i + 1}. ${l.name}（${Math.round(l.score)} 分）${l.errors.length ? "⚠" + l.errors.join("、") : ""}${l.warnings.length ? "；" + l.warnings.join("、") : ""}\n   ${l.detail}`));
+  if (r.cameraRecs.length) lines.push("", "【符合需求的相機（Cetus 優先，其餘由小到大）】", ...r.cameraRecs.map((c) => `・${c.name}${c.pref ? PREF_TAG : ""}｜${c.resW} × ${c.resH}（${fmt(c.mp, 1)} MP）｜像素 ${c.pixelW} µm｜${c.iface || "-"}${c.fps ? `｜${c.fps} fps` : ""}`));
+  if (r.lens?.recs.length) lines.push("", "【建議鏡頭】", ...r.lens.recs.map((l, i) => `${i + 1}. ${l.name}${l.pref ? PREF_TAG : ""}（${Math.round(l.score)} 分）${l.errors.length ? "⚠" + l.errors.join("、") : ""}${l.warnings.length ? "；" + l.warnings.join("、") : ""}\n   ${l.detail}`));
   if (r.steps.length) lines.push("", "【算式】", ...r.steps.map((x) => `・${x}`));
   const order = { error: 0, warn: 1, ok: 2, info: 3 } as const;
   const notes = [...r.msgs].sort((a, b) => order[a.level] - order[b.level]);

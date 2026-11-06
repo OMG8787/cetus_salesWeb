@@ -7118,6 +7118,8 @@ function handleBotKbEmbed(body) {
  *   tele     遠心鏡頭（有放大倍率）
  * categories = 只開放的產品類別（客服機器人用，空 = 全部）
  */
+var BOT_CALC_PREFERRED = 'Cetus'; // 選型推薦優先推薦的供應商 / 品牌（比對「供應商」或「品牌」欄含這個字，不分大小寫）
+
 function botCalcCatalog_(categories) {
   var want = (categories || []).map(function (c) { return String(c).toLowerCase(); });
   var cams = [];
@@ -7132,6 +7134,8 @@ function botCalcCatalog_(categories) {
     if (!name) return;
     var iface = t(r['Interface']);
     var brand = t(r['Brand']);
+    // 只回傳「是否優先推薦」的旗標，不把供應商名稱交給客服機器人
+    var pref = (brand + '|' + t(r['Supplier'])).toLowerCase().indexOf(BOT_CALC_PREFERRED.toLowerCase()) > -1;
     if (cat === '相機') {
       var isUsb = /usb/i.test(iface);
       if (!/gige/i.test(iface) && !isUsb) return;
@@ -7146,13 +7150,13 @@ function botCalcCatalog_(categories) {
       var pixelW = pm ? parseFloat(pm[1]) : single ? parseFloat(single[1]) : 0;
       var pixelH = pm ? parseFloat(pm[2]) : pixelW;
       if (!(pixelW > 0)) return;
-      cams.push({ name: name, brand: brand, resW: resW, resH: resH, pixelW: pixelW, pixelH: pixelH, size: t(r['SensorSize']), iface: isUsb ? 'USB3.0' : 'GigE', fps: parseFloat(t(r['FPS'])) || 0, mp: (resW * resH) / 1e6 });
+      cams.push({ name: name, brand: brand, resW: resW, resH: resH, pixelW: pixelW, pixelH: pixelH, size: t(r['SensorSize']), iface: isUsb ? 'USB3.0' : 'GigE', fps: parseFloat(t(r['FPS'])) || 0, mp: (resW * resH) / 1e6, pref: pref || undefined });
       return;
     }
     var mag = parseFloat(hwNum_(r['Magnification']));
     var f = parseFloat(hwNum_(r['FocalLength']));
-    if (mag > 0) tele.push({ name: name, brand: brand, mag: mag, wd: t(r['WD']), dof: t(r['DOF']), sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']) });
-    else if (f > 0) fa.push({ name: name, brand: brand, f: f, sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']), focusWd: parseFloat(hwNum_(r['FocusWD'])) || 0 });
+    if (mag > 0) tele.push({ name: name, brand: brand, mag: mag, wd: t(r['WD']), dof: t(r['DOF']), sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']), pref: pref || undefined });
+    else if (f > 0) fa.push({ name: name, brand: brand, f: f, sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']), focusWd: parseFloat(hwNum_(r['FocusWD'])) || 0, pref: pref || undefined });
   });
   return { cameras: cams, fa: fa, tele: tele };
 }
