@@ -246,3 +246,18 @@ test("依有效像素找相機：列出最接近的幾款，Cetus 優先、最�
   assert.equal(notified, 1);
   assert.match((await tool.handler({})) as string, /失敗/);
 });
+
+test("依品牌找相機：只問品牌 / 品牌 + 畫素；品牌沒有時說明原因", async () => {
+  const { findCamerasByPixels } = await import("../src/calc-tool.js");
+  const cam = (name: string, brand: string, effPx: number, extra: Partial<Camera> = {}): Camera => ({ name, brand, resW: 2448, resH: 2048, pixelW: 3.45, pixelH: 3.45, fps: 30, iface: "USB3.0", mp: 5, effPx, ...extra });
+  const cams = [cam("puA2500-14um", "Basler", 501), cam("acA5472-17um", "Basler", 2000), cam("CVG-2000M-5RT", "Cetus", 2000, { pref: true })];
+  const onlyBrand = findCamerasByPixels(cams, undefined, { brand: "basler" });
+  assert.equal(onlyBrand.count, 2);
+  assert.match(onlyBrand.text, /puA2500-14um/);
+  assert.doesNotMatch(onlyBrand.text, /CVG-2000M/);
+  const near = findCamerasByPixels(cams, 2500, { brand: "Basler", limit: 1 });
+  assert.match(near.text, /acA5472-17um.*差 500 萬/);
+  const none = findCamerasByPixels(cams, 30, { brand: "FLIR" });
+  assert.equal(none.count, 0);
+  assert.match(none.text, /沒有「FLIR」品牌/);
+});

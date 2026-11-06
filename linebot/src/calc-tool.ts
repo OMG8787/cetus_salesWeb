@@ -16,7 +16,7 @@ export const CALC_RULES = [
   "3. 工具回傳的「我整理的需求」和「假設」要原樣重述給對方確認（特別是你替對方補上的預設值，例如精度單位、公差方向、每特徵像素數），再說計算結果；對方更正了就用新的參數再算一次。",
   "4. 結果裡的數字、算式、型號只能照工具回傳的講，不可以改、不可以編；工具說有 ❌ 或 ⚠️ 的提醒一定要告訴對方。",
   "5. 計算結果不含任何價格；客人問價格依客服規則處理。",
-  "6. 客人只說要「N 萬畫素」（例如 30 萬、500 萬、2 百萬像素）、還沒給檢測範圍與精度時，呼叫 find_camera_by_pixels 列出有效像素最接近的相機；之後再反問檢測範圍與精度，用 calc_selection 確認視野與精度夠不夠。",
+  "6. 客人只說要「N 萬畫素」（例如 30 萬、500 萬、2 百萬像素）、或只問某個品牌（例如 Basler）有哪些相機、還沒給檢測範圍與精度時，呼叫 find_camera_by_pixels（可帶 brand）列出相機；知識庫沒有的相機型號不代表型錄沒有，要先用這個工具查；之後再反問檢測範圍與精度，用 calc_selection 確認視野與精度夠不夠。",
   "7. 結果裡標「⭐Cetus 優先推薦」的型號是我們優先推薦的，介紹建議型號時先講它們（可以說是我們優先推薦的型號）；沒有標的才當作其他選擇。不要提供應商、進價或為什麼優先推薦的內部原因。",
 ].join("\n");
 
@@ -96,15 +96,19 @@ const fmtWan = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
  * 依「有效像素」找相機：客人只說要幾萬畫素時，列出最接近的幾款（Cetus 優先推薦的型號，離得最近的一款一定會列出）。
  * 距離相同時 Cetus 排前面、再依 GigE 優先。
  */
-export function findCamerasByPixels(cameras: Camera[], targetWan: number, opts: { iface?: "gige" | "usb3"; limit?: number } = {}): { text: string; count: number } {
+export function findCamerasByPixels(cameras: Camera[], targetWan: number | undefined, opts: { iface?: "gige" | "usb3"; brand?: string; limit?: number } = {}): { text: string; count: number } {
   const limit = Math.min(8, Math.max(1, Math.floor(opts.limit ?? 5)));
   let pool = cameras.filter((c) => effPxOf(c) > 0);
   if (opts.iface) pool = pool.filter((c) => (opts.iface === "gige" ? /gige/i : /usb/i).test(String(c.iface ?? "")));
-  if (!pool.length) return { text: "型錄裡沒有符合的相機資料。", count: 0 };
+  const brand = String(opts.brand ?? "").trim().toLowerCase();
+  if (brand) pool = pool.filter((c) => `${c.brand ?? ""} ${c.name}`.toLowerCase().includes(brand));
+  if (!pool.length) {
+    return { text: brand ? `選型型錄裡沒有「${opts.brand}」品牌的相機（可能還沒匯入、或缺解析度 / 像元尺寸而沒有進選型型錄）。請改用其他條件，或請專人協助。` : "型錄裡沒有符合的相機資料。", count: 0 };
+  }
   const gige = (c: Camera) => (/gige/i.test(String(c.iface ?? "")) ? 0 : 1);
   const ranked = pool
-    .map((c) => ({ c, diff: Math.abs(effPxOf(c) - targetWan) }))
-    .sort((a, b) => a.diff - b.diff || Number(!!b.c.pref) - Number(!!a.c.pref) || gige(a.c) - gige(b.c) || a.c.name.localeCompare(b.c.name));
+    .map((c) => ({ c, diff: targetWan === undefined ? 0 : Math.abs(effPxOf(c) - targetWan) }))
+    .sort((a, b) => a.diff - b.diff || (targetWan === undefined ? effPxOf(a.c) - effPxOf(b.c) : 0) || Number(!!b.c.pref) - Number(!!a.c.pref) || gige(a.c) - gige(b.c) || a.c.name.localeCompare(b.c.name));
   const picked = ranked.slice(0, limit);
   if (!picked.some((x) => x.c.pref)) {
     const best = ranked.find((x) => x.c.pref);
@@ -112,11 +116,11 @@ export function findCamerasByPixels(cameras: Camera[], targetWan: number, opts: 
   }
   const lines = picked.map(
     ({ c, diff }) =>
-      `・${c.name}${c.pref ? " ⭐Cetus 優先推薦" : ""}｜有效像素 ${fmtWan(effPxOf(c))} 萬${diff === 0 ? "（剛好）" : `（差 ${fmtWan(diff)} 萬）`}｜解析度 ${c.resW} × ${c.resH}｜${c.iface || "-"}${c.fps ? `｜${c.fps} fps` : ""}${c.pixelW ? `｜像素 ${c.pixelW} µm` : ""}`,
+      `・${c.name}${c.pref ? " ⭐Cetus 優先推薦" : ""}｜${c.brand ? c.brand + "｜" : ""}有效像素 ${fmtWan(effPxOf(c))} 萬${targetWan === undefined ? "" : diff === 0 ? "（剛好）" : `（差 ${fmtWan(diff)} 萬）`}｜解析度 ${c.resW} × ${c.resH}｜${c.iface || "-"}${c.fps ? `｜${c.fps} fps` : ""}${c.pixelW ? `｜像素 ${c.pixelW} µm` : ""}`,
   );
   return {
     count: picked.length,
-    text: [`【有效像素最接近 ${fmtWan(targetWan)} 萬的相機】`, ...lines, "", "ℹ️ 有效像素以型錄為準；視野、精度夠不夠，還要有檢測範圍與最小檢測精度才能用選型計算確認。"].join("\n"),
+    text: [targetWan === undefined ? `【${opts.brand ?? ""}相機（有效像素由小到大）】` : `【${brand ? opts.brand + " " : ""}有效像素最接近 ${fmtWan(targetWan)} 萬的相機】`, ...lines, "", "ℹ️ 有效像素以型錄為準；視野、精度夠不夠，還要有檢測範圍與最小檢測精度才能用選型計算確認。"].join("\n"),
   };
 }
 
@@ -125,26 +129,27 @@ export function cameraPixelTool(getCatalog: () => Promise<Catalog>, onResult?: (
   return {
     name: "find_camera_by_pixels",
     description:
-      "客人只說要「幾萬畫素」（例如 30 萬、200 萬、500 萬）時，列出有效像素最接近的相機型號。target_wan 單位是「萬」：30 萬 = 30、5 MP = 500。回傳型號、有效像素、解析度、介面、影格率，標 ⭐Cetus 的是優先推薦；不含價格。",
+      "客人只說要「幾萬畫素」（例如 30 萬、200 萬、500 萬）、或只問某個品牌有哪些相機（例如 Basler）時使用：列出有效像素最接近的相機型號。target_wan 單位是「萬」：30 萬 = 30、5 MP = 500；只問品牌時可以不填。brand 是客人指定的品牌（例如 Basler）。回傳型號、品牌、有效像素、解析度、介面、影格率，標 ⭐Cetus 的是優先推薦；不含價格。這是選型型錄，查相機型號 / 規格 / 品牌都先用這個，不要只看知識庫。",
     parameters: {
       type: "object",
       properties: {
-        target_wan: { type: "number", description: "目標有效像素，單位萬（30 萬畫素 = 30；5 MP = 500）" },
+        target_wan: { type: "number", description: "目標有效像素，單位萬（30 萬畫素 = 30；5 MP = 500）；只問品牌時可以不填" },
+        brand: { type: "string", description: "客人指定的品牌，例如 Basler、FLIR；沒指定就不要填" },
         interface: { type: "string", enum: ["gige", "usb3"], description: "客人指定的介面；沒指定就不要填" },
         limit: { type: "number", description: "最多列幾款，預設 5" },
       },
-      required: ["target_wan"],
     },
     handler: async (a) => {
       const target = num(a.target_wan);
-      if (!target || target <= 0) return "失敗：請提供目標有效像素（萬）";
+      const brand = typeof a.brand === "string" ? a.brand.trim() : "";
+      if ((!target || target <= 0) && !brand) return "失敗：請提供目標有效像素（萬）或品牌";
       let catalog: Catalog = { cameras: [], fa: [], tele: [] };
       try {
         catalog = await getCatalog();
       } catch (error) {
         console.warn("取得選型型錄失敗", (error as Error).message);
       }
-      const r = findCamerasByPixels(catalog.cameras, target, { iface: a.interface === "gige" ? "gige" : a.interface === "usb3" ? "usb3" : undefined, limit: num(a.limit) });
+      const r = findCamerasByPixels(catalog.cameras, target && target > 0 ? target : undefined, { brand, iface: a.interface === "gige" ? "gige" : a.interface === "usb3" ? "usb3" : undefined, limit: num(a.limit) });
       if (r.count) onResult?.();
       return r.text;
     },
