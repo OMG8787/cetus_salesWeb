@@ -77,10 +77,10 @@ test("客人問型號：直接用型號比對選型型錄，規格交給 AI 當�
   assert.match(r.reply, /Basler/);
   const prompt = aiBodies[0];
   assert.match(prompt, /2590 × 1942/, "參考資料裡有這個型號的解析度");
-  assert.match(prompt, /型號比對/);
+  assert.match(prompt, /｜型號比對｜puA2500-14um/);
 });
 
 test("沒有型號的一般問題不會去比對", async () => {
   await csConverse("V" + "f".repeat(32), "保固多久", { channel: "web" });
-  assert.doesNotMatch(aiBodies[0], /型號比對/);
+  assert.doesNotMatch(aiBodies[0], /｜型號比對｜/);
 });
