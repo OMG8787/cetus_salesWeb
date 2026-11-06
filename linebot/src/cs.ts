@@ -360,8 +360,10 @@ export const handoffLabel = (info: CsInfo) => `🙋 轉${callWord(info)}`;
  * 沒啟用 / 專人服務時間 / 小編接手中 → 不回；重新開始；轉真人關鍵字；指定問題；知識庫 + AI 回答。
  * 回覆前不會等待（像真人打字的停頓由呼叫端用 humanPause 處理）。
  */
-export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string>; human?: boolean }): Promise<CsResult> {
+export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string>; human?: boolean; defer?: (job: Promise<unknown>) => void }): Promise<CsResult> {
+  const t0 = Date.now();
   const info = await gas.csStart(uid);
+  const tStart = Date.now() - t0;
   const testing = opts.channel === "test";
   if (!testing && (!info.enabled || !info.ai)) return NO_REPLY(info);
   if (testing && !info.ai) {
@@ -375,12 +377,17 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
 
   const name = async () => (info.known === false || opts.channel === "web" ? (await opts.displayName?.()) ?? "" : "");
   const said = opts.human ? handoffLabel(info) : text; // 客人按「轉真人」按鈕時，對話紀錄記成按鈕上的字
+  // 記錄對話要寫進管理系統（Apps Script 一次要好幾秒）：網站視窗用 defer 放到回應之後再寫，客人不用多等
   const remember = async (reply: string, topic = "", extra: { askedContact?: boolean; images?: ReplyImage[] } = {}) => {
-    try {
-      await gas.csRemember(uid, [{ u: true, t: said }, { u: false, t: reply }], await name(), topic, extra);
-    } catch (err) {
-      console.warn("記錄客服對話失敗", err);
-    }
+    const job = (async () => {
+      try {
+        await gas.csRemember(uid, [{ u: true, t: said }, { u: false, t: reply }], await name(), topic, extra);
+      } catch (err) {
+        console.warn("記錄客服對話失敗", err);
+      }
+    })();
+    if (opts.defer) opts.defer(job);
+    else await job;
   };
   const handoff = async (topic = ""): Promise<CsResult> => {
     const displayName = (await opts.displayName?.()) ?? "";
@@ -402,7 +409,9 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   const topic = matchTopic(text, info.topics);
   if (topic) return handoff(topic.name);
 
+  const tAns = Date.now();
   const answer = await csAnswer(info, text, info.history, uid);
+  console.log(`[cs-timing] csStart=${tStart}ms answer=${Date.now() - tAns}ms before-reply=${Date.now() - t0}ms channel=${opts.channel}`);
   if (answer.handed !== null) return handoff(answer.handed);
   const { choices, blocked } = answer;
   const images = info.sendImages === false ? [] : answer.images;

@@ -1,3 +1,4 @@
+import { waitUntil } from "@vercel/functions";
 import { csConverse } from "../../src/cs.js";
 import { humanPause } from "../../src/human.js";
 import { checkOrigin, corsHeaders, errorResponse, loadWidget, MAX_TEXT, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
@@ -26,7 +27,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!text && !human) throw new WidgetError("請輸入訊息", 400);
     if (text.length > MAX_TEXT) throw new WidgetError(`訊息太長了（上限 ${MAX_TEXT} 字）`, 400);
 
-    const result = await csConverse(visitorUserId(visitorId), text, { channel: "web", displayName: async () => "網站訪客", human });
+    const result = await csConverse(visitorUserId(visitorId), text, { channel: "web", displayName: async () => "網站訪客", human, defer: waitUntil });
     // 像真人一樣不要秒回
     if (!result.silent) await humanPause(receivedAt, result.info.replyDelay);
     return Response.json(
