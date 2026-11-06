@@ -228,3 +228,12 @@ test("runSearch：沒有設定時用預設（直接向量、閥值 0.6）", asyn
   const r = await runSearch(index(), "照明", undefined, null);
   assert.equal(r.mode, "keyword", "沒有 embedding 模型就用關鍵字");
 });
+
+test("產品（沒有向量）：被大量有向量的問答擠在後面也找得到型號", async () => {
+  const qa = Array.from({ length: 60 }, (_, i) => ({ id: `k${i}`, source: "常見問題", title: `規格 保固 說明 ${i}`, text: `問：規格是什麼？答：這是第 ${i} 個關於規格與保固的說明。` }));
+  const product = { id: "p1", source: "產品", title: "puA2500-14um", text: "產品型號：puA2500-14um\n品牌：Basler\n解析度：2592x1944" };
+  const vectors = new Map(qa.map((c) => [c.id, [1, 0]] as [string, number[]]));
+  const index = new KnowledgeIndex([...qa, product], vectors);
+  const r = await searchKnowledge(index, "puA2500-14um規格是?", { mode: "vector", threshold: 0.6, topK: 6 }, async () => [0, 1]);
+  assert.ok(r.hits.some((h) => h.chunk.id === "p1"), "要找得到 puA2500-14um 這筆產品");
+});

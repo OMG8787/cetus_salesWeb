@@ -73,4 +73,16 @@ const cat2 = ctx.botCalcCatalog_(null);
 ok(cat2.cameras.find((c) => c.name === 'CAM-CETUS').pref === true && !cat2.cameras.find((c) => c.name === 'CAM-A').pref, '供應商含 Cetus 的相機 pref = true，其他沒有');
 ok(cat2.fa.find((l) => l.name === 'LENS-CETUS').pref === true && !cat2.fa.find((l) => l.name === 'LENS25').pref, '品牌含 Cetus（不分大小寫）的鏡頭 pref = true');
 ok(!JSON.stringify(cat2).includes('Cetus 自家'), '型錄仍不含供應商名稱');
+
+// 客服的「產品型號與規格」來源：超過筆數上限時，被截掉的是光源 / 配件，相機鏡頭一定排在最前面
+for (let i = 0; i < 70; i++) ctx.appendObjectRow('Products', { InternalModel: 'LIGHT-X' + i, Category: '光源' });
+ctx.appendObjectRow('Products', { InternalModel: 'puA2500-14um', Category: '相機', Brand: 'Basler', Interface: 'USB3.0', Resolution: '2592x1944', PixelSize: '2.2' });
+ctx.botCfgSet_('cs', { sources: { products: true, productLimit: 50 } });
+const kn = ctx.csKnowledge_().filter((c) => c.source === '產品');
+ok(kn.length === 50, '產品最多給機器人 50 筆');
+ok(kn.some((c) => c.title === 'puA2500-14um'), '排在表格最後面的相機也在機器人看得到的 50 筆裡（相機鏡頭優先）');
+const pv = call('handleBotCsPreview', {});
+ok(pv.productTotal > pv.productShown && pv.productShown === 50 && pv.productLimit === 50, '預覽回報：符合 ' + pv.productTotal + ' 筆、機器人看得到 50 筆');
+ctx.botCfgSet_('cs', { sources: { products: true, productLimit: 10000 } });
+ok(ctx.botSettings_().sources.productLimit === 10000, '筆數上限可調到 10000');
 console.log('calc catalog checks passed:', pass);

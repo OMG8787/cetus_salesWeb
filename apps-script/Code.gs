@@ -6906,7 +6906,7 @@ function botCsConfig_(cs) {
       qa: on(src.qa),
       products: src.products === true,
       brand: on(src.brand),
-      productLimit: botInt_(src.productLimit, 50, 3000, 1500),
+      productLimit: botInt_(src.productLimit, 50, 10000, 3000),
       docs: on(src.docs),
       // 客服能看到的產品欄位（白名單；沒設定 = 全部白名單欄位）與產品類別（空白 = 全部類別）
       productFields: botCsFields_(src.productFields),
@@ -7832,6 +7832,25 @@ function botProductText_(p, fields) {
   return lines.join('\n');
 }
 
+/**
+ * 客服能看到的產品列：符合類別、有型號的全部列，相機 / 鏡頭排在前面（超過筆數上限時，被截掉的先是光源、配件，不會是相機鏡頭）。
+ * total = 符合的總數、shown = 實際給機器人的（受「最多 N 筆」限制）。
+ */
+function botCsProductRows_(cs) {
+  var text = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  var cats = String(cs.sources.productCategories || '').split(/[,，、\n]+/).map(function (c) { return c.trim().toLowerCase(); }).filter(Boolean);
+  var first = [];
+  var rest = [];
+  readProductsLite_().rows.forEach(function (p) {
+    if (cats.length && cats.indexOf(text(p['Category']).toLowerCase()) < 0) return;
+    if (!(text(p['InternalModel']) || text(p['SupplierModel']))) return;
+    var c = text(p['Category']);
+    (c === '相機' || c === '鏡頭' ? first : rest).push(p);
+  });
+  var all = first.concat(rest);
+  return { total: all.length, shown: all.slice(0, cs.sources.productLimit) };
+}
+
 function csKnowledge_() {
   var cs = botSettings_();
   var out = [];
@@ -7861,14 +7880,9 @@ function csKnowledge_() {
   }
   if (cs.sources.products) {
     var n = 0;
-    var cats = String(cs.sources.productCategories || '').split(/[,，、\n]+/).map(function (c) { return c.trim().toLowerCase(); }).filter(Boolean);
-    readProductsLite_().rows.forEach(function (p) {
-      if (n >= cs.sources.productLimit) return;
-      if (cats.length && cats.indexOf(text(p['Category']).toLowerCase()) < 0) return;
-      var model = text(p['InternalModel']) || text(p['SupplierModel']);
-      if (!model) return;
+    botCsProductRows_(cs).shown.forEach(function (p) {
       n++;
-      out.push({ id: 'p' + n, source: '產品', title: model, text: botProductText_(p, cs.sources.productFields) });
+      out.push({ id: 'p' + n, source: '產品', title: text(p['InternalModel']) || text(p['SupplierModel']), text: botProductText_(p, cs.sources.productFields) });
     });
   }
   return out;
@@ -8090,8 +8104,12 @@ function handleBotCsPreview(body) {
     if (c.source === '產品' && products.length < 3) products.push(c.text);
   });
   var cs = botSettings_();
+  var prod = cs.sources.products ? botCsProductRows_(cs) : { total: 0, shown: [] };
   return {
     success: true,
+    productTotal: prod.total,
+    productShown: prod.shown.length,
+    productLimit: cs.sources.productLimit,
     total: chunks.length,
     counts: counts,
     sampleProducts: products,

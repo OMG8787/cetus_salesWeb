@@ -1251,6 +1251,7 @@ async function previewCs() {
   if (!r.success) return ($('cs-preview').innerHTML = `<div class="calc-hint" style="color:#c0392b;">${htmlEsc(r.message || '失敗')}</div>`);
   const counts = Object.entries(r.counts).map(([k, v]) => `${htmlEsc(k)} ${v} 筆`).join('、') || '（目前沒有任何資料，機器人只會請客人找真人）';
   $('cs-preview').innerHTML = `<div class="calc-hint" style="margin-top:6px;">目前（以<b>已儲存</b>的設定為準）客服機器人可用的資料：<b>${counts}</b>，共 ${r.total} 段。</div>` +
+    (r.productTotal > r.productShown ? `<div class="calc-hint" style="margin-top:6px;color:#c0392b;">⚠ 產品資料庫共有 ${r.productTotal} 筆符合的產品，但「最多 ${r.productLimit} 筆」限制讓機器人只看得到前 ${r.productShown} 筆（相機、鏡頭排在最前面）。要讓機器人看到全部，請把上面的上限調高（最多 10000）並儲存。</div>` : r.productTotal ? `<div class="calc-hint" style="margin-top:6px;">產品資料庫 ${r.productTotal} 筆符合的產品，機器人全部看得到。</div>` : '') +
     (r.sampleProducts.length ? '<div class="calc-hint" style="margin-top:6px;">產品範例（客人實際問得到的內容）：</div>' + r.sampleProducts.map((t) => `<pre class="bot-pre">${htmlEsc(t)}</pre>`).join('') : '') +
     `<div class="calc-hint" style="margin-top:6px;color:#1e8e3e;">🔒 永遠看不到：${r.blocked.map(htmlEsc).join('、')}</div>`;
 }

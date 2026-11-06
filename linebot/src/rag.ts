@@ -128,6 +128,16 @@ export class KnowledgeIndex {
       .slice(0, k);
   }
 
+  /** 只在「沒有向量的段落」（產品、公司資訊）裡做關鍵字檢索：不會被有向量的大量問答擠掉 */
+  searchUnvectored(query: string, k = 6, exclude: Set<string> = new Set()): Hit[] {
+    const scores = this.content.scores(query);
+    return this.chunks
+      .map((chunk, i) => ({ chunk, score: scores[i], by: "keyword" as const }))
+      .filter((h) => h.score > 0 && !this.vectors.has(h.chunk.id) && !exclude.has(h.chunk.id))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k);
+  }
+
   /** 中繼資料檢索：只比對大分類 / 主題 / 備註 / 標題 / 關鍵字 */
   metaSearch(query: string, k = 6): Hit[] {
     const scores = this.meta.scores(query);
@@ -161,7 +171,7 @@ export interface SearchResult {
 
 /** 沒有向量的段落（產品、公司資訊）用關鍵字找，補在向量結果後面 */
 function withoutVectors(index: KnowledgeIndex, query: string, k: number, exclude: Set<string>): Hit[] {
-  return index.search(query, k * 3).filter((h) => !index.vectors.has(h.chunk.id) && !exclude.has(h.chunk.id)).slice(0, k);
+  return index.searchUnvectored(query, k, exclude);
 }
 
 /**

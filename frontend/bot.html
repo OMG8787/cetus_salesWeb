@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261106b"></script>
+<script src="theme.js?v=20261106c"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261106b" />
-<link rel="stylesheet" href="dark.css?v=20261106b" />
+<link rel="stylesheet" href="style.css?v=20261106c" />
+<link rel="stylesheet" href="dark.css?v=20261106c" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -211,7 +211,7 @@
       <label class="bot-check"><input type="checkbox" id="cs-src-docs" /> 匯入的文件（在「📚 知識庫」匯入）</label>
       <label class="bot-check"><input type="checkbox" id="cs-src-brand" /> 公司簡介（下方文字）</label>
       <textarea id="cs-brand-info" rows="4" maxlength="8000" placeholder="公司位置、營業時間、服務範圍、聯絡方式、代理品牌…（會自動切成小段，客人問到才會用到）"></textarea>
-      <label class="bot-check"><input type="checkbox" id="cs-src-products" /> 產品資料庫的型號與規格（<b>不含底價、供應商</b>），最多 <input type="number" id="cs-product-limit" min="50" max="3000" style="width:90px;display:inline-block;" /> 筆</label>
+      <label class="bot-check"><input type="checkbox" id="cs-src-products" /> 產品資料庫的型號與規格（<b>不含底價、供應商</b>），最多 <input type="number" id="cs-product-limit" min="50" max="10000" style="width:90px;display:inline-block;" /> 筆</label>
       <div class="calc-hint">產品很多時會讓知識庫變大、回答變慢；機器人回答產品問題都需要有型號與規格資料時再打開。</div>
       <label>客人可以問到的產品欄位（型號一定會有；底價、供應商、備註<b>不在清單裡，永遠不會給客服機器人</b>）</label>
       <div id="cs-product-fields" class="bot-days"></div>
@@ -612,12 +612,12 @@
   </div>
 </div>
 
-<script src="config.js?v=20261106b"></script>
-<script src="demo.js?v=20261106b"></script>
-<script src="common.js?v=20261106b"></script>
-<script src="assistant.js?v=20261106b"></script>
-<script src="alerts.js?v=20261106b"></script>
-<script src="bot.js?v=20261106b"></script>
-<script src="botstaff.js?v=20261106b"></script>
+<script src="config.js?v=20261106c"></script>
+<script src="demo.js?v=20261106c"></script>
+<script src="common.js?v=20261106c"></script>
+<script src="assistant.js?v=20261106c"></script>
+<script src="alerts.js?v=20261106c"></script>
+<script src="bot.js?v=20261106c"></script>
+<script src="botstaff.js?v=20261106c"></script>
 </body>
 </html>
