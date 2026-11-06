@@ -261,3 +261,46 @@ test("依品牌找相機：只問品牌 / 品牌 + 畫素；品牌沒有時說�
   assert.equal(none.count, 0);
   assert.match(none.text, /沒有「FLIR」品牌/);
 });
+
+// ---------- 回覆格式（BOT 設定 → 選型計算回覆格式） ----------
+const REPLY = { brief: true, cameras: 1, lenses: 1, base: "s" as const };
+
+test("精簡格式：只回「型號(有效像素)」，沒有解析度、規格、算式", () => {
+  const r = calcSelection({ fovA: 100, fovB: 80, accuracy: 250, accuracyUnit: "um", tolerance: "pm", wd: 300, lensType: "fa" }, { ...CATALOG, reply: REPLY });
+  const text = formatCalc(r, REPLY);
+  assert.match(text, /推薦相機：CAM-5MP-GIGE\(501萬\)/);
+  const recLines = text.split("\n").filter((l) => l.startsWith("推薦")).join("\n");
+  assert.doesNotMatch(recLines, /2448|µm|算式|感測器|fps|×/);
+  assert.doesNotMatch(text, /算式|感測器|fps/);
+  assert.equal((text.match(/推薦相機：.*/)![0].match(/\(/g) ?? []).length, 1, "預設只推薦 1 台");
+  assert.match(text, /推薦FA 鏡頭：LENS-/);
+});
+
+test("精簡格式：推薦數量可設定（相機 / 鏡頭）", () => {
+  const reply = { brief: true, cameras: 2, lenses: 2, base: "s" as const };
+  const r = calcSelection({ fovA: 100, fovB: 80, accuracy: 250, accuracyUnit: "um", tolerance: "pm", wd: 300, lensType: "fa" }, { ...CATALOG, reply });
+  const text = formatCalc(r, reply);
+  assert.equal(text.match(/推薦相機：(.*)/)![1].split("、").length, 2);
+});
+
+test("沒有 reply 設定時維持完整格式", () => {
+  const r = calcSelection({ fovA: 100, fovB: 80, accuracy: 20 }, CATALOG);
+  assert.match(formatCalc(r), /【計算結果】/);
+});
+
+test("基準邊由設定決定（短邊），AI 指定長邊也不能改；挑相機以短邊像素為準", () => {
+  const r = calcSelection({ fovA: 100, fovB: 80, accuracy: 20, accuracyUnit: "um", tolerance: "pm", base: "l" }, { ...CATALOG, reply: REPLY });
+  assert.equal(r.camera?.side, "s");
+  // 短邊需求 80 mm / 4 µm = 20000 px，沒有任何相機夠 → 以最大的計算，並教怎麼調整
+  const hard = calcSelection({ fovA: 400, fovB: 300, accuracy: 20, accuracyUnit: "um", tolerance: "pm" }, { ...CATALOG, reply: REPLY });
+  const text = formatCalc(hard, REPLY);
+  assert.match(text, /可以這樣調整/);
+  assert.match(text, /精度要放寬到約/);
+  assert.match(text, /轉專人/);
+});
+
+test("精簡格式：缺資料照樣列出缺什麼；達不到的項目附調整建議", () => {
+  const miss = calcSelection({ fovA: 100 }, { ...CATALOG, reply: REPLY });
+  assert.match(formatCalc(miss, REPLY), /還缺的資料/);
+  assert.match(CALC_RULES, /轉專人/);
+});

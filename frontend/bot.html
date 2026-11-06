@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261106d"></script>
+<script src="theme.js?v=20261106e"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261106d" />
-<link rel="stylesheet" href="dark.css?v=20261106d" />
+<link rel="stylesheet" href="style.css?v=20261106e" />
+<link rel="stylesheet" href="dark.css?v=20261106e" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -202,6 +202,16 @@
       <div class="calc-hint">網站視窗會跳出表單（姓名、公司、電話、Email；至少要有電話或 Email）；LINE 沒辦法跳表單，會在回覆後面請客人直接回覆，客人說了機器人就會記下來。每位客人只問一次，留下的資料在「🧾 聯繫名單」，同時用首頁備忘錄通知有 BOT 權限的同仁。</div>
       <label class="bot-check"><input type="checkbox" id="cs-send-images" /> 問到知識庫有附圖的內容時，機器人直接傳圖片給客人（在「📚 知識庫」編輯項目時上傳圖片）</label>
       <label class="bot-check"><input type="checkbox" id="cs-src-calc" /> 選型計算：客人問視野、精度、相機鏡頭怎麼選時，機器人把需求整理成參數，由程式查型錄算出前三名建議再回答（型錄只有型號與規格，<b>不含價格、供應商</b>；跟下面「產品資料庫」的開關各自獨立）</label>
+      <div class="calc-hint" style="margin-top:10px;"><b>選型計算的回覆格式</b>（客服機器人與員工助理共用）</div>
+      <label class="bot-check"><input type="checkbox" id="cs-calc-brief" /> 精簡回覆：算完只回「推薦相機：<b>型號(像素)</b>」與推薦鏡頭型號，不列解析度、規格、算式（客人追問時再補）；取消勾選 = 完整格式</label>
+      <label>推薦相機 <input type="number" id="cs-calc-cameras" min="1" max="5" style="width:70px;display:inline-block;" /> 台、推薦鏡頭 <input type="number" id="cs-calc-lenses" min="1" max="3" style="width:70px;display:inline-block;" /> 款（預設各 1）</label>
+      <label>計算基準邊
+        <select id="cs-calc-base" style="width:auto;display:inline-block;">
+          <option value="s">短邊（預設）：以檢測範圍與相機的短邊算所需像素、挑相機</option>
+          <option value="l">長邊</option>
+        </select>
+      </label>
+      <div class="calc-hint">需求達不到時（例如沒有相機夠大、視野拍不滿），機器人會告訴客人怎麼調整（放寬精度、縮小檢測範圍、拆視野…）；客人無法調整就請他轉真人。</div>
     </div>
 
     <div class="panel">
@@ -614,12 +624,12 @@
   </div>
 </div>
 
-<script src="config.js?v=20261106d"></script>
-<script src="demo.js?v=20261106d"></script>
-<script src="common.js?v=20261106d"></script>
-<script src="assistant.js?v=20261106d"></script>
-<script src="alerts.js?v=20261106d"></script>
-<script src="bot.js?v=20261106d"></script>
-<script src="botstaff.js?v=20261106d"></script>
+<script src="config.js?v=20261106e"></script>
+<script src="demo.js?v=20261106e"></script>
+<script src="common.js?v=20261106e"></script>
+<script src="assistant.js?v=20261106e"></script>
+<script src="alerts.js?v=20261106e"></script>
+<script src="bot.js?v=20261106e"></script>
+<script src="botstaff.js?v=20261106e"></script>
 </body>
 </html>

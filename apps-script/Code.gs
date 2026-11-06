@@ -6939,6 +6939,13 @@ function botCsConfig_(cs) {
     unsure: cs.unsure === 'handoff' ? 'handoff' : 'ask',
     handoffButton: cs.handoffButton !== false, // 每則回覆下方附「轉真人」按鈕
     contactAfter: botInt_(cs.contactAfter, 0, 50, 3), // 聊到第幾段請訪客留聯繫資料（0 = 不問）
+    // 選型計算的回覆格式（客服與員工助理共用）：精簡 = 只回「型號(有效像素)」；推薦幾台相機 / 鏡頭；空間解析度以哪一邊為基準
+    calc: {
+      brief: (cs.calc || {}).brief !== false,
+      cameras: botInt_((cs.calc || {}).cameras, 1, 5, 1),
+      lenses: botInt_((cs.calc || {}).lenses, 1, 3, 1),
+      base: (cs.calc || {}).base === 'l' ? 'l' : 's',
+    },
     sendImages: cs.sendImages !== false, // 問到有附圖的知識時，可以直接給圖片
     groundCheck: cs.groundCheck === true, // AI 回覆前先檢查有沒有知識庫根據（預設關閉；會多花一次 AI）
     style: {
@@ -7381,7 +7388,13 @@ function botCalcCatalog_(categories) {
     if (mag > 0) tele.push({ name: name, brand: brand, mag: mag, wd: t(r['WD']), dof: t(r['DOF']), sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']), pref: pref || undefined });
     else if (f > 0) fa.push({ name: name, brand: brand, f: f, sensorSize: t(r['SensorSize']), resolution: t(r['Resolution']), focusWd: parseFloat(hwNum_(r['FocusWD'])) || 0, pref: pref || undefined });
   });
-  return { cameras: cams, fa: fa, tele: tele };
+  return { cameras: cams, fa: fa, tele: tele, reply: botCalcReply_() };
+}
+
+/** 選型計算回覆格式設定（BOT 設定 → 回覆格式）：隨型錄一起交給機器人伺服器，客服與員工助理共用。 */
+function botCalcReply_() {
+  var c = botSettings_().calc;
+  return { brief: c.brief, cameras: c.cameras, lenses: c.lenses, base: c.base };
 }
 
 /** 客服機器人用：選型計算的相機 / 鏡頭型錄（只有型號與規格，不含價格、供應商）。BOT 設定「選型計算」開關控制（預設開），跟「產品型號與規格」知識來源各自獨立。 */

@@ -9,7 +9,22 @@
 export interface Camera { name: string; brand?: string; resW: number; resH: number; pixelW: number; pixelH: number; fps: number; iface?: string; size?: string; mp: number; effPx?: number; pref?: boolean }
 export interface FaLens { name: string; brand?: string; f: number; sensorSize?: string; resolution?: string; focusWd?: number; pref?: boolean }
 export interface TeleLens { name: string; brand?: string; mag: number; wd?: string; dof?: string; sensorSize?: string; resolution?: string; pref?: boolean }
-export interface Catalog { cameras: Camera[]; fa: FaLens[]; tele: TeleLens[] }
+/** 回覆格式設定（BOT 設定 → 回覆格式，隨型錄一起從管理系統取得）。沒有就是完整格式、預設短邊。 */
+export interface CalcReply {
+  /** 精簡：只回「型號(有效像素)」，不列解析度、規格、算式 */
+  brief: boolean;
+  /** 推薦幾台相機 / 鏡頭 */
+  cameras: number;
+  lenses: number;
+  /** 空間解析度的基準邊：s 短邊 / l 長邊（由管理系統決定，AI 不能改） */
+  base: "s" | "l";
+}
+export interface Catalog { cameras: Camera[]; fa: FaLens[]; tele: TeleLens[]; reply?: CalcReply }
+
+/** 相機的有效像素（單位：萬）：型錄有填就用，沒填用解析度算（長 × 寬 ÷ 1 萬，捨去） */
+export const effPxOf = (c: Camera): number => (c.effPx && c.effPx > 0 ? c.effPx : Math.floor((c.resW * c.resH) / 10000));
+/** 「型號(像素)」：CV3-2000M(200萬) */
+export const briefCam = (c: Camera): string => `${c.name}(${Number.isInteger(effPxOf(c)) ? effPxOf(c) : effPxOf(c).toFixed(1)}萬)`;
 
 export interface CalcInput {
   /** 檢測範圍（mm）。給兩個數字就好，不用分長短（長的算長邊） */
@@ -115,8 +130,8 @@ export function calcSelection(input: CalcInput, catalog: Catalog): CalcResult {
   const ppf = positive(input.pxPerFeature) ? input.pxPerFeature : 5;
   if (!positive(input.pxPerFeature)) assumptions.push("單個最小特徵要佔幾個像素沒說，先用建議值 5 px");
   const wd = positive(input.wd) ? input.wd : 0;
-  const base: "s" | "l" = input.base === "l" ? "l" : "s";
-  if (!input.base) assumptions.push("空間解析度以「短邊」為基準（預設）");
+  const base: "s" | "l" = catalog.reply?.base ?? (input.base === "l" ? "l" : "s"); // 管理系統有設定就以設定為準
+  if (!input.base && !catalog.reply?.base) assumptions.push("空間解析度以「短邊」為基準（預設）");
   let lensType = input.lensType;
   if (!lensType) {
     lensType = wd > 0 ? "fa" : "tele";
@@ -164,12 +179,30 @@ export function calcSelection(input: CalcInput, catalog: Catalog): CalcResult {
   steps.push(`所需像素：長 = ${fmt(fovL)} mm ÷ ${fmt(req.pxReq * 1000)} µm/px = ${req.reqW} px；寬 = ${fmt(fovS)} mm ÷ ${fmt(req.pxReq * 1000)} µm/px = ${req.reqH} px（無條件進位）→ ${req.reqW} × ${req.reqH}（${fmt((req.reqW * req.reqH) / 1e6, 1)} MP）`);
   if (req.pxReq < 0.001) add("warn", `要求空間解析度 ${fmtPx(req.pxReq)} 小於 1 µm，已接近光學極限，建議確認需求或改用顯微/高倍率方案`);
 
+  /** 型錄最大的相機也達不到時，告訴使用者可以怎麼改（放寬精度 / 縮小視野 / 減少每特徵像素 / 拆視野），都不行就請專人協助。 */
+  function howToFit(c: Camera): string {
+    const sideRes = base === "s" ? c.resH : c.resW;
+    const sideFov = base === "s" ? fovS : fovL;
+    const sideName = base === "s" ? "短邊" : "長邊";
+    const accOk = (sideFov / sideRes) * ppf; // 維持視野時，計算用精度最少要放寬到這麼多（mm）
+    const accShown = tol === "pm" ? accOk : accOk * 2;
+    const fovOk = sideRes * req.pxReq; // 維持精度時，視野${sideName}最大能到這麼多（mm）
+    const ppfOk = Math.floor((acc * sideRes) / sideFov);
+    const tips = [`維持檢測範圍的話，精度要放寬到約 ${TOL_SYMBOLS[tol]}${fmt(accShown * 1000)} µm`, `維持精度的話，檢測範圍${sideName}要縮到 ≤ ${fmt(fovOk)} mm`];
+    if (ppfOk >= 3 && ppfOk < ppf) tips.push(`或把單特徵像素數降到 ${ppfOk} px（偏低，檢測較不穩）`);
+    tips.push("或拆成多個視野拍");
+    return `可以這樣調整：${tips.join("；")}。若都無法調整，請客人轉專人協助`;
+  }
+
   // ---------- ② 相機 ----------
   const pool = [...catalog.cameras];
+  // 依基準邊篩選：短邊基準 → 相機短邊像素 ≥ 所需短邊像素（長邊也夠的排前面）；長邊基準反之
+  const sideOk = (c: Camera) => (base === "s" ? c.resH >= req.reqH : c.resW >= req.reqW);
+  const bothOk = (c: Camera) => c.resW >= req.reqW && c.resH >= req.reqH;
   const recs = pool
-    .filter((c) => c.resW >= req.reqW && c.resH >= req.reqH)
-    .sort((a, b) => Number(!!b.pref) - Number(!!a.pref) || a.mp - b.mp || (String(a.iface).toLowerCase().includes("gige") ? 0 : 1) - (String(b.iface).toLowerCase().includes("gige") ? 0 : 1));
-  out.cameraRecs = recs.slice(0, 3);
+    .filter(sideOk)
+    .sort((a, b) => Number(!bothOk(a)) - Number(!bothOk(b)) || Number(!!b.pref) - Number(!!a.pref) || a.mp - b.mp || (String(a.iface).toLowerCase().includes("gige") ? 0 : 1) - (String(b.iface).toLowerCase().includes("gige") ? 0 : 1));
+  out.cameraRecs = recs.slice(0, 5);
   let cam: UsedCamera | null = null;
   const toUsed = (c: Camera, source: UsedCamera["source"]): UsedCamera => ({ ...c, sensorW: NaN, sensorH: NaN, side: base, sideName: "", otherName: "", sensorSide: NaN, fovSide: NaN, resSide: NaN, k: NaN, pxIdeal: NaN, resOk: false, source });
   if (input.manualCamera && positive(input.manualCamera.resW) && positive(input.manualCamera.resH)) {
@@ -201,7 +234,7 @@ export function calcSelection(input: CalcInput, catalog: Catalog): CalcResult {
     const auto = recs[0];
     if (!auto) {
       const biggest = pool.reduce((a, b) => (b.mp > a.mp ? b : a));
-      add("error", `型錄裡沒有任何一台相機達到 ${req.reqW} × ${req.reqH}，以下以最大的 ${biggest.name} 計算，建議拆成多個視野或改用線掃相機`);
+      add("error", `型錄裡沒有任何一台相機達到 ${req.reqW} × ${req.reqH}，以下以最大的 ${biggest.name} 計算。${howToFit(biggest)}`);
       cam = toUsed(biggest, "型錄自動挑選");
     } else {
       assumptions.push(`相機沒指定，從型錄挑最小符合需求的：${auto.name}`);
@@ -229,7 +262,7 @@ export function calcSelection(input: CalcInput, catalog: Catalog): CalcResult {
   cam.resOk = req.acc / cam.pxIdeal >= req.ppf;
   if (!cam.resOk) {
     const tiles = Math.ceil(req.reqW / cam.resW) * Math.ceil(req.reqH / cam.resH);
-    add("error", `相機像素不足：就算鏡頭剛好拍滿${cam.sideName}，最小特徵也只佔 ${fmt(req.acc / cam.pxIdeal, 1)} px（需 ≥ ${req.ppf} px）。需要 ≥ ${req.reqW} × ${req.reqH}，或把檢測範圍拆成 ${tiles} 個視野拍`);
+    add("error", `相機像素不足：就算鏡頭剛好拍滿${cam.sideName}，最小特徵也只佔 ${fmt(req.acc / cam.pxIdeal, 1)} px（需 ≥ ${req.ppf} px）。需要 ≥ ${req.reqW} × ${req.reqH}，或把檢測範圍拆成 ${tiles} 個視野拍。${msgs.some((m) => m.text.includes("可以這樣調整")) ? "" : howToFit(cam)}`);
   }
 
   // ---------- ③ 鏡頭 ----------
@@ -462,7 +495,8 @@ function scoreTele(pool: TeleLens[], req: Requirement, cam: UsedCamera, targetMa
 const PREF_TAG = " ⭐Cetus 優先推薦";
 
 /** 給 AI / 使用者看的完整結果：先重述需求，再列結果與算式，最後是建議型號與提醒（不含任何價格）。 */
-export function formatCalc(r: CalcResult): string {
+export function formatCalc(r: CalcResult, reply?: CalcReply): string {
+  if (reply?.brief) return formatBrief(r, reply);
   const lines: string[] = [];
   lines.push("【我整理的需求】", ...r.restated.map((x) => `・${x}`));
   if (r.assumptions.length) lines.push("", "【我自己補上的假設（請確認）】", ...r.assumptions.map((x) => `・${x}`));
@@ -484,11 +518,42 @@ export function formatCalc(r: CalcResult): string {
       if (isFinite(r.fly.fpsReq)) lines.push(`・所需幀率 ${fmt(r.fly.fpsReq, 1)} fps`);
     }
   }
-  if (r.cameraRecs.length) lines.push("", "【符合需求的相機（Cetus 優先，其餘由小到大）】", ...r.cameraRecs.map((c) => `・${c.name}${c.pref ? PREF_TAG : ""}｜${c.resW} × ${c.resH}（${fmt(c.mp, 1)} MP）｜像素 ${c.pixelW} µm｜${c.iface || "-"}${c.fps ? `｜${c.fps} fps` : ""}`));
+  if (r.cameraRecs.length) lines.push("", "【符合需求的相機（Cetus 優先，其餘由小到大）】", ...r.cameraRecs.slice(0, 3).map((c) => `・${c.name}${c.pref ? PREF_TAG : ""}｜${c.resW} × ${c.resH}（${fmt(c.mp, 1)} MP）｜像素 ${c.pixelW} µm｜${c.iface || "-"}${c.fps ? `｜${c.fps} fps` : ""}`));
   if (r.lens?.recs.length) lines.push("", "【建議鏡頭】", ...r.lens.recs.map((l, i) => `${i + 1}. ${l.name}${l.pref ? PREF_TAG : ""}（${Math.round(l.score)} 分）${l.errors.length ? "⚠" + l.errors.join("、") : ""}${l.warnings.length ? "；" + l.warnings.join("、") : ""}\n   ${l.detail}`));
   if (r.steps.length) lines.push("", "【算式】", ...r.steps.map((x) => `・${x}`));
   const order = { error: 0, warn: 1, ok: 2, info: 3 } as const;
   const notes = [...r.msgs].sort((a, b) => order[a.level] - order[b.level]);
   if (notes.length) lines.push("", "【提醒與檢查】", ...notes.map((m) => `${{ error: "❌", warn: "⚠️", ok: "✅", info: "ℹ️" }[m.level]} ${m.text}`));
+  return lines.join("\n");
+}
+
+/** 精簡格式：推薦相機「型號(有效像素)」、推薦鏡頭型號，只留 ❌ ⚠️ 提醒；沒有算式、解析度、規格。數量由設定決定。 */
+export function formatBrief(r: CalcResult, reply: CalcReply): string {
+  const lines: string[] = [];
+  if (r.missing.length) {
+    lines.push("【還缺的資料（沒有這些就不能算）】", ...r.missing.map((x) => `・${x}`));
+    return lines.join("\n");
+  }
+  const shownAssumptions = r.assumptions.filter((x) => !x.startsWith("相機沒指定")); // 推薦的相機已經列在下面，不用再重複
+  if (shownAssumptions.length) lines.push(`假設：${shownAssumptions.join("；")}`);
+  const nCam = Math.max(1, reply.cameras);
+  const cams = r.camera && r.camera.source === "指定型號" ? [r.camera] : r.cameraRecs.length ? r.cameraRecs.slice(0, nCam) : r.camera && r.camera.source !== "手動輸入" ? [r.camera] : [];
+  if (cams.length) lines.push(`推薦相機：${cams.map(briefCam).join("、")}`);
+  else if (r.camera) lines.push(`相機：手動輸入 ${r.camera.resW} × ${r.camera.resH}`);
+  const lens = r.lens;
+  if (lens) {
+    const recs = lens.recs.filter((l) => !l.errors.length).slice(0, Math.max(1, reply.lenses));
+    if (recs.length) lines.push(`推薦${lens.type === "fa" ? "FA 鏡頭" : "遠心鏡頭"}：${recs.map((l) => l.name).join("、")}`);
+    else if (lens.target > 0) lines.push(lens.type === "fa" ? `FA 理論焦距約 ${fmt(lens.target)} mm（型錄沒有合適的型號）` : `遠心理論倍率約 ${fmt(lens.target, 4)} x（型錄沒有合適的型號）`);
+  }
+  if (r.fly) {
+    if (isFinite(r.fly.maxExp)) lines.push(`最大曝光 ${fmtExposure(r.fly.maxExp)}`);
+    if (isFinite(r.fly.maxSpeed)) lines.push(`最高速度 ${fmt(r.fly.maxSpeed)} mm/s`);
+    if (isFinite(r.fly.fpsReq)) lines.push(`所需幀率 ${fmt(r.fly.fpsReq, 1)} fps`);
+  }
+  const notes = r.msgs.filter((m) => m.level === "error" || m.level === "warn");
+  if (notes.length) lines.push("", ...notes.map((m) => `${m.level === "error" ? "❌" : "⚠️"} ${m.text}`));
+  if (notes.some((m) => m.level === "error")) lines.push("", "（有 ❌ 達不到的項目：請告訴客人怎麼調整再重算；客人無法調整就請他轉專人協助）");
+  else lines.push("", "（精簡格式：只要型號與像素；客人追問規格再補充）");
   return lines.join("\n");
 }

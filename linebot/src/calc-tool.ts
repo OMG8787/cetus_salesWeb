@@ -1,5 +1,7 @@
 import type { Tool } from "./ai.js";
-import { calcSelection, formatCalc, type CalcInput, type Camera, type Catalog } from "./calc.js";
+import { briefCam, calcSelection, effPxOf, formatCalc, type CalcInput, type Camera, type Catalog } from "./calc.js";
+
+export { effPxOf };
 
 // 給 AI 的「選型計算」工具：AI 不自己心算，把客人 / 同事說的需求整理成參數丟進來，由程式照網站「選型計算」的公式算。
 // 回傳一定是「我整理的需求 → 假設 → 計算結果 → 建議型號 → 算式 → 提醒」，AI 照著重述給對方確認，不可以改數字。
@@ -13,11 +15,13 @@ export const CALC_RULES = [
   "【選型計算規則】客人或同事問的是計算問題（要選哪台相機 / 鏡頭、視野、精度、解析度、焦距、倍率、工作距離、飛拍曝光與速度…）時：",
   "1. 一律呼叫 calc_selection 工具，絕對不要自己心算，也不要憑印象給數字。",
   "2. 呼叫前先把對方的話整理成參數，缺的必要資料（檢測範圍兩個邊長、最小檢測精度與單位）先反問，不要猜；單位不確定（µm 還是 mm）一定要問。",
-  "3. 工具回傳的「我整理的需求」和「假設」要原樣重述給對方確認（特別是你替對方補上的預設值，例如精度單位、公差方向、每特徵像素數），再說計算結果；對方更正了就用新的參數再算一次。",
+  "3. 工具回傳的「我整理的需求」和「假設」要原樣重述給對方確認（工具回傳精簡格式時例外，見規則 8）（特別是你替對方補上的預設值，例如精度單位、公差方向、每特徵像素數），再說計算結果；對方更正了就用新的參數再算一次。",
   "4. 結果裡的數字、算式、型號只能照工具回傳的講，不可以改、不可以編；工具說有 ❌ 或 ⚠️ 的提醒一定要告訴對方。",
   "5. 計算結果不含任何價格；客人問價格依客服規則處理。",
   "6. 客人只說要「N 萬畫素」（例如 30 萬、500 萬、2 百萬像素）、或只問某個品牌（例如 Basler）有哪些相機、還沒給檢測範圍與精度時，呼叫 find_camera_by_pixels（可帶 brand）列出相機；知識庫沒有的相機型號不代表型錄沒有，要先用這個工具查；之後再反問檢測範圍與精度，用 calc_selection 確認視野與精度夠不夠。",
+  "8. 工具回傳的是精簡格式（只有「推薦相機：型號(像素)」「推薦鏡頭：型號」這幾行）時，回覆也要精簡：直接列出工具給的型號與括號內的像素，不要自己補解析度、像元尺寸、靶面、影格率、算式或其他規格，不要重述需求，不要多列工具沒給的型號；有「假設」或 ❌ ⚠️ 提醒就各用一句話帶過。客人追問規格時再用 find_camera_by_pixels 或知識庫回答。",
   "7. 結果裡標「⭐Cetus 優先推薦」的型號是我們優先推薦的，介紹建議型號時先講它們（可以說是我們優先推薦的型號）；沒有標的才當作其他選擇。不要提供應商、進價或為什麼優先推薦的內部原因。",
+  "9. 結果有 ❌（達不到需求，例如沒有相機夠大、視野拍不滿、拖影太大）時，一定要用一兩句話告訴客人「怎麼調整」才能達到（照工具提示的調整建議：放寬精度、縮小檢測範圍、拉遠 WD、改倍率或鏡頭、拆成多個視野…），並問客人要不要調整後再算一次；客人說沒辦法調整、或調整後仍然達不到，就請客人轉專人協助（客服版：引導客人按「轉真人」或輸入轉真人關鍵字；員工版：建議找 FAE 評估），不要硬湊型號。",
 ].join("\n");
 
 /** onResult：算出結果（不是還缺資料）時通知一聲，網站視窗據此在回覆下方附「看更多」按鈕 */
@@ -82,13 +86,10 @@ export function calcTool(getCatalog: () => Promise<Catalog>, onResult?: () => vo
       }
       const result = calcSelection(input, catalog);
       if (result.ok && !result.missing.length) onResult?.();
-      return formatCalc(result);
+      return formatCalc(result, catalog.reply);
     },
   };
 }
-
-/** 相機的有效像素（單位：萬）：型錄有填就用，沒填用解析度算（長 × 寬 ÷ 1 萬，捨去） */
-export const effPxOf = (c: Camera): number => (c.effPx && c.effPx > 0 ? c.effPx : Math.floor((c.resW * c.resH) / 10000));
 
 const fmtWan = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
@@ -96,7 +97,7 @@ const fmtWan = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
  * 依「有效像素」找相機：客人只說要幾萬畫素時，列出最接近的幾款（Cetus 優先推薦的型號，離得最近的一款一定會列出）。
  * 距離相同時 Cetus 排前面、再依 GigE 優先。
  */
-export function findCamerasByPixels(cameras: Camera[], targetWan: number | undefined, opts: { iface?: "gige" | "usb3"; brand?: string; limit?: number } = {}): { text: string; count: number } {
+export function findCamerasByPixels(cameras: Camera[], targetWan: number | undefined, opts: { iface?: "gige" | "usb3"; brand?: string; limit?: number; brief?: boolean } = {}): { text: string; count: number } {
   const limit = Math.min(8, Math.max(1, Math.floor(opts.limit ?? 5)));
   let pool = cameras.filter((c) => effPxOf(c) > 0);
   if (opts.iface) pool = pool.filter((c) => (opts.iface === "gige" ? /gige/i : /usb/i).test(String(c.iface ?? "")));
@@ -113,6 +114,9 @@ export function findCamerasByPixels(cameras: Camera[], targetWan: number | undef
   if (!picked.some((x) => x.c.pref)) {
     const best = ranked.find((x) => x.c.pref);
     if (best) picked[picked.length - 1] = best; // 最接近的 Cetus 型號一定要列出
+  }
+  if (opts.brief) {
+    return { count: picked.length, text: [targetWan === undefined ? `${opts.brand ?? ""}相機：` : `最接近 ${fmtWan(targetWan)} 萬的相機：`, ...picked.map(({ c }) => `・${briefCam(c)}`)].join("\n") };
   }
   const lines = picked.map(
     ({ c, diff }) =>
@@ -149,7 +153,7 @@ export function cameraPixelTool(getCatalog: () => Promise<Catalog>, onResult?: (
       } catch (error) {
         console.warn("取得選型型錄失敗", (error as Error).message);
       }
-      const r = findCamerasByPixels(catalog.cameras, target && target > 0 ? target : undefined, { brand, iface: a.interface === "gige" ? "gige" : a.interface === "usb3" ? "usb3" : undefined, limit: num(a.limit) });
+      const r = findCamerasByPixels(catalog.cameras, target && target > 0 ? target : undefined, { brand, iface: a.interface === "gige" ? "gige" : a.interface === "usb3" ? "usb3" : undefined, limit: num(a.limit), brief: catalog.reply?.brief });
       if (r.count) onResult?.();
       return r.text;
     },

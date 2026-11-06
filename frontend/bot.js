@@ -157,6 +157,11 @@ function fillCs(cs) {
   $('cs-handoff-button').checked = cs.handoffButton !== false;
   setVal('cs-contact-after', cs.contactAfter === undefined ? 3 : cs.contactAfter);
   $('cs-send-images').checked = cs.sendImages !== false;
+  const calc = cs.calc || {};
+  $('cs-calc-brief').checked = calc.brief !== false;
+  setVal('cs-calc-cameras', calc.cameras || 1);
+  setVal('cs-calc-lenses', calc.lenses || 1);
+  setVal('cs-calc-base', calc.base === 'l' ? 'l' : 's');
   setVal('cs-product-limit', cs.sources.productLimit);
   setVal('cs-product-cats', cs.sources.productCategories);
   renderProductFields(cs.sources.productFields);
@@ -215,6 +220,7 @@ function readCs() {
     handoffButton: $('cs-handoff-button').checked,
     contactAfter: val('cs-contact-after'),
     sendImages: $('cs-send-images').checked,
+    calc: { brief: $('cs-calc-brief').checked, cameras: val('cs-calc-cameras'), lenses: val('cs-calc-lenses'), base: val('cs-calc-base') },
     style: { tone: val('cs-tone'), address: val('cs-address'), emoji: val('cs-emoji'), maxLines: val('cs-max-lines') },
     buttons: val('cs-buttons'),
     buttonsAlways: $('cs-buttons-always').checked,
