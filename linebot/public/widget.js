@@ -93,6 +93,9 @@
     ".card input,.card textarea{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--tx);font:inherit;padding:6px 9px;outline:none;resize:none}.card input:focus,.card textarea:focus{border-color:var(--c)}",
     ".card .acts{display:flex;gap:8px;margin-top:2px}.card .acts button{border:1px solid var(--cl);background:var(--bg);color:var(--cl);border-radius:999px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}.card .acts .go{background:var(--c);border-color:var(--c);color:var(--ci)}.card .acts button:disabled{opacity:.5;cursor:default}",
     ".card .cerr{font-size:12px;color:#c0392b}",
+    ".card select{border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--tx);font:inherit;padding:6px 9px;outline:none}.card select:focus{border-color:var(--c)}",
+    ".card .flab{font-size:12px;color:var(--mu);margin-top:2px}.card .fgrid{display:flex;gap:6px;align-items:center}.card .fgrid input{min-width:0}.card .fgrid span{color:var(--mu);font-size:12px;flex:none}",
+    ".chips .qa{border-style:dashed}",
     ".w.nolaunch .launch{display:none}.w.nolaunch .panel{bottom:100px}",
     "@media(max-width:575px){.panel{inset:0;width:100%;max-width:none;height:100dvh;border-radius:0}.w.open-m .launch{display:none}}",
     "@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}",
@@ -117,7 +120,7 @@
   var wrap = $(".w"), launch = $(".launch"), panel = $(".panel"), body = $(".body"), input = $("textarea"), sendBtn = $(".send"), badge = $(".badge");
 
   var readyDone, ready = new Promise(function (r) { readyDone = r; });
-  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, welcomed = false, loaded = false;
+  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, welcomed = false, loaded = false, welcomeRow = null;
 
   /* ───────── 訊息顯示（一律用 textContent / DOM，不用 innerHTML 塞使用者或 AI 的文字） ───────── */
   function linkify(el, text) {
@@ -185,12 +188,13 @@
     }
     row.appendChild(col);
     body.appendChild(row);
-    if (opts.choices && opts.choices.length) chips(opts.choices, col);
+    if ((opts.choices && opts.choices.length) || opts.quick) chips(opts.choices || [], col, opts.quick);
     scrollDown();
     return row;
   }
 
-  function chips(choices, after) {
+  /* 選項按鈕；quick = true 時後面再接「轉真人客服 / 找相機 / 找鏡頭」快捷按鈕（打招呼、不確定時） */
+  function chips(choices, after, quick) {
     var box = document.createElement("div");
     box.className = "chips";
     box.style.marginTop = "6px";
@@ -200,6 +204,18 @@
       b.onclick = function () { send(c); };
       box.appendChild(b);
     });
+    if (quick) {
+      [
+        { label: "🙋 轉真人客服", run: function () { human(); } },
+        { label: "📷 找相機", run: function () { findForm("camera"); } },
+        { label: "🔍 找鏡頭", run: function () { findForm("lens"); } },
+      ].forEach(function (q) {
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "qa"; b.textContent = q.label;
+        b.onclick = q.run;
+        box.appendChild(b);
+      });
+    }
     (after || body).appendChild(box);
   }
 
@@ -242,17 +258,22 @@
   function welcome() {
     if (welcomed || !cfg || !cfg.welcome) return;
     welcomed = true;
-    add("ai", cfg.welcome.text, { choices: cfg.welcome.choices });
+    welcomeRow = add("ai", cfg.welcome.text, { choices: cfg.welcome.choices, quick: true }); // 打招呼：附「轉真人客服 / 找相機 / 找鏡頭」
   }
 
   function restore() {
     if (loaded) return Promise.resolve();
     loaded = true;
+    welcome(); // 先馬上顯示歡迎訊息（預設文字），不用等歷史對話載入；之後若發現有舊對話再把它拿掉
     return api("/messages?visitorId=" + encodeURIComponent(visitor)).then(function (d) {
+      if (d.messages && d.messages.length && welcomeRow) {
+        if (welcomeRow.parentNode) welcomeRow.parentNode.removeChild(welcomeRow);
+        welcomeRow = null;
+      }
       (d.messages || []).forEach(show);
       if (!d.messages || !d.messages.length) welcome(); else welcomed = true;
       if (d.paused) startPolling();
-    }).catch(function () { loaded = false; welcome(); });
+    }).catch(function () { loaded = false; });
   }
 
   function show(m) {
@@ -278,7 +299,7 @@
     return api("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, text: text, human: isHuman === true }) })
       .then(function (d) {
         if (t) t.remove();
-        if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false });
+        if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false, quick: d.reply.quickActions === true });
         else if (d.paused) note("客服人員處理中，請稍候，回覆會顯示在這裡");
         if (d.paused) startPolling();
         if (d.askContact && !silent && !store.get(leadKey())) contactCard();
@@ -304,6 +325,52 @@
     if (busy) return;
     add("me", (cfg && cfg.handoffLabel) || "🙋 轉真人");
     ask("", false, true);
+  }
+
+  /* ───────── 找相機 / 找鏡頭：小表單（檢測範圍 FOV、精度、工作距離 WD…），送出後整理成一句話交給客服做選型計算 ───────── */
+  var findRow = null;
+  function findForm(kind) {
+    var lens = kind === "lens";
+    if (findRow) { findRow.remove(); findRow = null; }
+    var row = document.createElement("div");
+    row.className = "row ai";
+    var col = document.createElement("div");
+    col.className = "col"; col.style.maxWidth = "92%"; col.style.width = "100%";
+    var card = document.createElement("form");
+    card.className = "card";
+    card.innerHTML =
+      "<b>" + (lens ? "🔍 找鏡頭" : "📷 找相機") + "</b><p>填寫您的檢測需求，我幫您試算並推薦" + (lens ? "鏡頭" : "相機") + "型號（檢測範圍與精度要填，其他不確定的可以空白）。</p>" +
+      '<div class="flab">檢測範圍 FOV（mm）</div>' +
+      '<div class="fgrid"><input name="fa" type="number" min="0" step="any" inputmode="decimal" placeholder="長"><span>×</span><input name="fb" type="number" min="0" step="any" inputmode="decimal" placeholder="寬"><span>mm</span></div>' +
+      '<div class="flab">最小檢測精度（要抓到多小的缺陷 / 要量到多準）</div>' +
+      '<div class="fgrid"><input name="acc" type="number" min="0" step="any" inputmode="decimal" placeholder="例如 10"><select name="unit"><option value="um">µm（微米）</option><option value="mm">mm（毫米）</option></select></div>' +
+      '<div class="flab">工作距離 WD（mm）' + (lens ? "：鏡頭到被測物的距離" : "（選填）") + "</div>" +
+      '<input name="wd" type="number" min="0" step="any" inputmode="decimal" placeholder="例如 200">' +
+      (lens ? '<div class="flab">鏡頭類型</div><select name="lt"><option value="">不限（幫我推薦）</option><option value="FA 定焦鏡頭">FA 定焦鏡頭</option><option value="遠心鏡頭">遠心鏡頭</option></select>' : "") +
+      '<div class="flab">其他需求（選填，例如移動速度、曝光、產能）</div>' +
+      '<textarea name="note" rows="2" maxlength="200"></textarea>' +
+      '<div class="cerr" role="alert"></div>' +
+      '<div class="acts"><button type="submit" class="go">送出</button><button type="button" class="skip">取消</button></div>';
+    col.appendChild(card); row.appendChild(col); body.appendChild(row); scrollDown();
+    findRow = row;
+    var err = card.querySelector(".cerr");
+    card.querySelector(".skip").onclick = function () { row.remove(); findRow = null; };
+    card.onsubmit = function (e) {
+      e.preventDefault();
+      var f = function (n) { return card.elements[n] ? String(card.elements[n].value).trim() : ""; };
+      var pos = function (v) { var n = parseFloat(v); return isFinite(n) && n > 0; };
+      if (!pos(f("fa")) || !pos(f("fb"))) { err.textContent = "請填檢測範圍的長與寬（mm，要大於 0）"; return; }
+      if (!pos(f("acc"))) { err.textContent = "請填最小檢測精度（要大於 0）"; return; }
+      if (f("wd") && !pos(f("wd"))) { err.textContent = "工作距離要是大於 0 的數字"; return; }
+      if (busy) { err.textContent = "客服回覆中，請稍後再送出"; return; }
+      var text = "我要找" + (lens ? "鏡頭" + (f("lt") ? "（" + f("lt") + "）" : "") : "相機") +
+        "。檢測範圍 FOV：" + f("fa") + " × " + f("fb") + " mm；最小檢測精度：" + f("acc") + " " + (f("unit") === "mm" ? "mm" : "µm") +
+        (f("wd") ? "；工作距離 WD：" + f("wd") + " mm" : "") + (f("note") ? "；其他需求：" + f("note") : "") +
+        "。請幫我做選型計算並推薦" + (lens ? "鏡頭" : "相機") + "型號。";
+      row.remove(); findRow = null;
+      send(text);
+    };
+    var first = card.elements.fa; if (first) first.focus();
   }
 
   /* ───────── 聊了幾段後，請訪客留下聯繫資料（段數在後台「客服設定」；0 = 不問）───────── */
@@ -402,10 +469,22 @@
     ask: function (t) { afterReady(function () { open(); restore().then(function () { add("me", t); ask(t); }); }); },
     contact: function () { afterReady(function () { open(); restore().then(function () { contactCard(); }); }); },
     human: function () { afterReady(function () { open(); restore().then(human); }); },
+    findCamera: function () { afterReady(function () { open(); restore().then(function () { findForm("camera"); }); }); },
+    findLens: function () { afterReady(function () { open(); restore().then(function () { findForm("lens"); }); }); },
   };
 
   /* ───────── 啟動 ───────── */
+  function isReload() {
+    try {
+      var nav = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+      if (nav) return nav.type === "reload";
+      return !!(performance.navigation && performance.navigation.type === 1);
+    } catch (e) { return false; }
+  }
+
   api("/config").then(function (c) {
+    // 後台勾選「F5 重新整理就重新開始」（預設開）：這次載入是重新整理 → 換一組新的訪客編號 = 全新對話
+    if (c.resetOnReload !== false && isReload()) { visitor = uuid(); store.set(vkey, visitor); }
     applyConfig(c);
     (document.body || document.documentElement).appendChild(host);
     readyDone(true);

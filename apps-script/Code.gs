@@ -154,6 +154,7 @@ var ROUTES = {
   updateCase:              { auth: true, fn: handleUpdateCase },
   deleteCase:              { auth: true, fn: handleDeleteCase },
   renameCase:              { auth: true, fn: handleRenameCase },
+  closeCase:               { auth: true, fn: handleCloseCase },
   uploadCaseAttachment:    { auth: true, fn: handleUploadCaseAttachment },
   deleteCaseAttachment:    { auth: true, fn: handleDeleteCaseAttachment },
   getCaseImages:           { auth: true, fn: handleGetCaseImages },
@@ -271,10 +272,10 @@ function jsonOutput(obj) {
 var SCHEMA = {};
 SCHEMA[SHEET_PRODUCTS] = ['InternalModel', 'SupplierModel', 'Supplier', 'SupplierContact', 'SupplierContactEmail', 'Origin', 'Category', 'CompatibleGroup', 'RefPrice', 'Notes', 'LastUpdated', 'SourceUrl', 'Specs', 'Brand', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD'];
 SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Price', 'Currency', 'CaseID', 'Notes'];
-SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency'];
+SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency', 'CloseResult', 'CloseDate', 'CloseAmount', 'CloseNote', 'OrderItems'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
 SCHEMA[SHEET_STAFF] = ['Name', 'Role'];
-SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime', 'CompanyPhone', 'TaxId', 'Address'];
+SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime', 'CompanyPhone', 'TaxId', 'Address', 'Website'];
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID', 'CreatedAt', 'Changes'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
@@ -376,7 +377,7 @@ var ACTION_PERM = {
   generateInquiryDraft: ['products', 'w'], createGmailDraft: ['products', 'w'],
   // 案件
   getCases: ['cases', 'r'], getCase: ['cases', 'r'], getCasesPageData: ['cases', 'r'], getCaseImages: ['cases', 'r'], generateRequirementDoc: ['cases', 'r'],
-  createCase: ['cases', 'w'], updateCase: ['cases', 'w'], renameCase: ['cases', 'w'], uploadCaseAttachment: ['cases', 'w'], addSoftware: ['cases', 'w'], generateEvaluationDoc: ['cases', 'w'],
+  createCase: ['cases', 'w'], updateCase: ['cases', 'w'], renameCase: ['cases', 'w'], closeCase: ['cases', 'w'], uploadCaseAttachment: ['cases', 'w'], addSoftware: ['cases', 'w'], generateEvaluationDoc: ['cases', 'w'],
   deleteCase: ['cases', 'd'], deleteCaseAttachment: ['cases', 'd'],
   // 客戶與行事曆
   getCustomers: ['customers', 'r'], getCustomerContacts: ['customers', 'r'], getContactLogs: ['customers', 'r'],
@@ -4485,6 +4486,64 @@ function handleRenameCase(body) {
   return { success: true, caseId: newId, oldCaseId: oldId, counts: counts };
 }
 
+/** 整理訂購品項：最多 50 項，名稱 / 數量 / 單價都過濾。 */
+function cleanOrderItems_(raw) {
+  return (Array.isArray(raw) ? raw : []).slice(0, 50).map(function (it) {
+    var qty = Number(it && it.quantity);
+    var price = Number(it && it.unitPrice);
+    return { name: String((it && it.name) || '').trim().slice(0, 80), quantity: qty > 0 && qty <= 1000000 ? qty : 1, unitPrice: price >= 0 && price < 1e10 ? Math.round(price * 100) / 100 : 0 };
+  }).filter(function (it) { return it.name; });
+}
+
+/**
+ * 結案：result = 'cancelled' 取消 / 'won' 完成訂單。
+ * 完成訂單要填成交金額（有訂購品項的話，沒填金額就用 數量 × 單價 加總）；案件狀態改成「已結案」並記下結果、金額、日期、品項；
+ * 客戶的「交易狀態」自動標成已交易、最近交易日 = 結案日，並留一筆聯繫紀錄。
+ */
+function handleCloseCase(body) {
+  return withLock_(function () {
+    var caseObj = findCase(body.caseId);
+    if (!caseObj) return { success: false, message: '查無此案件' };
+    var won = body.result === 'won';
+    if (!won && body.result !== 'cancelled') return { success: false, message: '請選擇「取消」或「完成訂單」' };
+    var items = won ? cleanOrderItems_(body.items) : [];
+    var amount = won ? Number(String(body.amount == null ? '' : body.amount).replace(/,/g, '')) : 0;
+    if (won && !(amount > 0) && items.length) {
+      amount = items.reduce(function (sum, it) { return sum + it.quantity * it.unitPrice; }, 0);
+      amount = Math.round(amount * 100) / 100;
+    }
+    if (won && !(amount > 0)) return { success: false, message: '完成訂單請填成交金額（大於 0）' };
+    if (amount >= 1e12) return { success: false, message: '金額太大，請確認' };
+    var note = String(body.note || '').trim().slice(0, 500);
+    var today = todayStr();
+    var sheet = getSheet(SHEET_CASES);
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var rowNum = findCaseRowIndex(header, caseObj['CaseID']);
+    updateRowFields(SHEET_CASES, rowNum, {
+      Status: '已結案',
+      CloseResult: won ? '完成訂單' : '取消',
+      CloseDate: today,
+      CloseAmount: won ? amount : '',
+      CloseNote: note,
+      OrderItems: won && items.length ? JSON.stringify(items) : '',
+      LastUpdated: today,
+    });
+    var customerName = String(caseObj['CustomerName'] || '');
+    var customerRow = customerName ? findDuplicateCustomerRow_(customerName, 0) : 0;
+    var markedTransacted = false;
+    if (won && customerRow) {
+      var res = applyCustomerUpdate_(customerRow, { HasTransacted: '是', LastTransactionDate: today }, {});
+      markedTransacted = !res.error;
+    }
+    var summary = '案件結案：' + (won ? '完成訂單，成交金額 ' + amount : '取消') + (items.length ? '（' + items.map(function (it) { return it.name + '×' + it.quantity; }).join('、') + '）' : '') + (note ? '；' + note : '');
+    var user = body._user || {};
+    if (customerName) {
+      appendContactLog_({ companyName: customerName, method: '資料修改', summary: summary, caseId: caseObj['CaseID'], changes: '案件狀態：' + (caseObj['Status'] || '') + ' → 已結案' + (won ? '\n交易狀態：已交易（' + today + '）' : '') }, user);
+    }
+    return { success: true, status: '已結案', result: won ? '完成訂單' : '取消', amount: won ? amount : 0, closeDate: today, markedTransacted: markedTransacted };
+  });
+}
+
 function handleDeleteCase(body) {
   var sheet = getSheet(SHEET_CASES);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -5839,10 +5898,21 @@ function findDuplicateCustomerRow_(name, excludeRow) {
   return 0;
 }
 
+/** 公司網址整理：沒寫 http 開頭就補 https://；只接受 http / https（避免存進 javascript: 之類的連結）。不合法回傳 null。 */
+function cleanWebsite_(v) {
+  var u = String(v == null ? '' : v).trim();
+  if (!u) return '';
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = 'https://' + u;
+  if (!/^https?:\/\/[^\s\/]+\.[^\s]{2,}/i.test(u) || u.length > 300) return null;
+  return u;
+}
+
 function handleAddCustomer(body) {
   if (!String(body.companyName || '').trim()) return { success: false, message: '公司名稱不能空白' };
   var dup = findDuplicateCustomerRow_(body.companyName, 0);
   if (dup) return { success: false, message: '已經有「' + String(body.companyName).trim() + '」這間客戶了（第 ' + dup + ' 列），不能重複新增。要補資料請直接編輯那一筆。' };
+  var website = cleanWebsite_(body.website);
+  if (website === null) return { success: false, message: '公司網址格式不正確（例如 www.example.com 或 https://www.example.com）' };
   var sheet = getSheet(SHEET_CUSTOMERS);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
@@ -5862,6 +5932,7 @@ function handleAddCustomer(body) {
     CompanyPhone: body.companyPhone || '',
     TaxId: body.taxId || '',
     Address: body.address || '',
+    Website: website,
   };
 
   appendObjectRow(SHEET_CUSTOMERS, customer);
@@ -5881,6 +5952,7 @@ var CUSTOMER_FIELD_LABELS = {
   CompanyPhone: '公司電話',
   TaxId: '統一編號',
   Address: '地址',
+  Website: '公司網址',
   Category: '分類',
   Urgency: '急迫性',
   Notes: '客戶備註',
@@ -5915,7 +5987,7 @@ function describeCustomerChanges_(oldObj, newObj, changed) {
     return v === '' ? '（空白）' : v;
   };
   var lines = [];
-  ['CompanyName', 'Contact', 'Phone', 'Email', 'CompanyPhone', 'TaxId', 'Address', 'Category', 'Urgency'].forEach(function (f) {
+  ['CompanyName', 'Contact', 'Phone', 'Email', 'CompanyPhone', 'TaxId', 'Address', 'Website', 'Category', 'Urgency'].forEach(function (f) {
     if (has(f)) lines.push(CUSTOMER_FIELD_LABELS[f] + '：' + show(clip_(custVal_(f, oldObj[f]), 60)) + ' → ' + show(clip_(custVal_(f, newObj[f]), 60)));
   });
   if (has('HasTransacted') || has('LastTransactionDate')) {
@@ -6034,14 +6106,20 @@ function applyCustomerUpdate_(rowNum, fields, opts) {
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
   var oldObj = readRowAsObject(SHEET_CUSTOMERS, rowNum);
   var input = {};
+  var badWebsite = false;
   Object.keys(fields || {}).forEach(function (k) {
     if (header.indexOf(k) < 0 || k === 'CalendarEventId') return; // 行事曆 ID 只由系統維護
     var v = fields[k] == null ? '' : fields[k];
     if (k === 'NextFollowUpTime') v = normTimeStr_(v);
     else if (k === 'NextFollowUpDate') v = dateKey_(v);
-    else if (typeof v === 'string' && k !== 'Notes' && k !== 'NextFollowUpNote') v = v.trim();
+    else if (k === 'Website') {
+      var w = cleanWebsite_(v);
+      if (w === null) { badWebsite = true; return; }
+      v = w;
+    } else if (typeof v === 'string' && k !== 'Notes' && k !== 'NextFollowUpNote') v = v.trim();
     input[k] = v;
   });
+  if (badWebsite) return { error: '公司網址格式不正確（例如 www.example.com 或 https://www.example.com）' };
   if (input.CompanyName !== undefined) {
     if (!input.CompanyName) return { error: '公司名稱不能空白' };
     var dup = findDuplicateCustomerRow_(input.CompanyName, rowNum);
@@ -6656,6 +6734,7 @@ function botCsConfig_(cs) {
       color: color,
       position: web.position === 'left' ? 'left' : 'right',
       autoOpen: web.autoOpen === true,
+      resetOnReload: web.resetOnReload !== false, // 預設：訪客按 F5 重新整理網頁就重新開始對話
       allowedOrigins: String(web.allowedOrigins || ''),
     },
   };
@@ -7609,6 +7688,7 @@ function csWidgetConfig_() {
     color: cs.web.color,
     position: cs.web.position,
     autoOpen: cs.web.autoOpen,
+    resetOnReload: cs.web.resetOnReload,
     allowedOrigins: cs.web.allowedOrigins,
     welcome: cs.welcome || '👋 您好，我是' + csBrand_() + '的線上客服，有任何問題都可以直接問我；需要專人協助請輸入「' + (botWords_(cs.handoffWords)[0] || '真人') + '」。',
     buttons: botButtons_(cs.buttons),
@@ -8772,7 +8852,7 @@ function botTrimRow_(obj, keys, noteLimit) {
   return out;
 }
 
-var BOT_CUSTOMER_KEYS = ['CompanyName', 'Contact', 'Phone', 'CompanyPhone', 'Email', 'Address', 'TaxId', 'Category', 'Urgency', 'NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote', 'Notes', 'HasTransacted', 'LastTransactionDate'];
+var BOT_CUSTOMER_KEYS = ['CompanyName', 'Contact', 'Phone', 'CompanyPhone', 'Email', 'Address', 'TaxId', 'Website', 'Category', 'Urgency', 'NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote', 'Notes', 'HasTransacted', 'LastTransactionDate'];
 var BOT_CASE_KEYS = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Status', 'Urgency', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'CreatedDate', 'RequirementDetails', 'EvaluationResult'];
 var BOT_PRODUCT_KEYS = ['InternalModel', 'SupplierModel', 'Brand', 'Category', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD', 'Notes'];
 
@@ -9126,7 +9206,7 @@ var BOT_PRICE_WRITES = ['addPriceRecord', 'createInquiryDraft', 'deletePriceReco
 var BOT_CASE_EDITABLE = { ProjectContact: '專案聯絡人', ContactPhone: '聯絡電話', EndCustomerName: '終端客戶', Salesperson: '業務', FAE: 'FAE', RequirementDetails: '需求說明', EvaluationResult: '評估結果' };
 var BOT_PRODUCT_EDITABLE = { SupplierModel: '供應商型號', Brand: '品牌', Category: '類別', Interface: '介面', Resolution: '解析度', PixelSize: '像素尺寸', SensorSize: '靶面', FPS: '幀率', Mount: '接口', FocalLength: '焦距', Magnification: '倍率', WD: '工作距離', DOF: '景深', FocusWD: '對焦距離', CompatibleGroup: '相容群組', Origin: '產地', Notes: '備註' };
 var BOT_PRODUCT_PRICEY = { Supplier: '供應商', SupplierContact: '供應商聯絡人', SupplierContactEmail: '供應商 Email', RefPrice: '參考底價' }; // 有價格權限（沒被隱藏）才能改
-var BOT_CUSTOMER_EDITABLE = { Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', Address: '地址', TaxId: '統一編號', Category: '分類', Urgency: '急迫性', Notes: '客戶備註' };
+var BOT_CUSTOMER_EDITABLE = { Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', Address: '地址', TaxId: '統一編號', Website: '公司網址', Category: '分類', Urgency: '急迫性', Notes: '客戶備註' };
 
 function botWritableOps_(ctx) {
   var allowed = botStaffCfg_().writes;
@@ -9747,7 +9827,7 @@ function botCardsRun_(ctx, w, user) {
     var result = '';
     try {
       if (x.kind === 'newCustomer') {
-        var r1 = handleAddCustomer({ _user: user, companyName: m.company, contact: m.name, phone: m.phone, email: m.email, companyPhone: m.companyPhone, address: m.address, taxId: m.taxId, category: x.category || '一般客戶', urgency: '中', notes: botCardNotes_(m, batch) });
+        var r1 = handleAddCustomer({ _user: user, companyName: m.company, contact: m.name, phone: m.phone, email: m.email, companyPhone: m.companyPhone, address: m.address, taxId: m.taxId, website: m.website, category: x.category || '一般客戶', urgency: '中', notes: botCardNotes_(m, batch) });
         if (!r1.success) throw new Error(r1.message);
         done.newCustomers++;
         result = '新增客戶 ' + m.company;

@@ -1107,6 +1107,19 @@ function handleDemoApi(action, params) {
       return { success: true };
     }
 
+    case 'closeCase': {
+      const cs = db.cases.find((x) => x.CaseID === params.caseId);
+      if (!cs) return { success: false, message: '查無此案件' };
+      const won = params.result === 'won';
+      if (won && !(Number(params.amount) > 0)) return { success: false, message: '完成訂單請填成交金額（大於 0）' };
+      const today = new Date().toISOString().slice(0, 10);
+      Object.assign(cs, { Status: '已結案', CloseResult: won ? '完成訂單' : '取消', CloseDate: today, CloseAmount: won ? Number(params.amount) : '', CloseNote: params.note || '', OrderItems: won ? JSON.stringify(params.items || []) : '' });
+      const cust = db.customers.find((x) => x.CompanyName === cs.CustomerName);
+      if (won && cust) { cust.HasTransacted = '是'; cust.LastTransactionDate = today; }
+      saveDemoDB(db);
+      return { success: true, status: '已結案', markedTransacted: !!(won && cust) };
+    }
+
     case 'renameCase': {
       const cs = db.cases.find((x) => x.CaseID === params.caseId);
       if (!cs) return { success: false, message: '查無此案件' };

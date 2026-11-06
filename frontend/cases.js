@@ -388,9 +388,10 @@ function renderCaseTable(cases) {
   cases.forEach((c) => {
     const tr = document.createElement('tr');
     const idArg = encodeURIComponent(c.CaseID || '');
-    tr.innerHTML = `<td>${htmlEsc(c.CaseID)}</td><td>${htmlEsc(c.CustomerName)}</td><td>${caseUrgencyBadge(c.Urgency)}</td><td>${htmlEsc(c.Status)}</td><td>${followUpCellHtml(c.CustomerName, c.CaseID)}</td><td>${htmlEsc(c.CreatedDate)}</td>
+    tr.innerHTML = `<td>${htmlEsc(c.CaseID)}</td><td>${htmlEsc(c.CustomerName)}</td><td>${caseUrgencyBadge(c.Urgency)}</td><td>${htmlEsc(c.Status)}${closeInfoHtml(c)}</td><td>${followUpCellHtml(c.CustomerName, c.CaseID)}</td><td>${htmlEsc(c.CreatedDate)}</td>
       <td>
         <button onclick="viewCase(decodeURIComponent('${idArg}'))">查看</button>
+        ${c.Status === '已結案' ? '' : `<button style="background:#c0392b;" onclick="openCloseCase(decodeURIComponent('${idArg}'))">結案</button>`}
         <button onclick="deleteCase(decodeURIComponent('${idArg}'))">刪除</button>
       </td>`;
     tbody.appendChild(tr);
@@ -545,6 +546,11 @@ async function viewCase(caseId) {
   toggleSwCustomizationNote('cd');
   document.getElementById('cd-status').value = c.Status || '需求單已發出';
   document.getElementById('cd-requirement').value = c.RequirementDetails || '';
+  const closeText = closeDetailText(c);
+  const closeBox = document.getElementById('cd-close-info');
+  closeBox.textContent = closeText;
+  closeBox.style.display = closeText ? '' : 'none';
+  document.getElementById('cd-close-btn').style.display = c.Status === '已結案' ? 'none' : '';
 
   detailCcdList = c.CcdRequirements || [];
   renderCcdBlocks('detail');

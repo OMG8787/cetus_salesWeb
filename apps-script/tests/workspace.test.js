@@ -101,10 +101,10 @@ ok(!run('handleCalDeleteEvent', 'amy', { id: 1 }).success, '刪除不存在的')
 r = run('handleTodoSave', 'amy', { title: '' });
 ok(!r.success, '標題必填');
 ok(!run('handleTodoSave', 'amy', { title: 'x', dueDate: '下週' }).success, '期限格式');
-const t1 = run('handleTodoSave', 'amy', { title: '寄樣品', dueDate: '2026-11-06', priority: '高' }).id;
-const t2 = run('handleTodoSave', 'amy', { title: '整理報價', dueDate: '2026-11-05', priority: '低', notes: 'Q4' }).id;
+const t1 = run('handleTodoSave', 'amy', { title: '寄樣品', dueDate: '2027-01-06', priority: '高' }).id;
+const t2 = run('handleTodoSave', 'amy', { title: '整理報價', dueDate: '2027-01-05', priority: '低', notes: 'Q4' }).id;
 const t3 = run('handleTodoSave', 'amy', { title: '沒期限的', priority: '亂寫' }).id;
-const t4 = run('handleTodoSave', 'amy', { title: '全公司共享', dueDate: '2026-11-07', shareMode: 'all' }).id;
+const t4 = run('handleTodoSave', 'amy', { title: '全公司共享', dueDate: '2027-01-07', shareMode: 'all' }).id;
 let todos = run('handleTodoGet', 'amy', {}).todos;
 ok(todos.map((x) => x.title).join() === '整理報價,寄樣品,全公司共享,沒期限的', '排序：期限近的在前、沒期限最後');
 ok(todos.find((x) => x.id === t3).priority === '中', '不合法的優先度 → 中');

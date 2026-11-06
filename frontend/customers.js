@@ -15,6 +15,7 @@ async function addCustomer() {
     companyPhone: document.getElementById('cust-company-phone').value,
     taxId: document.getElementById('cust-taxid').value.trim(),
     address: document.getElementById('cust-address').value.trim(),
+    website: document.getElementById('cust-website').value.trim(),
     email: document.getElementById('cust-email').value,
     nextFollowUpDate: document.getElementById('cust-followup').value,
     nextFollowUpTime: document.getElementById('cust-followup-time').value,
@@ -28,7 +29,7 @@ async function addCustomer() {
     clearCached('customers');
     clearCached('casesPageData');
     alert('已新增客戶');
-    ['cust-company', 'cust-contact', 'cust-phone', 'cust-company-phone', 'cust-taxid', 'cust-address', 'cust-email', 'cust-followup', 'cust-followup-time', 'cust-followup-note', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
+    ['cust-company', 'cust-contact', 'cust-phone', 'cust-company-phone', 'cust-taxid', 'cust-address', 'cust-website', 'cust-email', 'cust-followup', 'cust-followup-time', 'cust-followup-note', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('cust-has-transacted').checked = false;
     loadCustomers();
   } else {
@@ -97,7 +98,7 @@ function renderCustomerTable() {
     const transactedText = c.HasTransacted === '是' ? `已交易${c.LastTransactionDate ? '（' + c.LastTransactionDate + '）' : ''}` : '未交易';
     const nameArg = encodeURIComponent(c.CompanyName || '');
     const nm = `decodeURIComponent('${nameArg}')`;
-    tr.innerHTML = `<td>${htmlEsc(c.CompanyName)}${[c.TaxId && '統編 ' + c.TaxId, c.CompanyPhone && '公司電話 ' + c.CompanyPhone, c.Address].filter(Boolean).map((x) => '<div class="calc-hint" style="margin:0;">' + htmlEsc(x) + '</div>').join('')}</td><td>${htmlEsc(c.Contact)}</td><td>${htmlEsc(c.Phone)}</td><td>${htmlEsc(c.Category || '')}</td><td>${htmlEsc(c.Urgency || '')}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote, c.NextFollowUpTime)}</td><td>${htmlEsc(transactedText)}</td>
+    tr.innerHTML = `<td>${htmlEsc(c.CompanyName)}${[c.TaxId && '統編 ' + c.TaxId, c.CompanyPhone && '公司電話 ' + c.CompanyPhone, c.Address].filter(Boolean).map((x) => '<div class="calc-hint" style="margin:0;">' + htmlEsc(x) + '</div>').join('')}${websiteLinkHtml(c.Website)}</td><td>${htmlEsc(c.Contact)}</td><td>${htmlEsc(c.Phone)}</td><td>${htmlEsc(c.Category || '')}</td><td>${htmlEsc(c.Urgency || '')}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote, c.NextFollowUpTime)}</td><td>${htmlEsc(transactedText)}</td>
       <td>
         <button onclick="openCustomerContactsModal(${nm})">聯絡窗口</button>
         <button onclick="viewCasesForCompany(${nm})">相關案件</button>
@@ -110,6 +111,14 @@ function renderCustomerTable() {
       </td>`;
     tbody.appendChild(tr);
   });
+}
+
+/** 公司網址：點了在新分頁開啟（只接受 http / https，其他一律不當成連結）。 */
+function websiteLinkHtml(url) {
+  const u = String(url || '').trim();
+  if (!/^https?:\/\//i.test(u)) return '';
+  const shown = u.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  return `<div class="calc-hint" style="margin:0;">🌐 <a href="${htmlEsc(u)}" target="_blank" rel="noopener noreferrer">${htmlEsc(shown)}</a></div>`;
 }
 
 function escapeAttr(str) {
@@ -177,7 +186,7 @@ function openCustomerEditModal(name) {
   editingCustomerRow = c.RowIndex;
   editingCustomerName = c.CompanyName;
   const set = (id, v) => (document.getElementById(id).value = v || '');
-  set('ce-company', c.CompanyName); set('ce-contact', c.Contact); set('ce-phone', c.Phone); set('ce-company-phone', c.CompanyPhone); set('ce-taxid', c.TaxId); set('ce-address', c.Address); set('ce-email', c.Email);
+  set('ce-company', c.CompanyName); set('ce-contact', c.Contact); set('ce-phone', c.Phone); set('ce-company-phone', c.CompanyPhone); set('ce-taxid', c.TaxId); set('ce-address', c.Address); set('ce-website', c.Website); set('ce-email', c.Email);
   set('ce-category', c.Category || '一般客戶'); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate); set('ce-followup-time', c.NextFollowUpTime); set('ce-followup-note', c.NextFollowUpNote);
   document.getElementById('ce-has-transacted').checked = c.HasTransacted === '是';
   set('ce-last-transaction', c.LastTransactionDate); set('ce-notes', c.Notes);
@@ -199,7 +208,7 @@ async function saveCustomerEdit() {
     rowIndex: editingCustomerRow,
     companyName: editingCustomerName,
     fields: {
-      CompanyName: val('ce-company').trim(), Contact: val('ce-contact'), Phone: val('ce-phone'), CompanyPhone: val('ce-company-phone'), TaxId: val('ce-taxid').trim(), Address: val('ce-address').trim(), Email: val('ce-email'),
+      CompanyName: val('ce-company').trim(), Contact: val('ce-contact'), Phone: val('ce-phone'), CompanyPhone: val('ce-company-phone'), TaxId: val('ce-taxid').trim(), Address: val('ce-address').trim(), Website: val('ce-website').trim(), Email: val('ce-email'),
       Category: val('ce-category'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'), NextFollowUpTime: val('ce-followup-time'), NextFollowUpNote: val('ce-followup-note'),
       HasTransacted: hasTx ? '是' : '', LastTransactionDate: last, Notes: val('ce-notes'),
     },

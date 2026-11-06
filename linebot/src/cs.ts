@@ -137,6 +137,7 @@ export function csSystemPrompt(info: CsInfo, references: string): string {
     (info.contactAfter ?? 0) > 0
       ? "9. 客人主動說了自己的姓名、公司、電話或 Email，或答應留下聯繫資料時，呼叫 save_contact 記下來（至少要有電話或 Email）；不要主動追問、也不要逼對方留資料。"
       : "",
+    "10. 客人只是打招呼、閒聊，或你根據參考資料沒辦法回答（不確定）時，呼叫 offer_quick_actions，畫面下方會附上「轉真人客服」「找相機」「找鏡頭」按鈕；回覆內容照原本規則寫（打招呼就簡短問候並問需要什麼協助），不要自己把這三個按鈕寫進文字。",
     info.prompt ? `\n【公司規則（管理員設定，優先遵守）】\n${info.prompt}` : "",
     "",
     "【參考資料】",
@@ -160,6 +161,25 @@ function transferTool(info: CsInfo, handed: { topic: string | null }): Tool {
     handler: async (a) => {
       handed.topic = String(a.topic ?? "").trim() || "需要專人協助";
       return "已轉給專人，請直接結束，不用再回覆內容。";
+    },
+  };
+}
+
+/** 打招呼（短短一句問候）：網站視窗下方改附「轉真人客服 / 找相機 / 找鏡頭」按鈕 */
+export function isGreeting(text: string): boolean {
+  const t = text.trim();
+  return t.length > 0 && t.length <= 12 && /^(你好|您好|哈囉|哈啰|哈嘍|嗨|hi|hello|hey|早安|午安|晚安|安安|在嗎|在吗)/i.test(t);
+}
+
+/** AI 判斷是打招呼 / 不確定時呼叫：網站視窗下方附上快捷按鈕（轉真人客服、找相機、找鏡頭） */
+function quickActionsTool(flag: { on: boolean }): Tool {
+  return {
+    name: "offer_quick_actions",
+    description: "客人只是打招呼、閒聊，或你根據參考資料沒辦法回答（不確定）時呼叫：回覆下方會附上「轉真人客服」「找相機」「找鏡頭」按鈕。呼叫後照常回覆文字。",
+    parameters: { type: "object", properties: {} },
+    handler: async () => {
+      flag.on = true;
+      return "已附上快捷按鈕，請照常回覆（不要在文字裡列出這三個按鈕）。";
     },
   };
 }
@@ -256,13 +276,14 @@ export async function groundCheck(info: CsInfo, questions: string[], refs: strin
 }
 
 /** 用知識庫回答一個問題：reply = 回覆、choices = 選項按鈕、handed = AI 判斷要交給真人（問題類型） */
-export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[], uid = ""): Promise<{ reply: string; choices: string[]; handed: string | null; blocked?: string; images: ReplyImage[]; leadSaved: boolean }> {
+export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[], uid = ""): Promise<{ reply: string; choices: string[]; handed: string | null; blocked?: string; images: ReplyImage[]; leadSaved: boolean; quickActions: boolean }> {
   if (CALC_HINT.test(text)) void catalogOnce(info.kbVer).catch(() => undefined); // 選型問題：型錄先在背景載入，跟知識庫檢索同時進行
   const index = await knowledge(false, info.kbVer);
   const choices: string[] = [];
   const images: ReplyImage[] = [];
   const lead = { saved: false };
   const handed: { topic: string | null } = { topic: null };
+  const quick = { on: false };
   // 檢索時連同上一個問題一起找（「那另一款呢？」這種接續問題）
   const lastUser = [...history].reverse().find((h) => h.u)?.t ?? "";
   const query = text.length < 10 && lastUser ? `${lastUser} ${text}` : text;
@@ -271,6 +292,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
 
   const seen: Hit[] = [...hits];
   const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(() => catalogOnce(info.kbVer)), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
+  tools.push(quickActionsTool(quick));
   if (info.topics?.length || info.unsure === "handoff") tools.push(transferTool(info, handed));
   if (info.sendImages !== false) tools.push(imageTool(seen, images));
   if ((info.contactAfter ?? 0) > 0 && uid) tools.push(leadTool(uid, lead));
@@ -279,11 +301,14 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   let reply: string;
   try {
     reply = cleanReply(await generate({ ai: info.ai!, fallback: info.aiFallback, system: csSystemPrompt(info, formatHits(hits)), turns, tools }));
-    if (!reply) reply = `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`;
+    if (!reply) {
+      reply = `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`;
+      quick.on = true;
+    }
   } catch (error) {
     console.error("客服 AI 回覆失敗", error);
     reply = `不好意思，系統忙碌中，請稍後再問一次，或輸入「${callWord(info)}」由專人回覆 🙏`;
-    return { reply, choices, handed: handed.topic, images: [], leadSaved: false };
+    return { reply, choices, handed: handed.topic, images: [], leadSaved: false, quickActions: true };
   }
   // 回覆前檢查（沒開、或這則本來就要轉真人時不檢查）：沒有根據就不送出，改請客人找專人（或直接轉專人）
   if (info.groundCheck && handed.topic === null) {
@@ -291,11 +316,11 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
     const check = await groundCheck(info, questions, formatHits(seen), reply);
     if (!check.ok) {
       console.warn("客服回覆沒有知識庫根據，已攔下", check.reason);
-      if (info.unsure === "handoff") return { reply, choices: [], handed: "知識庫找不到根據", blocked: check.reason, images: [], leadSaved: false };
-      return { reply: `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`, choices: [], handed: null, blocked: check.reason, images: [], leadSaved: false };
+      if (info.unsure === "handoff") return { reply, choices: [], handed: "知識庫找不到根據", blocked: check.reason, images: [], leadSaved: false, quickActions: false };
+      return { reply: `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`, choices: [], handed: null, blocked: check.reason, images: [], leadSaved: false, quickActions: true };
     }
   }
-  return { reply, choices, handed: handed.topic, images, leadSaved: lead.saved };
+  return { reply, choices, handed: handed.topic, images, leadSaved: lead.saved, quickActions: quick.on };
 }
 
 export type CsChannel = "line" | "web" | "test";
@@ -315,9 +340,11 @@ export interface CsResult {
   askContact: boolean;
   /** 每則回覆下方要不要附「轉真人」按鈕 */
   handoffButton: boolean;
+  /** 打招呼 / 不確定時：網站視窗附上「轉真人客服 / 找相機 / 找鏡頭」快捷按鈕 */
+  quickActions: boolean;
 }
 
-const NO_REPLY = (info: CsInfo, paused = false): CsResult => ({ silent: true, paused, reply: "", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: false });
+const NO_REPLY = (info: CsInfo, paused = false): CsResult => ({ silent: true, paused, reply: "", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: false, quickActions: false });
 
 /** LINE 沒辦法跳出表單，聊到設定的段數就在回覆後面直接請客人留資料 */
 export const CONTACT_ASK_TEXT = "📇 方便留下您的姓名、公司和電話 / Email 嗎？之後專人可以主動聯繫您，直接回覆就可以了 😊";
@@ -357,12 +384,12 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
     if (!testing) await gas.csHandoff(uid, displayName, said, topic);
     const reply = handoffReply(info, topic);
     await remember(reply, topic || "找真人");
-    return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info, images: [], askContact: false, handoffButton: false };
+    return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info, images: [], askContact: false, handoffButton: false, quickActions: false };
   };
 
   if (reset) {
     await gas.csForget(uid);
-    return { silent: false, paused: false, reply: "好的～想問什麼都可以直接問我 😊", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: info.handoffButton !== false };
+    return { silent: false, paused: false, reply: "好的～想問什麼都可以直接問我 😊", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: info.handoffButton !== false, quickActions: false };
   }
 
   if (opts.human) return handoff(); // 客人按了回覆下方的「轉真人」按鈕
@@ -384,7 +411,7 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
 ${CONTACT_ASK_TEXT}` : answer.reply;
 
   await remember(reply, blocked ? "回覆檢查未通過" : "", { askedContact: askContact, images }); // 後台對話紀錄看得出哪些問題缺資料、需要補進知識庫
-  return { silent: false, paused: false, reply, choices, handoff: null, info, images, askContact, handoffButton: info.handoffButton !== false };
+  return { silent: false, paused: false, reply, choices, handoff: null, info, images, askContact, handoffButton: info.handoffButton !== false, quickActions: answer.quickActions || isGreeting(text) };
 }
 
 export async function handleCsEvent(e: LineEvent): Promise<void> {

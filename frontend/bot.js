@@ -247,6 +247,7 @@ function fillWeb() {
   setVal('web-color', w.color);
   setVal('web-position', w.position);
   $('web-auto-open').checked = w.autoOpen;
+  $('web-reset-reload').checked = w.resetOnReload !== false;
   setVal('web-origins', w.allowedOrigins);
   $('web-self-origin').textContent = location.origin;
   const url = (botData.general || {}).botUrl;
@@ -261,6 +262,7 @@ function readWeb(old) {
     color: val('web-color'),
     position: val('web-position'),
     autoOpen: $('web-auto-open').checked,
+    resetOnReload: $('web-reset-reload').checked,
     allowedOrigins: val('web-origins'),
   };
 }

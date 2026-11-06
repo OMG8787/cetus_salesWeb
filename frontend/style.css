@@ -734,3 +734,8 @@ header, .tabs { position: relative; z-index: 300; }
 .nc-badge.ok { background: #e3f4e8; color: #1e6b34; }
 .nc-warn { color: #c0392b; font-size: 12px; margin-top: 2px; }
 .nc-hint { color: #2c5aa0; font-size: 12px; margin-top: 2px; white-space: normal; max-width: 160px; }
+
+/* 結案視窗 */
+.cc-choice { display:flex; gap:20px; margin:8px 0; font-size:15px; }
+.cc-item { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; }
+.cc-item .cc-sub { font-size:13px; white-space:nowrap; }
