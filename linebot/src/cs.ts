@@ -6,6 +6,7 @@ import { imageUrl, type ReplyImage } from "./img.js";
 import { choicesTool, humanPause } from "./human.js";
 import { channels, getProfile, MAX_CHOICES, replyText, showLoading, type LineEvent } from "./line.js";
 import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, loadVectorMap, searchKnowledge, type Hit, type SearchConfig, type SearchResult } from "./rag.js";
+import { extractModels, hasExact, modelHitsFromCatalog, modelHitsFromIndex } from "./model.js";
 import { nowLocal } from "./time.js";
 
 // 客服機器人（對外 LINE 官方帳號 + 網站右下角客服視窗，同一套邏輯）：任何人都能問
@@ -131,6 +132,7 @@ export function csSystemPrompt(info: CsInfo, references: string): string {
     "3. 不要提到「參考資料」「知識庫」「系統」這些字，像真人客服一樣自然回答。",
     `4. 回覆會顯示在聊天視窗：不要用 Markdown（不要用 **粗體**、# 標題、表格），用「・」條列，${EMOJIS[st.emoji] ?? EMOJIS.some}，盡量 ${st.maxLines} 行以內。`,
     `5. 報價、價格、折扣、交期、下訂、退換貨、客訴或客人要找人時，請他輸入「${call}」，由專人處理；你不能報價，也不要說出任何價格或金額。`,
+    "【型號比對】參考資料裡來源是「型號比對」的，是客人問的型號直接比對到的規格，直接照它回答；不要再說查不到這個型號。規格欄位沒有寫的項目才說資料裡沒有。",
     "6. 客人的問題模稜兩可（沒說哪個產品、哪個應用）時不要猜，用 offer_choices 給選項按鈕並用一句話反問。",
     CALC_RULES,
     topics.length
@@ -295,7 +297,22 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const lastUser = [...history].reverse().find((h) => h.u)?.t ?? "";
   const query = text.length < 10 && lastUser ? `${lastUser} ${text}` : text;
   const search = { ...DEFAULT_SEARCH, ...info.search, topK: info.search?.topK ?? TOP_K };
-  const hits = (await runSearch(index, query, search, info.embedAi)).hits;
+  const searched = (await runSearch(index, query, search, info.embedAi)).hits;
+  // 型號直接比對：訊息（或太短的接續問題的上一句）裡有像型號的字串，就直接用型號去產品資料與選型型錄找，找到的排在最前面
+  const models = extractModels(text).length ? extractModels(text) : text.length < 12 ? extractModels(lastUser) : [];
+  let modelHits: Hit[] = [];
+  if (models.length) {
+    modelHits = modelHitsFromIndex(index, models);
+    if (!hasExact(modelHits)) {
+      try {
+        modelHits = [...modelHits, ...modelHitsFromCatalog(await catalogOnce(info.kbVer), models)];
+      } catch (error) {
+        console.warn("型號比對讀取型錄失敗", (error as Error).message);
+      }
+    }
+    if (modelHits.length) console.log(`[cs-model] ${models.join(", ")} → ${modelHits.length} 筆`);
+  }
+  const hits = [...modelHits, ...searched.filter((h) => !modelHits.some((m) => m.chunk.id === h.chunk.id))];
 
   const seen: Hit[] = [...hits];
   const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(() => catalogOnce(info.kbVer), () => { calcDone.on = true; }), cameraPixelTool(() => catalogOnce(info.kbVer), () => { calcDone.on = true; }), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
