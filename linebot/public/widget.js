@@ -96,6 +96,7 @@
     ".card select{border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--tx);font:inherit;padding:6px 9px;outline:none}.card select:focus{border-color:var(--c)}",
     ".card .flab{font-size:12px;color:var(--mu);margin-top:2px}.card .fgrid{display:flex;gap:6px;align-items:center}.card .fgrid input{min-width:0}.card .fgrid span{color:var(--mu);font-size:12px;flex:none}",
     ".chips .qa{border-style:dashed}",
+    ".chips .more{background:var(--c);border-color:var(--c);color:var(--ci);font-weight:600}.chips .more:hover:not(:disabled){filter:brightness(.92)}",
     ".w.nolaunch .launch{display:none}.w.nolaunch .panel{bottom:100px}",
     "@media(max-width:575px){.panel{inset:0;width:100%;max-width:none;height:100dvh;border-radius:0}.w.open-m .launch{display:none}}",
     "@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}",
@@ -188,16 +189,22 @@
     }
     row.appendChild(col);
     body.appendChild(row);
-    if ((opts.choices && opts.choices.length) || opts.quick) chips(opts.choices || [], col, opts.quick);
+    if ((opts.choices && opts.choices.length) || opts.quick || opts.more) chips(opts.choices || [], col, opts.quick, opts.more ? text : null);
     scrollDown();
     return row;
   }
 
   /* 選項按鈕；quick = true 時後面再接「轉真人客服 / 找相機 / 找鏡頭」快捷按鈕（打招呼、不確定時） */
-  function chips(choices, after, quick) {
+  function chips(choices, after, quick, moreCtx) {
     var box = document.createElement("div");
     box.className = "chips";
     box.style.marginTop = "6px";
+    if (moreCtx) { // 選型計算出結果後：「看更多」→ 請訪客留下資料，專人再提供更多適合的方案
+      var mb = document.createElement("button");
+      mb.type = "button"; mb.className = "more"; mb.textContent = "🔎 看更多";
+      mb.onclick = function () { contactCard({ more: true, ctx: moreCtx }); };
+      box.appendChild(mb);
+    }
     choices.forEach(function (c) {
       var b = document.createElement("button");
       b.type = "button"; b.textContent = c;
@@ -299,7 +306,7 @@
     return api("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, text: text, human: isHuman === true }) })
       .then(function (d) {
         if (t) t.remove();
-        if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false, quick: d.reply.quickActions === true });
+        if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false, quick: d.reply.quickActions === true, more: d.reply.seeMore === true });
         else if (d.paused) note("客服人員處理中，請稍候，回覆會顯示在這裡");
         if (d.paused) startPolling();
         if (d.askContact && !silent && !store.get(leadKey())) contactCard();
@@ -376,10 +383,12 @@
   /* ───────── 聊了幾段後，請訪客留下聯繫資料（段數在後台「客服設定」；0 = 不問）───────── */
   function leadKey() { return "aoi_lead_" + BOT + "_" + visitor; }
   var cardOpen = false;
-  function contactCard() {
+  function contactCard(opt) {
+    opt = opt || {};
     if (cardOpen) return;
+    if (opt.more && store.get(leadKey())) { add("ai", "您已經留下聯繫資料了，專人會依您的需求提供更多適合的方案 🙏", { noHand: true }); return; }
     cardOpen = true;
-    disableChips();
+    if (!opt.more) disableChips(); // 「看更多」按鈕留著，填到一半取消還可以再按
     var row = document.createElement("div");
     row.className = "row ai";
     var col = document.createElement("div");
@@ -387,7 +396,9 @@
     var card = document.createElement("form");
     card.className = "card";
     card.innerHTML =
-      "<b>📇 方便留下聯繫資料嗎？</b><p>之後有新的資訊或需要進一步討論，專人可以主動聯繫您。</p>" +
+      (opt.more
+        ? "<b>🔎 想看更多適合的方案？</b><p>留下聯繫資料，專人會依您剛才的需求整理更多型號與建議，主動與您聯繫。</p>"
+        : "<b>📇 方便留下聯繫資料嗎？</b><p>之後有新的資訊或需要進一步討論，專人可以主動聯繫您。</p>") +
       '<input name="name" placeholder="姓名" maxlength="40" autocomplete="name">' +
       '<input name="company" placeholder="公司" maxlength="60" autocomplete="organization">' +
       '<input name="phone" placeholder="電話（電話或 Email 擇一必填）" maxlength="30" autocomplete="tel" inputmode="tel">' +
@@ -397,13 +408,19 @@
       '<div class="acts"><button type="submit" class="go">送出</button><button type="button" class="skip">稍後再說</button></div>';
     col.appendChild(card); row.appendChild(col); body.appendChild(row); scrollDown();
     var err = card.querySelector(".cerr"), go = card.querySelector(".go");
+    // 「看更多」：備註前面自動帶上剛才的選型結果摘要，專人不用再問一次需求（後端備註上限 300 字）
+    var leadNote = function (n) {
+      if (!opt.more) return n;
+      var head = "[選型看更多] " + String(opt.ctx || "").replace(/\s+/g, " ").slice(0, 200);
+      return n ? (head + " ／ " + n).slice(0, 300) : head;
+    };
     card.querySelector(".skip").onclick = function () { row.remove(); cardOpen = false; };
     card.onsubmit = function (e) {
       e.preventDefault();
       var f = function (n) { return card.elements[n].value.trim(); };
       if (!f("phone") && !f("email")) { err.textContent = "請至少留下電話或 Email，專人才能聯繫您"; return; }
       err.textContent = ""; go.disabled = true;
-      api("/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, name: f("name"), company: f("company"), phone: f("phone"), email: f("email"), note: f("note") }) })
+      api("/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, name: f("name"), company: f("company"), phone: f("phone"), email: f("email"), note: leadNote(f("note")) }) })
         .then(function () { store.set(leadKey(), "1"); row.remove(); cardOpen = false; add("ai", "謝謝您！已收到您的聯繫資料，專人會盡快與您聯繫 🙏", { noHand: true }); })
         .catch(function (e2) { go.disabled = false; err.textContent = e2.message || "送出失敗，請稍後再試"; });
     };

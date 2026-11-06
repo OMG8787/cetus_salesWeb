@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!result.silent) await humanPause(receivedAt, result.info.replyDelay);
     return Response.json(
       {
-        reply: result.silent || !result.reply ? null : { id: 0, text: result.reply, choices: result.choices, images: result.images, handoffButton: result.handoffButton, quickActions: result.quickActions },
+        reply: result.silent || !result.reply ? null : { id: 0, text: result.reply, choices: result.choices, images: result.images, handoffButton: result.handoffButton, quickActions: result.quickActions, seeMore: result.seeMore === true },
         paused: result.paused,
         askContact: result.askContact,
       },

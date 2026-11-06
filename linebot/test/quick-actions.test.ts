@@ -76,3 +76,20 @@ test("轉真人後不再附快捷按鈕", async () => {
   const r = await csConverse(V, "我要找真人", { channel: "web" });
   assert.equal(r.quickActions, false);
 });
+
+test("選型計算算出結果 → 回覆附「看更多」；還缺資料時不附", async () => {
+  const calc = { fov_a_mm: 100, fov_b_mm: 80, accuracy: 10, accuracy_unit: "um" };
+  answer = (n) => (n === 0 ? toolCall("calc_selection", calc) : text("建議規格如上。"));
+  const done = await csConverse(V, "幫我選相機 視野 100x80 精度 10um", { channel: "web" });
+  assert.equal(done.seeMore, true);
+
+  answer = (n) => (n === 0 ? toolCall("calc_selection", { fov_a_mm: 100 }) : text("請問精度要求多少？"));
+  const missing = await csConverse(V, "幫我選相機 視野 100", { channel: "web" });
+  assert.equal(missing.seeMore, false);
+});
+
+test("一般問題不附「看更多」", async () => {
+  answer = () => text("保固一年。");
+  const r = await csConverse(V, "保固多久", { channel: "web" });
+  assert.equal(r.seeMore, false);
+});

@@ -18,7 +18,8 @@ export const CALC_RULES = [
   "5. 計算結果不含任何價格；客人問價格依客服規則處理。",
 ].join("\n");
 
-export function calcTool(getCatalog: () => Promise<Catalog>): Tool {
+/** onResult：算出結果（不是還缺資料）時通知一聲，網站視窗據此在回覆下方附「看更多」按鈕 */
+export function calcTool(getCatalog: () => Promise<Catalog>, onResult?: () => void): Tool {
   return {
     name: "calc_selection",
     description:
@@ -77,7 +78,9 @@ export function calcTool(getCatalog: () => Promise<Catalog>): Tool {
       } catch (error) {
         console.warn("取得選型型錄失敗", (error as Error).message);
       }
-      return formatCalc(calcSelection(input, catalog));
+      const result = calcSelection(input, catalog);
+      if (result.ok && !result.missing.length) onResult?.();
+      return formatCalc(result);
     },
   };
 }

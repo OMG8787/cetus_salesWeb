@@ -276,7 +276,7 @@ export async function groundCheck(info: CsInfo, questions: string[], refs: strin
 }
 
 /** 用知識庫回答一個問題：reply = 回覆、choices = 選項按鈕、handed = AI 判斷要交給真人（問題類型） */
-export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[], uid = ""): Promise<{ reply: string; choices: string[]; handed: string | null; blocked?: string; images: ReplyImage[]; leadSaved: boolean; quickActions: boolean }> {
+export async function csAnswer(info: CsInfo, text: string, history: { u: boolean; t: string }[], uid = ""): Promise<{ reply: string; choices: string[]; handed: string | null; blocked?: string; images: ReplyImage[]; leadSaved: boolean; quickActions: boolean; seeMore?: boolean }> {
   if (CALC_HINT.test(text)) void catalogOnce(info.kbVer).catch(() => undefined); // 選型問題：型錄先在背景載入，跟知識庫檢索同時進行
   const index = await knowledge(false, info.kbVer);
   const choices: string[] = [];
@@ -284,6 +284,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const lead = { saved: false };
   const handed: { topic: string | null } = { topic: null };
   const quick = { on: false };
+  const calcDone = { on: false }; // 這次算出了選型結果 → 網站視窗附「看更多」
   // 檢索時連同上一個問題一起找（「那另一款呢？」這種接續問題）
   const lastUser = [...history].reverse().find((h) => h.u)?.t ?? "";
   const query = text.length < 10 && lastUser ? `${lastUser} ${text}` : text;
@@ -291,7 +292,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const hits = (await runSearch(index, query, search, info.embedAi)).hits;
 
   const seen: Hit[] = [...hits];
-  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(() => catalogOnce(info.kbVer)), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
+  const tools: Tool[] = [searchTool(async (q) => (await runSearch(index, q, search, info.embedAi)).hits, seen), calcTool(() => catalogOnce(info.kbVer), () => { calcDone.on = true; }), choicesTool(choices, "「這個怎麼用」沒說哪一款產品、「有沒有支援」不知道是哪個應用")];
   tools.push(quickActionsTool(quick));
   if (info.topics?.length || info.unsure === "handoff") tools.push(transferTool(info, handed));
   if (info.sendImages !== false) tools.push(imageTool(seen, images));
@@ -320,7 +321,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
       return { reply: `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`, choices: [], handed: null, blocked: check.reason, images: [], leadSaved: false, quickActions: true };
     }
   }
-  return { reply, choices, handed: handed.topic, images, leadSaved: lead.saved, quickActions: quick.on };
+  return { reply, choices, handed: handed.topic, images, leadSaved: lead.saved, quickActions: quick.on, seeMore: calcDone.on && handed.topic === null };
 }
 
 export type CsChannel = "line" | "web" | "test";
@@ -342,6 +343,8 @@ export interface CsResult {
   handoffButton: boolean;
   /** 打招呼 / 不確定時：網站視窗附上「轉真人客服 / 找相機 / 找鏡頭」快捷按鈕 */
   quickActions: boolean;
+  /** 這則回覆含選型計算結果：網站視窗附「看更多」按鈕（點了請訪客留資料） */
+  seeMore?: boolean;
 }
 
 const NO_REPLY = (info: CsInfo, paused = false): CsResult => ({ silent: true, paused, reply: "", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: false, quickActions: false });
@@ -411,7 +414,7 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
 ${CONTACT_ASK_TEXT}` : answer.reply;
 
   await remember(reply, blocked ? "回覆檢查未通過" : "", { askedContact: askContact, images }); // 後台對話紀錄看得出哪些問題缺資料、需要補進知識庫
-  return { silent: false, paused: false, reply, choices, handoff: null, info, images, askContact, handoffButton: info.handoffButton !== false, quickActions: answer.quickActions || isGreeting(text) };
+  return { silent: false, paused: false, reply, choices, handoff: null, info, images, askContact, handoffButton: info.handoffButton !== false, quickActions: answer.quickActions || isGreeting(text), seeMore: answer.seeMore === true && !blocked };
 }
 
 export async function handleCsEvent(e: LineEvent): Promise<void> {
