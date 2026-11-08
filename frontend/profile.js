@@ -8,6 +8,7 @@ async function loadProfile() {
     return;
   }
   const p = r.profile;
+  if (r.mustChange) sessionStorage.setItem('mustChange', '1');
   document.getElementById('pf-username').value = p.Username;
   document.getElementById('pf-role').value = p.Role || '';
   document.getElementById('pf-name').value = p.DisplayName || '';
@@ -58,12 +59,25 @@ async function changePassword() {
     return;
   }
   ['pw-old', 'pw-new', 'pw-new2'].forEach((id) => (document.getElementById(id).value = ''));
+  if (sessionStorage.getItem('mustChange') === '1') {
+    sessionStorage.removeItem('mustChange');
+    msg.textContent = '密碼已更新，正在帶你進入系統...';
+    setTimeout(() => (location.href = 'home.html'), 800);
+    return;
+  }
   msg.textContent = '密碼已更新，下次登入請使用新密碼';
+}
+
+function showForceMode() {
+  document.getElementById('force-banner').style.display = '';
+  document.getElementById('pw-old').placeholder = '臨時密碼（剛剛登入用的那組）';
+  document.querySelectorAll('nav .tab-btn, nav .nav-group-btn').forEach((b) => (b.disabled = true));
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
   if (!(await ensureAuth())) return;
   renderHeaderUser();
   applyAdminOnlyVisibility();
-  loadProfile();
+  await loadProfile();
+  if (sessionStorage.getItem('mustChange') === '1') showForceMode();
 });

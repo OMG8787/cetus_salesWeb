@@ -620,6 +620,15 @@ function handleDemoApi(action, params) {
       return { success: false, message: '示範模式僅接受帳密 0000 / 0000' };
     }
 
+    case 'requestPasswordReset':
+      return { success: true, message: '示範模式：正式環境會把臨時密碼寄到該帳號登記的 Email（沒登記 Email 則通知管理員）。' };
+
+    case 'getResetSettings':
+      return { success: true, admins: [{ username: '0000', name: '0000（示範帳號）', hasEmail: true }], selected: [] };
+
+    case 'saveResetSettings':
+      return { success: true, selected: params.usernames || [] };
+
     case 'resumeSession': {
       const device = (db.devices || []).find((d) => d.DeviceId === params.deviceId && d.TokenHash === params.deviceToken);
       if (!device) return { success: false, message: '這台裝置的登入紀錄已被移除，請重新輸入帳密登入' };

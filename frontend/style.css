@@ -757,3 +757,8 @@ header, .tabs { position: relative; z-index: 300; }
 .bot-note.bot-divider.closed { color: #b4690e; border-top-color: #e3b56a; }
 .bot-note.bot-sessions { background: #fff8e8; border: 1px solid #f0dca8; border-radius: 6px; padding: 4px 8px; color: #7a5a14; }
 .bot-old-key { background: #e3e6ea; border-radius: 3px; padding: 0 4px; color: #56606c; }
+.login-forgot { text-align: center; margin: 10px 0 0; font-size: 13px; }
+.login-forgot a { color: #2c5aa0; }
+.forgot-box { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #c9d3e0; }
+.force-banner { background: #fff4e0; border: 1px solid #f0c987; color: #7a4b00; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+.u-reset-admins { margin: 8px 0; line-height: 1.9; }

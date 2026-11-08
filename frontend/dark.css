@@ -259,3 +259,6 @@ html[data-theme="dark"] .bot-note.bot-divider { border-top-color: #3b4552; color
 html[data-theme="dark"] .bot-note.bot-divider.closed { color: #e0a85a; border-top-color: #7a5a2a; }
 html[data-theme="dark"] .bot-note.bot-sessions { background: rgba(224,168,90,.12); border-color: rgba(224,168,90,.35); color: #e0c08a; }
 html[data-theme="dark"] .bot-old-key { background: #2b333e; color: #aab4c2; }
+html[data-theme="dark"] .login-forgot a { color: #7fb0ee; }
+html[data-theme="dark"] .forgot-box { border-top-color: #3b4552; }
+html[data-theme="dark"] .force-banner { background: rgba(240,201,135,.12); border-color: rgba(240,201,135,.4); color: #f0d49a; }

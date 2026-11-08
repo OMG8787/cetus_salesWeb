@@ -113,7 +113,7 @@ function renderUsersTable() {
     const roles = isLegacy ? [u.Role].concat(allRoles) : allRoles;
     const roleOptions = roles.map((r) => `<option value="${htmlEsc(r)}" ${r === u.Role ? 'selected' : ''}>${htmlEsc(roleLabels[r] || r)}</option>`).join('');
     const nameArg = `decodeURIComponent('${encodeURIComponent(u.Username || '')}')`;
-    const selfNote = u.IsSelf ? ' <span class="memo-tag">你自己</span>' : '';
+    const selfNote = (u.IsSelf ? ' <span class="memo-tag">你自己</span>' : '') + (u.ResetPending ? ' <span class="bot-badge warn" title="有人申請了忘記密碼、還沒處理（沒登記 Email 的要管理員重設密碼）">🔑 申請重設中</span>' : '') + (u.MustChange ? ' <span class="bot-badge" title="登入後必須先改密碼">待改密碼</span>' : '') + (u.Email ? '' : ' <span class="bot-badge" title="沒有登記 Email，忘記密碼時要由管理員處理">無 Email</span>');
     tr.innerHTML = `<td>${htmlEsc(u.Username)}${selfNote}</td><td>${htmlEsc(u.DisplayName || '')}</td>
       <td><select onchange="changeUserRole(${u.RowIndex}, this.value, ${nameArg})">${roleOptions}</select></td>
       <td class="u-perm-sum">${permSummary(u)}${u.Role === 'limited' ? ` <button class="btn-mini" onclick="openPermModal(${u.RowIndex})">編輯權限</button>` : ''}</td>
@@ -135,6 +135,7 @@ async function addUser() {
   const result = await callApi('addUser', {
     username,
     displayName: document.getElementById('user-displayname').value.trim(),
+    email: document.getElementById('user-email').value.trim(),
     role,
     perms,
     password: password || undefined,
@@ -147,7 +148,7 @@ async function addUser() {
   resultBox.textContent = result.password
     ? `已新增帳號「${username}」，自動產生的密碼是：${result.password}（請截圖或抄下來，系統之後不會再顯示一次）`
     : `已新增帳號「${username}」`;
-  ['user-username', 'user-displayname', 'user-password'].forEach((id) => (document.getElementById(id).value = ''));
+  ['user-username', 'user-displayname', 'user-email', 'user-password'].forEach((id) => (document.getElementById(id).value = ''));
   loadUsers();
 }
 
@@ -210,7 +211,27 @@ async function resetPassword(rowIndex, username) {
   if (password === null) return;
   const result = await callApi('resetUserPassword', { rowIndex, password: password.trim() || undefined });
   if (!result.success) return alert(result.message);
-  alert(`「${username}」的新密碼是：${result.password}（請截圖或抄下來交給當事人，系統之後不會再顯示一次）`);
+  alert(`「${username}」的新密碼是：${result.password}（請截圖或抄下來，驗證本人身分後親自告訴他，系統之後不會再顯示一次）` + (result.mustChange ? '\n\n他用這組密碼登入後，系統會強制他立刻改成自己的密碼。' : ''));
+  loadUsers();
+}
+
+// ---------- 忘記密碼：通知哪些管理員 ----------
+async function loadResetSettings() {
+  const r = await callApi('getResetSettings', {}, { silent: true });
+  const box = document.getElementById('reset-admins');
+  if (!r.success) {
+    box.textContent = r.message || '讀取失敗';
+    return;
+  }
+  box.innerHTML = r.admins.length
+    ? r.admins.map((a) => `<label class="inline-check"><input type="checkbox" value="${htmlEsc(a.username)}" ${r.selected.includes(a.username) ? 'checked' : ''} /> ${htmlEsc(a.name)}（${htmlEsc(a.username)}）${a.hasEmail ? '' : ' <span class="calc-hint">沒有 Email，收不到通知</span>'}</label>`).join('<br>')
+    : '還沒有系統管理員';
+}
+
+async function saveResetSettings() {
+  const usernames = [...document.querySelectorAll('#reset-admins input:checked')].map((e) => e.value);
+  const r = await callApi('saveResetSettings', { usernames });
+  document.getElementById('reset-msg').textContent = r.success ? '✓ 已儲存' : r.message || '儲存失敗';
 }
 
 async function deleteUserRow(rowIndex, username) {
@@ -303,6 +324,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   applyAdminOnlyVisibility();
   loadGroups();
   loadWsSettings();
+  loadResetSettings();
   await loadUsers();
   bindEnterSubmit('#user-add-panel', addUser);
 });

@@ -143,6 +143,10 @@ async function callApi(action, params, opts) {
     }
     // 登入逾期（快取的工作階段最多 6 小時）或被登出：先悄悄用「記住的裝置」換新的登入再重送一次，
     // 使用者完全無感；換不到（例如被管理員強制登出）才回登入頁。
+    if (result && result.success === false && /請先更新密碼/.test(result.message || '') && !/profile\.html$/.test(location.pathname)) {
+      sessionStorage.setItem('mustChange', '1');
+      location.replace('profile.html');
+    }
     if (result && result.success === false && AUTH_ERROR_PATTERN.test(result.message || '') && action !== 'login' && action !== 'resumeSession') {
       if (await refreshSession()) {
         try {
@@ -170,6 +174,11 @@ async function callApi(action, params, opts) {
  */
 async function ensureAuth() {
   if (!(await ensureLoggedIn())) return false;
+  // 使用臨時密碼 / 管理員重設的密碼登入：改好密碼之前，只能待在個人資料頁（伺服器端也擋掉其他所有動作）
+  if (sessionStorage.getItem('mustChange') === '1' && !/profile\.html$/.test(location.pathname)) {
+    location.replace('profile.html');
+    return false;
+  }
   // 沒有這個功能的權限：顯示說明，頁面不再往下載入資料
   if (document.body && document.body.dataset.block && blockLevel(document.body.dataset.block) === 'none') {
     applyPagePermission();
@@ -193,6 +202,7 @@ async function ensureLoggedIn() {
       sessionStorage.setItem('username', currentUsername);
       sessionStorage.setItem('role', currentRole);
       storeAccess(result.access, currentRole);
+      if (result.mustChange) sessionStorage.setItem('mustChange', '1');
       return true;
     }
     // 裝置權杖失效(通常是管理員移除了這台裝置)，清掉本機記住的資訊，回登入頁重打密碼

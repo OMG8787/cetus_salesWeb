@@ -54,7 +54,7 @@
  *                    （CreatedAt = 記錄時間 yyyy-MM-dd HH:mm；Changes = 這次改了哪些客戶資料 / 追蹤日，一行一項。
  *                    Method 為「資料修改」「改期」的是系統自動記下的修改紀錄，不是實際聯繫，工作日報會略過）
  *                    （CaseID 選填，標記這筆聯繫是針對哪個案件/專案，同客戶有多案件時用來分開查）
- *   Users         - Username, PasswordHash, Role, DisplayName, Phone, Email, Birthday, Perms（個人資料可由本人在「個人資料」頁修改；
+ *   Users         - Username, PasswordHash, Role, DisplayName, Phone, Email, Birthday, Perms, ResetHash / ResetExpires / ResetRequestedAt（忘記密碼：臨時密碼的雜湊、到期時間、申請時間）, MustChange（是 = 登入後必須先改密碼）（個人資料可由本人在「個人資料」頁修改；
  *                    Role = admin 系統管理員 / editor 編輯者 / viewer 查看 / limited 特定（Perms = 各功能區塊的 view / edit JSON）；舊角色 sales / fae 可一鍵遷移）
  *   LoginLogs     - LoginTime, Username, DisplayName, Result, DeviceId, DeviceLabel, LastActive, EndTime, EndReason（登入歷程）
  *                    （Role 決定權限，見 PERMISSIONS：admin 可以做任何事／sales 業務／fae 工程）
@@ -103,6 +103,7 @@ var SHEET_LOGIN_LOGS = 'LoginLogs';
 //   2) 在下面加一行： xxx: { auth: true, fn: handleXxx },
 var ROUTES = {
   login:                   { auth: false, fn: handleLogin },
+  requestPasswordReset:    { auth: false, fn: handleRequestPasswordReset },
   resumeSession:           { auth: false, fn: handleResumeSession },
   logoutDevice:            { auth: true,  fn: handleLogoutDevice },
   getLoginOverview:        { auth: true,  fn: handleGetLoginOverview },
@@ -173,6 +174,8 @@ var ROUTES = {
   updateUser:              { auth: true, fn: handleUpdateUser },
   deleteUser:              { auth: true, fn: handleDeleteUser },
   resetUserPassword:       { auth: true, fn: handleResetUserPassword },
+  getResetSettings:        { auth: true, fn: handleGetResetSettings },
+  saveResetSettings:       { auth: true, fn: handleSaveResetSettings },
   migrateRoles:            { auth: true, fn: handleMigrateRoles },
 
   // 個人化：常用型號 / 首頁常用網站 / 備忘錄 / 行事曆行程
@@ -281,7 +284,7 @@ SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFoll
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID', 'CreatedAt', 'Changes'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
-SCHEMA[SHEET_USERS] = ['Username', 'PasswordHash', 'Role', 'DisplayName', 'Phone', 'Email', 'Birthday', 'Perms'];
+SCHEMA[SHEET_USERS] = ['Username', 'PasswordHash', 'Role', 'DisplayName', 'Phone', 'Email', 'Birthday', 'Perms', 'ResetHash', 'ResetExpires', 'ResetRequestedAt', 'MustChange'];
 SCHEMA[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DisplayName', 'Result', 'DeviceId', 'DeviceLabel', 'LastActive', 'EndTime', 'EndReason'];
 /** 公司分類固定選項（客戶管理頁下拉選單用，"AOI同業資料" 目前沒有既有資料，先開放選項給之後手動建立）。 */
 var CUSTOMER_CATEGORIES = ['AOI同業資料', '器材原廠', '機構合作設備商', '一般客戶'];
@@ -306,7 +309,7 @@ TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID', 'CreatedAt'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime', 'CompanyPhone', 'TaxId']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
 TEXT_COLUMNS[SHEET_CUSTOMER_CONTACTS] = ['Phone'];
-TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday'];
+TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday', 'ResetHash'];
 TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
 TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash', 'LoginTime', 'LastSeenTime'];
 TEXT_COLUMNS[SHEET_PRICE_HISTORY] = ['ProductInternalModel', 'CaseID'];
@@ -348,6 +351,8 @@ var PERM_BLOCKS = [
   { key: 'bot', label: 'BOT 設定（客服機器人、員工助理）' },
 ];
 var PERM_LEVELS = ['view', 'edit'];
+/** 必須先改密碼的帳號，改好之前只能做這幾件事。 */
+var MUST_CHANGE_ALLOWED = ['changePassword', 'logoutDevice', 'getProfile'];
 
 /**
  * action → [區塊, 等級]。等級：r 查看 / w 新增修改 / d 刪除（只有系統管理員）。
@@ -366,6 +371,7 @@ var ACTION_PERM = {
   todoGet: ['*', 'r'], todoSave: ['*', 'w'], todoSetStatus: ['*', 'w'], todoDelete: ['*', 'w'], getShareTargets: ['*', 'r'],
   groupGetAll: ['admin', 'r'], groupSave: ['admin', 'w'], groupDelete: ['admin', 'd'], wsGetSettings: ['admin', 'r'], wsSaveSettings: ['admin', 'w'],
   // 只有系統管理員
+  getResetSettings: ['admin', 'r'], saveResetSettings: ['admin', 'w'],
   getUsers: ['admin', 'r'], addUser: ['admin', 'w'], updateUser: ['admin', 'w'], deleteUser: ['admin', 'd'], resetUserPassword: ['admin', 'w'], migrateRoles: ['admin', 'w'],
   getLoginOverview: ['admin', 'r'], getLoginLogs: ['admin', 'r'], forceLogout: ['admin', 'w'], clearLoginLogs: ['admin', 'd'], setLoginKeep: ['admin', 'w'],
   addStaff: ['admin', 'w'], updateStaff: ['admin', 'w'], deleteStaff: ['admin', 'd'], deleteSoftware: ['admin', 'd'],
@@ -452,6 +458,10 @@ function requirePermission_(action, user) {
   var role = (dbUser && dbUser['Role']) || '';
   if (!dbUser) throw new Error('帳號已不存在，請重新登入');
   var perm = permFor_(action);
+  // 使用臨時密碼（或管理員重設）登入的帳號：改好密碼之前，伺服器端擋掉其他所有動作（不只是畫面導向）
+  if (String(dbUser['MustChange']) === '是' && MUST_CHANGE_ALLOWED.indexOf(action) < 0) {
+    throw new Error('請先更新密碼：你目前使用的是臨時密碼，到「個人資料」設定新密碼後才能繼續使用');
+  }
   var denied = function (why) {
     throw new Error('權限不足：' + (why || '你的角色（' + (ROLE_LABELS[role] || role || '未設定') + '）不能執行這個操作'));
   };
@@ -1159,14 +1169,24 @@ function handleLogin(body) {
   var username = body.username;
   var password = body.password;
   var user = findUserRow_(username);
-  if (!user || user['PasswordHash'] !== sha256(password)) {
+  var pwOk = !!user && user['PasswordHash'] === sha256(password);
+  var viaReset = !pwOk && !!user && resetPasswordValid_(user, password);
+  if (!pwOk && !viaReset) {
     if (username) appendLoginLog_(String(username), '', '失敗', body.deviceId, body.deviceLabel);
     return { success: false, message: '帳號或密碼錯誤' };
+  }
+  var userRow = findUserRowIndex_(username);
+  if (viaReset) {
+    // 用忘記密碼的臨時密碼登入：臨時密碼正式取代舊密碼（只能用一次），而且必須馬上改成自己的密碼
+    updateRowFields(SHEET_USERS, userRow, { PasswordHash: sha256(password), ResetHash: '', ResetExpires: '', ResetRequestedAt: '', MustChange: '是' });
+    user['MustChange'] = '是';
+  } else if (user['ResetHash'] || user['ResetRequestedAt']) {
+    updateRowFields(SHEET_USERS, userRow, { ResetHash: '', ResetExpires: '', ResetRequestedAt: '' }); // 想起密碼了：作廢還沒用的臨時密碼
   }
 
   var displayName = user['DisplayName'] || username;
   var token = issueSessionToken_(username, displayName, body.deviceId);
-  var result = { success: true, token: token, username: username, displayName: displayName, role: user['Role'] || '', access: accessOf_(user) };
+  var result = { success: true, token: token, username: username, displayName: displayName, role: user['Role'] || '', access: accessOf_(user), mustChange: String(user['MustChange']) === '是' };
 
   // 前端有傳裝置 ID 的話（「記住這台裝置」），額外發一組長效裝置權杖，讓下次自動登入不用再打密碼
   if (body.deviceId) {
@@ -1223,7 +1243,7 @@ function handleResumeSession(body) {
       var logRow = findOpenLogRow_(body.deviceId, username);
       if (logRow > -1) updateRowFields(SHEET_LOGIN_LOGS, logRow, { LastActive: nowStr() });
       var displayName = user['DisplayName'] || username;
-      return { success: true, token: issueSessionToken_(username, displayName, body.deviceId), username: username, displayName: displayName, role: user['Role'] || '', access: accessOf_(user) };
+      return { success: true, token: issueSessionToken_(username, displayName, body.deviceId), username: username, displayName: displayName, role: user['Role'] || '', access: accessOf_(user), mustChange: String(user['MustChange']) === '是' };
     }
   }
   return { success: false, message: '這台裝置的登入紀錄已被移除，請重新輸入帳密登入' };
@@ -1441,7 +1461,7 @@ function handleSetLoginKeep(body) {
 function handleGetProfile(body) {
   var u = findUserRow_(body._user.username);
   if (!u) return { success: false, message: '帳號不存在' };
-  return { success: true, profile: { Username: u['Username'], DisplayName: u['DisplayName'] || u['Username'], Role: u['Role'], RoleLabel: ROLE_LABELS[u['Role']] || u['Role'], Phone: u['Phone'] || '', Email: u['Email'] || '', Birthday: u['Birthday'] || '' }, access: accessOf_(u) };
+  return { success: true, profile: { Username: u['Username'], DisplayName: u['DisplayName'] || u['Username'], Role: u['Role'], RoleLabel: ROLE_LABELS[u['Role']] || u['Role'], Phone: u['Phone'] || '', Email: u['Email'] || '', Birthday: u['Birthday'] || '' }, access: accessOf_(u), mustChange: String(u['MustChange']) === '是' };
 }
 
 function handleUpdateProfile(body) {
@@ -1465,8 +1485,115 @@ function handleChangePassword(body) {
   if (!u || u['PasswordHash'] !== sha256(String(body.oldPassword || ''))) return { success: false, message: '目前的密碼不正確' };
   var np = String(body.newPassword || '');
   if (np.length < 6) return { success: false, message: '新密碼至少要 6 個字' };
-  updateRowFields(SHEET_USERS, findUserRowIndex_(body._user.username), { PasswordHash: sha256(np) });
+  if (np === String(body.oldPassword || '')) return { success: false, message: '新密碼不能和目前的密碼一樣' };
+  updateRowFields(SHEET_USERS, findUserRowIndex_(body._user.username), { PasswordHash: sha256(np), MustChange: '', ResetHash: '', ResetExpires: '', ResetRequestedAt: '' });
   return { success: true };
+}
+
+// ------------------------------------------------------------
+// 忘記密碼
+//  ・登入頁輸入帳號 → 帳號有登記 Email：產生臨時密碼（30 分鐘內有效、只能用一次）寄到該 Email；原本的密碼在臨時密碼被使用之前仍然有效
+//  ・帳號沒登記 Email：不寄密碼，只寄通知給管理員（Config 的 ResetNotifyUsers 指定，沒設定 = 所有有 Email 的管理員）；
+//    管理員驗證本人身分後，到「帳號管理」按「重設密碼」，親自把新密碼告訴本人
+//  ・用臨時密碼 / 管理員重設的密碼登入後（MustChange），伺服器擋掉其他所有動作，一定要先改成自己的密碼
+//  ・不論帳號存在與否、有沒有 Email，回應都一樣（不讓人猜帳號）；每個帳號每分鐘 1 次、每小時 3 次，全系統每小時 30 次
+// ------------------------------------------------------------
+var RESET_TEMP_MINUTES = 30;
+
+function resetPasswordValid_(user, password) {
+  var hash = String(user['ResetHash'] || '');
+  var exp = Number(user['ResetExpires']) || 0;
+  return !!hash && !!password && exp > Date.now() && hash === sha256(password);
+}
+
+function validEmail_(e) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
+}
+
+/** 忘記密碼通知要寄給哪些管理員（有 Email 的才寄）：Config ResetNotifyUsers（逗號分隔帳號）；沒設定 = 全部管理員。 */
+function resetNotifyAdmins_() {
+  var picked = String(getConfig('ResetNotifyUsers') || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+  return sheetToObjects(SHEET_USERS).rows.filter(function (u) {
+    return u['Role'] === 'admin' && (!picked.length || picked.indexOf(String(u['Username'])) > -1);
+  });
+}
+
+function sendResetMail_(to, subject, text) {
+  GmailApp.sendEmail(to, subject, text, { name: 'AOI 系統' });
+}
+
+function handleRequestPasswordReset(body) {
+  var generic = { success: true, message: '已受理。若帳號存在：有登記 Email 的，臨時密碼會寄到該 Email（30 分鐘內有效，也請看垃圾信件匣）；沒有登記 Email 的，已通知管理員，驗證身分後會親自告知新密碼。' };
+  var username = String(body.username || '').trim();
+  if (!username || username.length > 60) return { success: false, message: '請輸入帳號' };
+  var cache = CacheService.getScriptCache();
+  if (cache.get('pwr_cool_' + username)) return { success: false, message: '剛剛已經申請過了，請等 1 分鐘再試（也請檢查垃圾信件匣）' };
+  var hourKey = 'pwr_hr_' + username;
+  if (Number(cache.get(hourKey) || 0) >= 3) return { success: false, message: '申請次數太多了（每小時最多 3 次），請稍後再試，或直接聯絡管理員' };
+  var allKey = 'pwr_all';
+  if (Number(cache.get(allKey) || 0) >= 30) return { success: false, message: '系統忙碌中，請稍後再試，或直接聯絡管理員' };
+  cache.put('pwr_cool_' + username, '1', 60);
+  cache.put(hourKey, String(Number(cache.get(hourKey) || 0) + 1), 3600);
+  cache.put(allKey, String(Number(cache.get(allKey) || 0) + 1), 3600);
+
+  var user = findUserRow_(username);
+  if (!user) return generic;
+  var row = findUserRowIndex_(username);
+  var email = String(user['Email'] || '').trim();
+  var name = user['DisplayName'] || username;
+
+  if (validEmail_(email)) {
+    var temp = randomPassword_(10);
+    updateRowFields(SHEET_USERS, row, { ResetHash: sha256(temp), ResetExpires: Date.now() + RESET_TEMP_MINUTES * 60000, ResetRequestedAt: nowStr() });
+    try {
+      sendResetMail_(
+        email,
+        '【AOI 系統】臨時密碼',
+        name + ' 您好，\n\n' +
+          '有人（應該是您）在 AOI 系統申請忘記密碼。您的臨時密碼是：\n\n    ' + temp + '\n\n' +
+          '・臨時密碼 ' + RESET_TEMP_MINUTES + ' 分鐘內有效，只能使用一次。\n' +
+          '・用帳號「' + username + '」加這組臨時密碼登入後，系統會要求您立刻設定新密碼。\n' +
+          '・如果不是您申請的，請忽略這封信；您原本的密碼不受影響，臨時密碼過期後自動失效。'
+      );
+      return generic;
+    } catch (e) {
+      updateRowFields(SHEET_USERS, row, { ResetHash: '', ResetExpires: '' }); // 寄不出去的臨時密碼不留著，改走管理員處理
+    }
+  }
+  // 沒有 Email（或寄信失敗）：通知管理員，由管理員驗證後親自告知新密碼
+  updateRowFields(SHEET_USERS, row, { ResetRequestedAt: nowStr() });
+  resetNotifyAdmins_().forEach(function (a) {
+    if (!validEmail_(a['Email'])) return;
+    try {
+      sendResetMail_(
+        String(a['Email']).trim(),
+        '【AOI 系統】' + name + ' 申請忘記密碼',
+        (a['DisplayName'] || a['Username']) + ' 您好，\n\n' +
+          '帳號「' + username + '」（' + name + '）剛剛在登入頁申請忘記密碼，但這個帳號' + (validEmail_(email) ? '的 Email 寄信失敗' : '沒有登記 Email') + '。\n\n' +
+          '請先用電話或當面確認是本人，再到「帳號管理」按該帳號的「重設密碼」取得新密碼，親自告訴本人。\n' +
+          '本人用新密碼登入後，系統會強制他立刻改成自己的密碼。\n\n' +
+          '如果不是本人申請，可以不用處理。'
+      );
+    } catch (e2) {
+      Logger.log('忘記密碼通知寄給管理員失敗：' + e2.message);
+    }
+  });
+  return generic;
+}
+
+function handleGetResetSettings(body) {
+  var picked = String(getConfig('ResetNotifyUsers') || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+  var admins = sheetToObjects(SHEET_USERS).rows.filter(function (u) { return u['Role'] === 'admin'; }).map(function (u) {
+    return { username: String(u['Username']), name: String(u['DisplayName'] || u['Username']), hasEmail: validEmail_(u['Email']) };
+  });
+  return { success: true, admins: admins, selected: picked.filter(function (u) { return admins.some(function (a) { return a.username === u; }); }) };
+}
+
+function handleSaveResetSettings(body) {
+  var admins = sheetToObjects(SHEET_USERS).rows.filter(function (u) { return u['Role'] === 'admin'; }).map(function (u) { return String(u['Username']); });
+  var list = (Array.isArray(body.usernames) ? body.usernames : []).map(String).filter(function (u, i, a) { return admins.indexOf(u) > -1 && a.indexOf(u) === i; });
+  setConfig('ResetNotifyUsers', list.join(','));
+  return { success: true, selected: list };
 }
 
 // ------------------------------------------------------------
@@ -1476,6 +1603,8 @@ function handleChangePassword(body) {
 function stripPasswordHash_(row) {
   var copy = Object.assign({}, row);
   delete copy.PasswordHash;
+  delete copy.ResetHash; // 臨時密碼的雜湊也不給前端
+  delete copy.ResetExpires;
   return copy;
 }
 
@@ -1496,6 +1625,8 @@ function handleGetUsers(body) {
     u.RoleLabel = ROLE_LABELS[u.Role] || u.Role;
     u.PermsObj = cleanPerms_(u.Perms);
     u.IsSelf = u.Username === body._user.username;
+    u.ResetPending = !!String(r['ResetRequestedAt'] || ''); // 有人申請了忘記密碼、還沒處理（沒登記 Email 的要管理員重設）
+    u.MustChange = String(r['MustChange']) === '是';
     return u;
   });
   return { success: true, users: users, roles: ROLES, roleLabels: ROLE_LABELS, blocks: PERM_BLOCKS, legacyCount: users.filter(function (u) { return u.Role === 'sales' || u.Role === 'fae'; }).length };
@@ -1508,12 +1639,15 @@ function handleAddUser(body) {
   if (ROLES.indexOf(role) === -1) return { success: false, message: '角色不正確（要是 ' + ROLES.join(' / ') + '）' };
   var perms = role === 'limited' ? cleanPerms_(body.perms) : {};
   if (role === 'limited' && !Object.keys(perms).length) return { success: false, message: '「特定」角色至少要開放一個功能區塊（選「查看」或「編輯」）' };
+  var email = String(body.email || '').trim();
+  if (email && !validEmail_(email)) return { success: false, message: 'Email 格式不正確（忘記密碼時臨時密碼會寄到這裡）' };
   var password = body.password || randomPassword_(10);
   appendObjectRow(SHEET_USERS, {
     Username: body.username,
     PasswordHash: sha256(password),
     Role: role,
     DisplayName: body.displayName || body.username,
+    Email: email,
     Perms: role === 'limited' ? JSON.stringify(perms) : '',
   });
   return { success: true, password: body.password ? undefined : password };
@@ -1594,8 +1728,11 @@ function handleMigrateRoles(body) {
 function handleResetUserPassword(body) {
   if (!body.rowIndex) return { success: false, message: '缺少 rowIndex' };
   var password = body.password || randomPassword_(10);
-  updateRowFields(SHEET_USERS, body.rowIndex, { PasswordHash: sha256(password) });
-  return { success: true, password: password };
+  var target = readRowAsObject(SHEET_USERS, body.rowIndex);
+  var isSelf = target['Username'] === body._user.username;
+  // 管理員重設：本人用新密碼登入後必須馬上改成自己的（重設自己的不用）；也順便作廢還沒用的臨時密碼與申請
+  updateRowFields(SHEET_USERS, body.rowIndex, { PasswordHash: sha256(password), MustChange: isSelf ? '' : '是', ResetHash: '', ResetExpires: '', ResetRequestedAt: '' });
+  return { success: true, password: password, mustChange: !isSelf };
 }
 
 // ------------------------------------------------------------

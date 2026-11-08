@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261108a"></script>
+<script src="theme.js?v=20261108b"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AOI 系統登入</title>
-<link rel="stylesheet" href="style.css?v=20261108a" />
-<link rel="stylesheet" href="dark.css?v=20261108a" />
+<link rel="stylesheet" href="style.css?v=20261108b" />
+<link rel="stylesheet" href="dark.css?v=20261108b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -24,12 +24,19 @@
     <input id="login-password" type="password" placeholder="密碼" />
     <button onclick="doLogin()">登入</button>
     <p id="login-message" class="message"></p>
+    <p class="login-forgot"><a href="#" onclick="toggleForgot(event)">忘記密碼？</a></p>
+    <div id="forgot-box" class="forgot-box" style="display:none;">
+      <p class="calc-hint">輸入帳號：有登記 Email 的，臨時密碼會寄到該 Email（30 分鐘內有效、只能用一次），登入後要馬上設定新密碼；沒有登記 Email 的，會通知管理員，驗證身分後親自告訴你新密碼。</p>
+      <input id="forgot-username" placeholder="帳號" autocomplete="username" />
+      <button type="button" id="forgot-btn" onclick="requestReset()">申請臨時密碼</button>
+      <p id="forgot-message" class="message"></p>
+    </div>
   </div>
 </div>
 
-<script src="config.js?v=20261108a"></script>
-<script src="demo.js?v=20261108a"></script>
-<script src="common.js?v=20261108a"></script>
-<script src="login.js?v=20261108a"></script>
+<script src="config.js?v=20261108b"></script>
+<script src="demo.js?v=20261108b"></script>
+<script src="common.js?v=20261108b"></script>
+<script src="login.js?v=20261108b"></script>
 </body>
 </html>
