@@ -301,7 +301,7 @@ export async function groundCheck(info: CsInfo, questions: string[], refs: strin
       ai: info.checkAi ?? info.ai!,
       fallback: info.aiFallback,
       system: GROUND_PROMPT,
-      fast: true,
+      fast: info.noThinking !== false,
       turns: [{ isUser: true, text: `【客人最近的問題】\n${questions.join("\n")}\n\n【參考資料】\n${refs || "（沒有找到相關資料）"}\n\n【回覆】\n${reply}` }],
     });
     const m = out.match(/\{[\s\S]*\}/);
@@ -358,7 +358,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   let reply: string;
   const tGen = Date.now();
   try {
-    reply = cleanReply(await generate({ ai: info.ai!, fallback: info.aiFallback, system: csSystemPrompt(info, formatHits(hits)), turns, tools, fast: true }));
+    reply = cleanReply(await generate({ ai: info.ai!, fallback: info.aiFallback, system: csSystemPrompt(info, formatHits(hits)), turns, tools, fast: info.noThinking !== false }));
     if (!reply) {
       reply = `不好意思，這個問題我不太確定，需要專人協助請輸入「${callWord(info)}」🙏`;
       quick.on = true;

@@ -7085,6 +7085,7 @@ function botCsConfig_(cs) {
       base: (cs.calc || {}).base === 'l' ? 'l' : 's',
     },
     sendImages: cs.sendImages !== false, // 問到有附圖的知識時，可以直接給圖片
+    noThinking: cs.noThinking !== false, // 回覆時關閉 Gemini 2.5 Flash 的思考（較快較省；關掉這個開關 = 讓模型先推理再回答）
     groundCheck: cs.groundCheck === true, // AI 回覆前先檢查有沒有知識庫根據（預設關閉；會多花一次 AI）
     style: {
       tone: BOT_TONES.indexOf(st.tone) >= 0 ? st.tone : 'friendly',
@@ -7638,6 +7639,7 @@ function csStart_(id, req) {
     handoffButton: cs.handoffButton,
     contactAfter: cs.contactAfter,
     sendImages: cs.sendImages,
+    noThinking: cs.noThinking,
     turnCount: Number(botCacheGet_('cscnt:' + id) || 0),
     leadState: String(botCacheGet_('cslead:' + id) || ''),
     // 回覆檢查另外指定了一組 AI 才用它；沒指定就用客服這一組

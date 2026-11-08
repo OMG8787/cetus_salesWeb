@@ -25,4 +25,10 @@ r = ctx.handleBotSaveSettings({ _user: admin, cs: { calc: { brief: true, cameras
 c = ctx.botSettings_().calc;
 ok(c.cameras === 5 && c.lenses === 1 && c.base === 's', '數量最多 5 台、最少 1；基準邊亂填 = 短邊');
 ok(ctx.handleBotGetSettings({ _user: admin }).cs.calc.cameras === 5, '設定頁讀得到');
+// 關閉思考開關：預設開，後台可關，機器人啟動資訊會帶著
+ok(ctx.botSettings_().noThinking === true && ctx.csStart_('V' + '1'.repeat(32), {}).noThinking === true, '預設關閉思考');
+ctx.handleBotSaveSettings({ _user: admin, cs: { noThinking: false } });
+ok(ctx.botSettings_().noThinking === false && ctx.csStart_('V' + '1'.repeat(32), {}).noThinking === false, '後台取消勾選 → 機器人會讓模型思考');
+ctx.handleBotSaveSettings({ _user: admin, cs: { noThinking: true } });
+ok(ctx.botSettings_().noThinking === true, '再勾回來');
 console.log('calc reply checks passed:', pass);

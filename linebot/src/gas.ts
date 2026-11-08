@@ -65,6 +65,8 @@ export interface CsInfo {
   turnCount?: number;
   /** 聯繫資料：'' 還沒問 / asked 已問過 / done 已留 */
   leadState?: "" | "asked" | "done";
+  /** 回覆時關閉 Gemini 的思考（BOT 設定可開關；沒帶 = 關閉思考） */
+  noThinking?: boolean;
   /** 知識庫有附圖時可以直接給客人 */
   sendImages?: boolean;
   history: { u: boolean; t: string }[];

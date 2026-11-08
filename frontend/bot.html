@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261108b"></script>
+<script src="theme.js?v=20261108c"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261108b" />
-<link rel="stylesheet" href="dark.css?v=20261108b" />
+<link rel="stylesheet" href="style.css?v=20261108c" />
+<link rel="stylesheet" href="dark.css?v=20261108c" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -200,6 +200,7 @@
       <label class="bot-check"><input type="checkbox" id="cs-handoff-button" /> 每則回覆下方都附「🙋 轉真人」按鈕（網站視窗是回覆下方的小按鈕；LINE 是快速回覆按鈕），客人按了就直接轉給專人並通知同仁</label>
       <label>聊到第 <input type="number" id="cs-contact-after" min="0" max="50" style="width:80px;display:inline-block;" /> 段後，請訪客留下聯繫資料（0 = 不問）</label>
       <div class="calc-hint">網站視窗會跳出表單（姓名、公司、電話、Email；至少要有電話或 Email）；LINE 沒辦法跳表單，會在回覆後面請客人直接回覆，客人說了機器人就會記下來。每位客人只問一次，留下的資料在「🧾 聯繫名單」，同時用首頁備忘錄通知有 BOT 權限的同仁。</div>
+      <label class="bot-check"><input type="checkbox" id="cs-no-thinking" /> 回覆時<b>關閉 Gemini 的「思考」</b>（預設開）：模型不先在內部推理，直接回答，比較快也比較省；複雜問題想讓它想仔細一點，就取消勾選（會變慢、變貴）。只對 Gemini 2.5 Flash 生效，其他模型不受影響</label>
       <label class="bot-check"><input type="checkbox" id="cs-send-images" /> 問到知識庫有附圖的內容時，機器人直接傳圖片給客人（在「📚 知識庫」編輯項目時上傳圖片）</label>
       <label class="bot-check"><input type="checkbox" id="cs-src-calc" /> 選型計算：客人問視野、精度、相機鏡頭怎麼選時，機器人把需求整理成參數，由程式查型錄算出前三名建議再回答（型錄只有型號與規格，<b>不含價格、供應商</b>；跟下面「產品資料庫」的開關各自獨立）</label>
       <div class="calc-hint" style="margin-top:10px;"><b>選型計算的回覆格式</b>（客服機器人與員工助理共用）</div>
@@ -624,12 +625,12 @@
   </div>
 </div>
 
-<script src="config.js?v=20261108b"></script>
-<script src="demo.js?v=20261108b"></script>
-<script src="common.js?v=20261108b"></script>
-<script src="assistant.js?v=20261108b"></script>
-<script src="alerts.js?v=20261108b"></script>
-<script src="bot.js?v=20261108b"></script>
-<script src="botstaff.js?v=20261108b"></script>
+<script src="config.js?v=20261108c"></script>
+<script src="demo.js?v=20261108c"></script>
+<script src="common.js?v=20261108c"></script>
+<script src="assistant.js?v=20261108c"></script>
+<script src="alerts.js?v=20261108c"></script>
+<script src="bot.js?v=20261108c"></script>
+<script src="botstaff.js?v=20261108c"></script>
 </body>
 </html>

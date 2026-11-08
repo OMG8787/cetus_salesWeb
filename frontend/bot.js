@@ -157,6 +157,7 @@ function fillCs(cs) {
   $('cs-handoff-button').checked = cs.handoffButton !== false;
   setVal('cs-contact-after', cs.contactAfter === undefined ? 3 : cs.contactAfter);
   $('cs-send-images').checked = cs.sendImages !== false;
+  $('cs-no-thinking').checked = cs.noThinking !== false;
   const calc = cs.calc || {};
   $('cs-calc-brief').checked = calc.brief !== false;
   setVal('cs-calc-cameras', calc.cameras || 1);
@@ -220,6 +221,7 @@ function readCs() {
     handoffButton: $('cs-handoff-button').checked,
     contactAfter: val('cs-contact-after'),
     sendImages: $('cs-send-images').checked,
+    noThinking: $('cs-no-thinking').checked,
     calc: { brief: $('cs-calc-brief').checked, cameras: val('cs-calc-cameras'), lenses: val('cs-calc-lenses'), base: val('cs-calc-base') },
     style: { tone: val('cs-tone'), address: val('cs-address'), emoji: val('cs-emoji'), maxLines: val('cs-max-lines') },
     buttons: val('cs-buttons'),

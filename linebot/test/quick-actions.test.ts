@@ -226,3 +226,30 @@ test("同一輪的多個工具一起跑，結果順序不變", async () => {
     globalThis.fetch = inner;
   }
 });
+
+test("關閉思考是開關：預設關閉思考（送 thinkingBudget 0），後台取消勾選就不送", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const inner = globalThis.fetch;
+  let noThinking: boolean | undefined;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    if (String(input) === process.env.GAS_URL && body.op === "csStart") {
+      return new Response(JSON.stringify({ success: true, data: { ...info(), ai: { source: "bot", provider: "gemini", apiKey: "KEY", model: "gemini-2.5-flash", endpoint: "https://ai.example/v1beta" }, noThinking } }));
+    }
+    if (String(input).includes("/v1beta/")) bodies.push(body);
+    return inner(input, init);
+  }) as typeof fetch;
+  try {
+    answer = () => text("保固一年。");
+    for (const [flag, expectCfg] of [[undefined, true], [true, true], [false, false]] as const) {
+      noThinking = flag;
+      bodies.length = 0;
+      resetKnowledgeCache();
+      await csConverse("V" + (flag === undefined ? "7" : flag ? "8" : "9").repeat(32), "保固多久", { channel: "web" });
+      const cfg = (bodies.at(-1) as { generationConfig?: { thinkingConfig?: { thinkingBudget: number } } }).generationConfig;
+      assert.equal(cfg?.thinkingConfig?.thinkingBudget === 0, expectCfg, `noThinking=${flag}`);
+    }
+  } finally {
+    globalThis.fetch = inner;
+  }
+});
