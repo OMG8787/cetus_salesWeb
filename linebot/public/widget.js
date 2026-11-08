@@ -121,7 +121,7 @@
   var wrap = $(".w"), launch = $(".launch"), panel = $(".panel"), body = $(".body"), input = $("textarea"), sendBtn = $(".send"), badge = $(".badge");
 
   var readyDone, ready = new Promise(function (r) { readyDone = r; });
-  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, welcomed = false, loaded = false, welcomeRow = null;
+  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, welcomed = false, loaded = false, welcomeRow = null, hasChat = false, endedNote = false;
 
   /* ───────── 訊息顯示（一律用 textContent / DOM，不用 innerHTML 塞使用者或 AI 的文字） ───────── */
   function linkify(el, text) {
@@ -166,6 +166,7 @@
 
   function add(kind, text, opts) {
     opts = opts || {};
+    if (kind === "me") hasChat = true; // 這一段對話訪客說過話：關閉視窗時要結束這一段
     var pics = opts.images || [];
     if (kind === "ai") { var ex = extractImages(text); text = ex.text; pics = pics.concat(ex.images); }
     disableChips(); // 只有最新一則的按鈕能按
@@ -265,6 +266,7 @@
   function welcome() {
     if (welcomed || !cfg || !cfg.welcome) return;
     welcomed = true;
+    if (endedNote) { endedNote = false; note("上一段對話已結束，歡迎重新提問"); }
     welcomeRow = add("ai", cfg.welcome.text, { choices: cfg.welcome.choices, quick: true }); // 打招呼：附「轉真人客服 / 找相機 / 找鏡頭」
   }
 
@@ -455,6 +457,17 @@
     panel.classList.remove("open"); wrap.classList.remove("open-m");
     panel.setAttribute("aria-hidden", "true"); launch.setAttribute("aria-expanded", "false");
     try { window.dispatchEvent(new CustomEvent("aoichat:close")); } catch (e) { /* 舊瀏覽器略過 */ }
+    endChat();
+  }
+  /* 訪客關閉視窗 = 這一段對話結束：通知後台（記一筆「客人關閉聊天室」，之前的紀錄都留著），下次打開是全新的一段。
+     沒說過話 / 客服正在回覆 / 專人接手中（還在等專人回覆）時只是收起視窗，不結束對話。 */
+  function endChat() {
+    if (!hasChat || busy || pollTimer) return;
+    hasChat = false;
+    try {
+      fetch(API + "/close", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor }) }).catch(function () { /* 關閉通知失敗不影響訪客 */ });
+    } catch (e) { /* 舊瀏覽器略過 */ }
+    body.innerHTML = ""; lastId = 0; welcomed = false; welcomeRow = null; loaded = false; cardOpen = false; endedNote = true;
   }
   function toggle() { isOpen() ? close() : open(); }
 

@@ -6643,7 +6643,7 @@ var SHEET_BOT_LEADS = 'BotLeads';
 var BOT_SECRET_PROP = 'BOT_SECRET'; // 舊版共用金鑰（只讀，重新產生金鑰時會自動拆成下面兩把）
 var BOT_CS_SECRET_PROP = 'BOT_CS_SECRET'; // 客服機器人專用：只能呼叫客服的操作
 var BOT_STAFF_SECRET_PROP = 'BOT_STAFF_SECRET'; // 員工助理專用：只能呼叫員工助理的操作
-var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget', 'csLead'];
+var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget', 'csLead', 'csEnd'];
 var SHEET_BOT_VEC = 'BotVectors';
 var BOT_KB_VER_PROP = 'BOT_KB_VER';
 var BOT_VEC_DIM = 256; // 向量維度（Gemini / OpenAI 都支援縮小維度；256 維兼顧準確度與試算表容量）
@@ -6655,6 +6655,7 @@ var BOT_CS_PRODUCT_FIELDS = [
   ['FPS', '影格率 fps'], ['Mount', '接口'], ['FocalLength', '焦距 mm'], ['Magnification', '放大倍率'], ['WD', '工作距離 WD'], ['DOF', '景深 DOF'], ['FocusWD', '最近對焦距離'], ['EffectivePixels', '有效像素'],
 ];
 var BOT_GEN_PROP = 'BOT_HIST_GEN';
+var BOT_CLOSE_TEXT = '（客人關閉聊天室）';
 var BOT_LOG_MAX = 4000; // 對話紀錄最多留幾筆的「預設值」（BOT 設定 → 連線與設定可以自己改；超過會自動刪最舊的）
 
 var BOT_AI_PROVIDERS = {
@@ -7174,6 +7175,7 @@ function handleBotApi(body) {
       if (op === 'csStart') data = csStart_(id, body);
       else if (op === 'csRemember') data = csRemember_(id, body);
       else if (op === 'csForget') data = csForget_(id);
+      else if (op === 'csEnd') data = csEnd_(id);
       else if (op === 'csHandoff') data = csHandoff_(id, body);
       else if (op === 'csLead') data = csLead_(id, body);
       else if (op === 'csMessages') data = csMessages_(id, body);
@@ -7546,6 +7548,33 @@ function csForget_(id) {
   // 對話紀錄裡記一筆「重新開始」：網站視窗重新整理後不再顯示這之前的對話
   if (id.charAt(0) !== 'T') botLogTurns_(id.charAt(0) === 'V' ? 'web' : 'line', id, '', [{ role: 'reset', text: '（客人重新開始對話）' }], '');
   return csResume_(id);
+}
+
+/** 這位客人目前有沒有「進行中」的對話：最後一次 reset（重新開始 / 關閉聊天室）之後還有客人或機器人的訊息。 */
+function botSessionOpen_(id) {
+  var sheet = getSheet(SHEET_BOT_MSG);
+  var last = sheet.getLastRow();
+  if (last < 2) return false;
+  var from = Math.max(2, last - 400);
+  var rows = sheet.getRange(from, 4, last - from + 1, 3).getValues(); // UserId, Name, Role
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][0]) !== id) continue;
+    return rows[i][2] !== 'reset';
+  }
+  return false;
+}
+
+/**
+ * 客人關閉了網站客服視窗：這一段對話結束。後台記一筆「客人關閉聊天室」，下次開視窗是全新的一段（機器人不記得上一段）；
+ * 之前的紀錄都還在，後台用不同顏色區分。跟「重新開始」不同：不會解除小編接手（還在等專人回覆時視窗不會呼叫這個）。
+ */
+function csEnd_(id) {
+  if (id.charAt(0) === 'T') return true;
+  var wasOpen = botSessionOpen_(id);
+  botCacheRemove_([csHistKey_(id), 'cscnt:' + id]);
+  if (botCacheGet_('cslead:' + id) === 'asked') botCacheRemove_(['cslead:' + id]);
+  if (wasOpen) botLogTurns_(id.charAt(0) === 'V' ? 'web' : 'line', id, '', [{ role: 'reset', text: BOT_CLOSE_TEXT }], '');
+  return wasOpen;
 }
 
 // ---- 對話紀錄（BotMessages） ----
@@ -8531,13 +8560,24 @@ function handleBotConversations(body) {
       var id = String(r[3]);
       if (!id) return;
       if (!groups[id]) {
-        groups[id] = { id: id, name: '', channel: String(r[2]), count: 0, lastAt: '', lastText: '', lastRole: '', topic: '' };
+        groups[id] = { id: id, name: '', channel: String(r[2]), count: 0, lastAt: '', lastText: '', lastRole: '', topic: '', sessions: 0, closed: false, inSession: false };
         order.push(id);
       }
       var g = groups[id];
+      g.lastAt = String(r[1]);
+      if (String(r[5]) === 'reset') {
+        // 重新開始 / 關閉聊天室：這一段對話結束（closed = 客人關閉了視窗，目前沒有進行中的對話）
+        g.inSession = false;
+        g.closed = String(r[6]).indexOf('關閉聊天室') > -1;
+        return;
+      }
+      if (!g.inSession) {
+        g.inSession = true;
+        g.sessions++;
+      }
+      g.closed = false;
       g.count++;
       if (r[4]) g.name = String(r[4]);
-      g.lastAt = String(r[1]);
       g.lastText = String(r[6]).slice(0, 80);
       g.lastRole = String(r[5]);
       if (r[7]) g.topic = String(r[7]);
@@ -8546,7 +8586,10 @@ function handleBotConversations(body) {
   var paused = {};
   csPauseList_().forEach(function (p) { paused[p.id] = p; });
   var leads = botLeadMap_();
-  var list = order.map(function (id) { return Object.assign(groups[id], { paused: !!paused[id], lead: leads[id] || null }); });
+  var list = order.filter(function (id) { return groups[id].count > 0; }).map(function (id) {
+    delete groups[id].inSession;
+    return Object.assign(groups[id], { paused: !!paused[id], lead: leads[id] || null });
+  });
   list.sort(function (a, b) { return String(b.lastAt).localeCompare(String(a.lastAt)); });
   return { success: true, conversations: list.slice(0, 100), pauses: csPauseList_(), total: Math.max(0, last - 1), max: botGeneral_().logMax };
 }

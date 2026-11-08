@@ -148,15 +148,17 @@ test("聊到第 3 段：網站要跳出留資料表單；LINE 在回覆後面請
 });
 
 test("還沒到段數 / 問過了 / 留過了 / 後台設 0 → 不問", async () => {
+  let n = 0;
+  const visitor = () => "V" + (++n).toString(16).repeat(32); // 每次換新訪客：一定讀最新狀態
   for (const info of [{ turnCount: 1 }, { turnCount: 5, leadState: "asked" as const }, { turnCount: 5, leadState: "done" as const }, { turnCount: 9, contactAfter: 0 }]) {
     state.info = info;
-    const r = await csConverse(V, "保固多久", { channel: "web" });
+    const r = await csConverse(visitor(), "保固多久", { channel: "web" });
     assert.equal(r.askContact, false, JSON.stringify(info));
   }
   state.info = { turnCount: 2, contactAfter: 5 };
-  assert.equal((await csConverse(V, "保固多久", { channel: "web" })).askContact, false, "後台改成 5 段 → 第 3 段不問");
+  assert.equal((await csConverse(visitor(), "保固多久", { channel: "web" })).askContact, false, "後台改成 5 段 → 第 3 段不問");
   state.info = { turnCount: 4, contactAfter: 5 };
-  assert.equal((await csConverse(V, "保固多久", { channel: "web" })).askContact, true, "第 5 段才問");
+  assert.equal((await csConverse(visitor(), "保固多久", { channel: "web" })).askContact, true, "第 5 段才問");
 });
 
 test("客人在聊天中主動留資料 → AI 呼叫 save_contact 記下來，這次就不再追問", async () => {

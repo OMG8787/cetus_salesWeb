@@ -749,3 +749,11 @@ header, .tabs { position: relative; z-index: 300; }
 .bot-conv-del:hover { opacity: 1; }
 .bot-badge.ok { background: #dff3e4; color: #1e7a38; }
 .bot-lead-card { background: #f1faf3; border: 1px solid #bfe3c8; border-radius: 6px; padding: 6px 10px; margin-top: 8px; font-size: 13px; }
+.bot-badge.closed { background: #eceff3; color: #5b6572; }
+.bot-msg.old { opacity: .85; }
+.bot-msg.old .bot-bub, .bot-msg.old.bot .bot-bub, .bot-msg.old.human .bot-bub { background: #eef0f3; border-color: #d5d9df; color: #56606c; }
+.bot-msg.old .bot-who { color: #98a1ad; }
+.bot-note.bot-divider { align-self: stretch; text-align: center; border-top: 1px dashed #c3c9d2; margin: 8px 0 4px; padding-top: 4px; color: #7b8592; }
+.bot-note.bot-divider.closed { color: #b4690e; border-top-color: #e3b56a; }
+.bot-note.bot-sessions { background: #fff8e8; border: 1px solid #f0dca8; border-radius: 6px; padding: 4px 8px; color: #7a5a14; }
+.bot-old-key { background: #e3e6ea; border-radius: 3px; padding: 0 4px; color: #56606c; }

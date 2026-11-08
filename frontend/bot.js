@@ -845,7 +845,7 @@ async function loadTalk(silent) {
     ? list
         .map(
           (c) => `<div class="bot-conv ${c.lead ? 'lead' : ''} ${selectedConv === c.id ? 'sel' : ''}" onclick="openThread('${htmlEsc(c.id)}')">
-        <div class="bot-conv-top"><span><b>${htmlEsc(convLabel(c))}</b> <span class="bot-badge">${c.channel === 'web' ? '網站' : 'LINE'}</span>${c.lead ? ' <span class="bot-badge ok">📇 已留資料</span>' : ''}${c.paused ? ' <span class="bot-badge warn">待專人</span>' : ''}</span>${isAdminUser() ? `<button type="button" class="bot-conv-del" title="刪除這位客人的對話紀錄" onclick="event.stopPropagation();deleteConversation('${htmlEsc(c.id)}')">🗑</button>` : ''}</div>
+        <div class="bot-conv-top"><span><b>${htmlEsc(convLabel(c))}</b> <span class="bot-badge">${c.channel === 'web' ? '網站' : 'LINE'}</span>${c.lead ? ' <span class="bot-badge ok">📇 已留資料</span>' : ''}${c.paused ? ' <span class="bot-badge warn">待專人</span>' : ''}${c.closed ? ' <span class="bot-badge closed" title="客人已關閉聊天室，目前沒有進行中的對話">🔒 已關閉</span>' : ''}${c.sessions > 1 ? ` <span class="bot-badge" title="這位客人之前還有 ${c.sessions - 1} 段已結束的對話">📜 ${c.sessions} 段</span>` : ''}</span>${isAdminUser() ? `<button type="button" class="bot-conv-del" title="刪除這位客人的對話紀錄" onclick="event.stopPropagation();deleteConversation('${htmlEsc(c.id)}')">🗑</button>` : ''}</div>
         <div class="calc-hint">${htmlEsc(String(c.lastAt).slice(5, 16))}・${c.count} 則${c.topic ? '・' + htmlEsc(c.topic) : ''}</div>
         <div class="calc-hint bot-snip">${c.lastRole === 'user' ? '客人：' : c.lastRole === 'human' ? '專人：' : '機器人：'}${htmlEsc(c.lastText)}</div>
       </div>`
@@ -902,12 +902,22 @@ async function openThread(id, keepScroll) {
   $('thread-delete').style.display = isAdminUser() ? '' : 'none';
   const box = $('thread-box');
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  box.innerHTML = r.messages
-    .map((m) =>
-      m.role === 'reset'
-        ? `<div class="bot-note">${htmlEsc(m.text)}・${htmlEsc(m.time.slice(5, 16))}</div>`
-        : `<div class="bot-msg ${m.role}"><div class="bot-who">${m.role === 'user' ? '客人' : m.role === 'human' ? '專人' : '機器人'}・${htmlEsc(m.time.slice(5, 16))}${m.topic ? '・' + htmlEsc(m.topic) : ''}</div><div class="bot-bub">${htmlEsc(String(m.text).replace(/\[\[img:([^|\]]*)\|?([^\]]*)\]\]/g, (_, u, c) => '🖼️ 附圖：' + (c || '圖片')))}</div></div>`
-    )
+  // 客人關閉聊天室 / 重新開始 = 一段對話結束：最後一個標記之前的都是「之前的對話」，用灰色區分；之後（進行中）的維持原本顏色
+  const lastReset = r.messages.map((m) => m.role).lastIndexOf('reset');
+  let seg = 1;
+  const segs = r.messages.filter((m) => m.role === 'reset').length + 1;
+  const stateText = lastReset === r.messages.length - 1 && lastReset >= 0 ? (/關閉聊天室/.test(r.messages[lastReset].text) ? '目前：客人已關閉聊天室' : '目前：客人剛重新開始') : '目前：對話進行中';
+  const banner = segs > 1 ? `<div class="bot-note bot-sessions">📜 這位客人共 ${segs} 段對話（${htmlEsc(stateText)}）；<span class="bot-old-key">灰底</span> = 之前已結束的對話</div>` : '';
+  box.innerHTML = banner + r.messages
+    .map((m, i) => {
+      if (m.role === 'reset') {
+        const closed = /關閉聊天室/.test(m.text);
+        const html = `<div class="bot-note bot-divider ${closed ? 'closed' : ''}">${closed ? '🔒 客人關閉聊天室' : '🔄 客人重新開始對話'}・${htmlEsc(m.time.slice(5, 16))}（第 ${seg} 段結束）</div>`;
+        seg++;
+        return html;
+      }
+      return `<div class="bot-msg ${m.role} ${i < lastReset ? 'old' : ''}"><div class="bot-who">${m.role === 'user' ? '客人' : m.role === 'human' ? '專人' : '機器人'}・${htmlEsc(m.time.slice(5, 16))}${m.topic ? '・' + htmlEsc(m.topic) : ''}</div><div class="bot-bub">${htmlEsc(String(m.text).replace(/\[\[img:([^|\]]*)\|?([^\]]*)\]\]/g, (_, u, c) => '🖼️ 附圖：' + (c || '圖片')))}</div></div>`;
+    })
     .join('');
   if (!keepScroll || bottom) box.scrollTop = box.scrollHeight;
   $('thread-resume').style.display = r.paused ? '' : 'none';

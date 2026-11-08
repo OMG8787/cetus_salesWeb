@@ -116,7 +116,7 @@ ok(run('handleTodoGet', 'amy', {}).todos.every((x) => x.id !== t1) && run('handl
 ok(run('handleTodoGet', 'amy', { status: 'all' }).todos.at(-1).status === 'done', '全部時，已完成排最後');
 ok(!run('handleTodoSetStatus', 'amy', { id: t1, status: 'weird' }).success, '狀態驗證');
 ok(run('handleTodoSetStatus', 'amy', { id: t1, status: 'todo' }).success && run('handleTodoGet', 'amy', {}).todos.some((x) => x.id === t1), '重開');
-ok(run('handleTodoSave', 'amy', { id: t2, title: '整理報價（改）', dueDate: '2026-11-08', priority: '中', shareMode: 'users', shareWith: ['cat'] }).success && run('handleTodoGet', 'cat', {}).todos.some((x) => x.id === t2), '修改並分享給指定人');
+ok(run('handleTodoSave', 'amy', { id: t2, title: '整理報價（改）', dueDate: '2028-02-02', priority: '中', shareMode: 'users', shareWith: ['cat'] }).success && run('handleTodoGet', 'cat', {}).todos.some((x) => x.id === t2), '修改並分享給指定人');
 ok(run('handleTodoDelete', 'amy', { id: t3 }).success && !run('handleTodoGet', 'amy', {}).todos.some((x) => x.id === t3), '刪除');
 
 // ---------- 備忘錄分享 ----------

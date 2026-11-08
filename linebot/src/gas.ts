@@ -273,6 +273,10 @@ export const gas = {
   csForget(lineUserId: string): Promise<boolean> {
     return post<boolean>({ op: "csForget", lineUserId });
   },
+  /** 客人關閉了網站客服視窗：這一段對話結束（後台記一筆標記，之前的紀錄都還在） */
+  csEnd(lineUserId: string): Promise<boolean> {
+    return post<boolean>({ op: "csEnd", lineUserId });
+  },
   csHandoff(lineUserId: string, displayName: string, text: string, topic = ""): Promise<boolean> {
     return post<boolean>({ op: "csHandoff", lineUserId, displayName, text, topic });
   },

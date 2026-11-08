@@ -79,6 +79,37 @@ export async function prewarmCs(): Promise<void> {
 export function resetKnowledgeCache(): void {
   cached = null;
   catalogCache = null;
+  sessions.clear();
+  template = null;
+}
+
+// ---- 熱路徑：同一個執行個體內，第二則訊息起不用等管理系統（Apps Script 一次約 2.5 秒）----
+// 設定（提示詞、AI、知識庫版本…）用最近一次 csStart 的結果，這位客人的對話（歷史、段數、留資料狀態）記在記憶體；
+// 同時在背景打一次 csStart 取得最新狀態，AI 回覆好、要送出前再檢查一次：停用 / 小編接手 / 傳太快 / 專人服務時間 → 照舊不回，回覆作廢。
+interface Session { at: number; history: { u: boolean; t: string }[]; turnCount: number; leadState: CsInfo["leadState"]; known: boolean }
+const sessions = new Map<string, Session>();
+let template: { at: number; info: CsInfo } | null = null;
+const SESSION_TTL_MS = 5 * 60_000;
+const SESSION_KEEP_TURNS = 10;
+const SESSION_KEEP_CHARS = 600;
+
+function rememberSession(uid: string, info: CsInfo, said: string, reply: string, extra: { askedContact?: boolean; leadDone?: boolean }): void {
+  if (sessions.size > 500) sessions.clear();
+  const base = sessions.get(uid)?.history ?? info.history ?? [];
+  const history = [...base, { u: true, t: said.slice(0, SESSION_KEEP_CHARS) }, { u: false, t: reply.slice(0, SESSION_KEEP_CHARS) }].slice(-SESSION_KEEP_TURNS);
+  const leadState: CsInfo["leadState"] = extra.leadDone ? "done" : info.leadState || (extra.askedContact ? "asked" : "");
+  sessions.set(uid, { at: Date.now(), history, turnCount: (info.turnCount ?? 0) + 1, leadState, known: true });
+}
+
+const LEAD_RANK: Record<string, number> = { "": 0, asked: 1, done: 2 };
+
+/** 客人關閉了網站客服視窗：這一段對話結束，機器人不再記得（後台留紀錄並標示已關閉）。 */
+export async function csEnd(uid: string): Promise<boolean> {
+  sessions.delete(uid);
+  const pending = pendingRemember.get(uid); // 剛送出的最後一則還在背景寫入對話紀錄：等它寫完，關閉標記才會排在它後面
+  if (pending) await Promise.race([pending, new Promise((r) => setTimeout(r, PENDING_WAIT_MS))]);
+  pendingRemember.delete(uid);
+  return gas.csEnd(uid);
 }
 
 const squash = (s: string) => s.toLowerCase().replace(/\s+/g, "");
@@ -297,7 +328,9 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
   const lastUser = [...history].reverse().find((h) => h.u)?.t ?? "";
   const query = text.length < 10 && lastUser ? `${lastUser} ${text}` : text;
   const search = { ...DEFAULT_SEARCH, ...info.search, topK: info.search?.topK ?? TOP_K };
+  const tSearch = Date.now();
   const searched = (await runSearch(index, query, search, info.embedAi)).hits;
+  const searchMs = Date.now() - tSearch;
   // 型號直接比對：訊息（或太短的接續問題的上一句）裡有像型號的字串，就直接用型號去產品資料與選型型錄找，找到的排在最前面
   const models = extractModels(text).length ? extractModels(text) : text.length < 12 ? extractModels(lastUser) : [];
   let modelHits: Hit[] = [];
@@ -323,6 +356,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
 
   const turns: Turn[] = [...history.map((h) => ({ isUser: h.u, text: h.t })), { isUser: true, text }];
   let reply: string;
+  const tGen = Date.now();
   try {
     reply = cleanReply(await generate({ ai: info.ai!, fallback: info.aiFallback, system: csSystemPrompt(info, formatHits(hits)), turns, tools, fast: true }));
     if (!reply) {
@@ -334,6 +368,7 @@ export async function csAnswer(info: CsInfo, text: string, history: { u: boolean
     reply = `不好意思，系統忙碌中，請稍後再問一次，或輸入「${callWord(info)}」由專人回覆 🙏`;
     return { reply, choices, handed: handed.topic, images: [], leadSaved: false, quickActions: true };
   }
+  console.log(`[cs-timing] search=${searchMs}ms generate=${Date.now() - tGen}ms`);
   // 回覆前檢查（沒開、或這則本來就要轉真人時不檢查）：沒有根據就不送出，改請客人找專人（或直接轉專人）
   if (info.groundCheck && handed.topic === null) {
     const questions = [...history.filter((h) => h.u).slice(-2).map((h) => h.t), text];
@@ -390,11 +425,38 @@ const PENDING_WAIT_MS = 8000;
 export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string>; human?: boolean; defer?: (job: Promise<unknown>) => void }): Promise<CsResult> {
   const t0 = Date.now();
   // 同一位訪客上一則的對話紀錄還在背景寫入時，先等它寫完再讀歷史（否則 AI 會看不到上一輪）；最多等 8 秒
-  const pending = pendingRemember.get(uid);
-  if (pending) await Promise.race([pending, new Promise((r) => setTimeout(r, PENDING_WAIT_MS))]);
-  const info = await gas.csStart(uid);
-  const tStart = Date.now() - t0;
   const testing = opts.channel === "test";
+  // 熱路徑：這位客人剛在這個執行個體聊過、設定也是新的 → 先用記憶體裡的狀態開始想答案，管理系統的最新狀態在背景取得、送出前再核對
+  const local = sessions.get(uid);
+  const quick = !testing && !!local && Date.now() - local.at < SESSION_TTL_MS && !!template && template.info.enabled && !!template.info.ai && template.info.replyWhen !== "offHours";
+  let info: CsInfo;
+  let freshP: Promise<CsInfo | null>;
+  if (quick) {
+    freshP = gas.csStart(uid).then((i) => { template = { at: Date.now(), info: i }; return i; }, (err) => { console.warn("背景取得客服狀態失敗，沿用記憶體裡的", (err as Error).message); return null; });
+    info = { ...template!.info, history: local!.history, turnCount: local!.turnCount, leadState: local!.leadState, known: local!.known, paused: false, rateLimited: false };
+  } else {
+    // 同一位訪客上一則的對話紀錄還在背景寫入時，先等它寫完再讀歷史（否則 AI 會看不到上一輪）；最多等 8 秒
+    const pending = pendingRemember.get(uid);
+    if (pending) await Promise.race([pending, new Promise((r) => setTimeout(r, PENDING_WAIT_MS))]);
+    info = await gas.csStart(uid);
+    template = { at: Date.now(), info };
+    freshP = Promise.resolve(info);
+  }
+  const tStart = Date.now() - t0;
+  const reset = RESET_WORDS.includes(text);
+  /** 熱路徑送出前再核對一次最新狀態：停用 / 傳太快 / 專人服務時間 / 小編接手中 → 回覆作廢；沒問題就換成最新的設定。 */
+  const settle = async (): Promise<CsResult | null> => {
+    if (!quick) return null;
+    const fresh = await freshP;
+    if (!fresh) return null;
+    if (!testing && (!fresh.enabled || !fresh.ai)) return NO_REPLY(fresh);
+    if (fresh.rateLimited) return { ...NO_REPLY(fresh), silent: false, reply: "訊息傳得太快了，請稍等一下再試 🙏" };
+    if (!testing && fresh.replyWhen === "offHours" && fresh.inHours === true) return NO_REPLY(fresh);
+    if (fresh.paused && !reset && !testing) return NO_REPLY(fresh, true);
+    const leadState: CsInfo["leadState"] = (LEAD_RANK[fresh.leadState ?? ""] ?? 0) >= (LEAD_RANK[info.leadState ?? ""] ?? 0) ? fresh.leadState : info.leadState;
+    info = { ...fresh, history: info.history, turnCount: Math.max(fresh.turnCount ?? 0, info.turnCount ?? 0), leadState, known: fresh.known || info.known };
+    return null;
+  };
   if (!testing && (!info.enabled || !info.ai)) return NO_REPLY(info);
   if (testing && !info.ai) {
     return { ...NO_REPLY(info), silent: false, reply: "還沒有設定 AI：請先到「AI 模型」填入 API Key 並儲存。" };
@@ -402,16 +464,17 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   if (info.rateLimited) return { ...NO_REPLY(info), silent: false, reply: "訊息傳得太快了，請稍等一下再試 🙏" };
   // 設定「只在專人服務時間以外回覆」：服務時間內交給專人（測試聊天不受限）
   if (!testing && info.replyWhen === "offHours" && info.inHours === true) return NO_REPLY(info);
-  const reset = RESET_WORDS.includes(text);
   if (info.paused && !reset && !testing) return NO_REPLY(info, true);
 
   const name = async () => (info.known === false || opts.channel === "web" ? (await opts.displayName?.()) ?? "" : "");
   const said = opts.human ? handoffLabel(info) : text; // 客人按「轉真人」按鈕時，對話紀錄記成按鈕上的字
   // 記錄對話要寫進管理系統（Apps Script 一次要好幾秒）：網站視窗用 defer 放到回應之後再寫，客人不用多等
-  const remember = async (reply: string, topic = "", extra: { askedContact?: boolean; images?: ReplyImage[] } = {}) => {
+  const remember = async (reply: string, topic = "", extra: { askedContact?: boolean; images?: ReplyImage[]; leadDone?: boolean } = {}) => {
+    if (!testing) rememberSession(uid, info, said, reply, extra);
+    const { leadDone: _leadDone, ...sent } = extra;
     const job = (async () => {
       try {
-        await gas.csRemember(uid, [{ u: true, t: said }, { u: false, t: reply }], await name(), topic, extra);
+        await gas.csRemember(uid, [{ u: true, t: said }, { u: false, t: reply }], await name(), topic, sent);
       } catch (err) {
         console.warn("記錄客服對話失敗", err);
       }
@@ -430,7 +493,14 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
     return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info, images: [], askContact: false, handoffButton: false, quickActions: false };
   };
 
+  const direct = reset || opts.human || hasWord(text, info.handoffWords?.length ? info.handoffWords : DEFAULT_HANDOFF) || !!matchTopic(text, info.topics);
+  if (direct) {
+    const stop = await settle(); // 重新開始 / 轉真人：會寫入管理系統，先確認最新狀態
+    if (stop) return stop;
+  }
+
   if (reset) {
+    sessions.delete(uid);
     await gas.csForget(uid);
     return { silent: false, paused: false, reply: "好的～想問什麼都可以直接問我 😊", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: info.handoffButton !== false, quickActions: false };
   }
@@ -444,7 +514,10 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
 
   const tAns = Date.now();
   const answer = await csAnswer(info, text, info.history, uid);
-  console.log(`[cs-timing] csStart=${tStart}ms answer=${Date.now() - tAns}ms before-reply=${Date.now() - t0}ms channel=${opts.channel}`);
+  const tAnsMs = Date.now() - tAns;
+  const stop = await settle(); // 熱路徑：AI 想答案的同時，最新狀態早就回來了（通常不用再等）
+  console.log(`[cs-timing] csStart=${tStart}ms answer=${tAnsMs}ms settle=${Date.now() - tAns - tAnsMs}ms before-reply=${Date.now() - t0}ms channel=${opts.channel} quick=${quick}`);
+  if (stop) return stop;
   if (answer.handed !== null) return handoff(answer.handed);
   const { choices, blocked } = answer;
   const images = info.sendImages === false ? [] : answer.images;
@@ -455,7 +528,7 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
 
 ${CONTACT_ASK_TEXT}` : answer.reply;
 
-  await remember(reply, blocked ? "回覆檢查未通過" : "", { askedContact: askContact, images }); // 後台對話紀錄看得出哪些問題缺資料、需要補進知識庫
+  await remember(reply, blocked ? "回覆檢查未通過" : "", { askedContact: askContact, images, leadDone: answer.leadSaved }); // 後台對話紀錄看得出哪些問題缺資料、需要補進知識庫
   return { silent: false, paused: false, reply, choices, handoff: null, info, images, askContact, handoffButton: info.handoffButton !== false, quickActions: answer.quickActions || isGreeting(text), seeMore: answer.seeMore === true && !blocked };
 }
 

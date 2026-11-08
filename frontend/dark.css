@@ -252,3 +252,10 @@ html[data-theme="dark"] .bot-conv.lead { background: rgba(30,142,56,.14); border
 html[data-theme="dark"] .bot-conv.lead:hover, html[data-theme="dark"] .bot-conv.lead.sel { background: rgba(30,142,56,.26); }
 html[data-theme="dark"] .bot-badge.ok { background: rgba(30,142,56,.28); color: #8fe0a6; }
 html[data-theme="dark"] .bot-lead-card { background: rgba(30,142,56,.14); border-color: rgba(63,184,96,.4); color: #cfeed8; }
+html[data-theme="dark"] .bot-badge.closed { background: #2b333e; color: #aab4c2; }
+html[data-theme="dark"] .bot-msg.old .bot-bub, html[data-theme="dark"] .bot-msg.old.bot .bot-bub, html[data-theme="dark"] .bot-msg.old.human .bot-bub { background: #232a33; border-color: #343d49; color: #8b95a3; }
+html[data-theme="dark"] .bot-msg.old .bot-who { color: #697483; }
+html[data-theme="dark"] .bot-note.bot-divider { border-top-color: #3b4552; color: #8b95a3; }
+html[data-theme="dark"] .bot-note.bot-divider.closed { color: #e0a85a; border-top-color: #7a5a2a; }
+html[data-theme="dark"] .bot-note.bot-sessions { background: rgba(224,168,90,.12); border-color: rgba(224,168,90,.35); color: #e0c08a; }
+html[data-theme="dark"] .bot-old-key { background: #2b333e; color: #aab4c2; }

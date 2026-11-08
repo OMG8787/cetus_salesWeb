@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { beforeEach, test } from "node:test";
 import * as chat from "../api/widget/chat.js";
 import * as widgetConfig from "../api/widget/config.js";
+import * as closeApi from "../api/widget/close.js";
 import * as messages from "../api/widget/messages.js";
 import * as testApi from "../api/test.js";
 import { resetKnowledgeCache } from "../src/cs.js";
@@ -33,6 +34,7 @@ beforeEach(() => {
       if (body.op === "csKnowledge") return respond([{ id: "k1", source: "常見問題", title: "光源", text: "問：有光源嗎\n答：有" }]);
       if (body.op === "csRemember") return respond(2);
       if (body.op === "csForget") return respond(true);
+      if (body.op === "csEnd") return respond(true);
       if (body.op === "csThread") return respond({ messages: [{ id: 5, role: "human", text: "我是小王" }, { id: 4, role: "bot", text: "請稍候" }, { id: 3, role: "user", text: "你好" }], paused: true });
       return new Response(JSON.stringify({ success: false, message: "unknown " + body.op }));
     }
@@ -106,4 +108,13 @@ test("後台測試聊天：權杖正確才能用；重新開始；測試不通�
   assert.ok(!gasOps.includes("csHandoff"));
   assert.equal((await send({ ts, sig, testId, reset: true })).status, 200);
   assert.ok(gasOps.includes("csForget"));
+});
+
+test("關閉聊天室：通知管理系統這一段對話結束；訪客編號不對 → 400；來源不在白名單 → 403", async () => {
+  const r = await closeApi.POST(req("https://bot.example/api/widget/close", { method: "POST", origin: "https://www.cetus.tw", body: JSON.stringify({ visitorId: VID }) }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ended: true });
+  assert.ok(gasOps.includes("csEnd"));
+  assert.equal((await closeApi.POST(req("https://bot.example/api/widget/close", { method: "POST", body: JSON.stringify({ visitorId: "bad" }) }))).status, 400);
+  assert.equal((await closeApi.POST(req("https://bot.example/api/widget/close", { method: "POST", origin: "https://evil.example", body: JSON.stringify({ visitorId: VID }) }))).status, 403);
 });

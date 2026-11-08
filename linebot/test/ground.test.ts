@@ -138,7 +138,7 @@ test("有指定「回覆檢查」用的 AI 就用它；沒指定用客服那一�
   assert.ok(state.aiCalls.some((c) => c.url.startsWith("https://ai.example/")), "回答仍用客服那組");
   state.aiCalls = [];
   state.info = { groundCheck: true };
-  await csConverse(UID, "有光源嗎", { channel: "line" });
+  await csConverse("U" + "9".repeat(32), "有光源嗎", { channel: "line" }); // 新訪客：一定讀最新設定
   assert.ok(checkerCalls()[0].url.startsWith("https://ai.example/"));
 });
 
@@ -163,7 +163,7 @@ test("知識庫版本號：版本一樣用快取、版本變了就馬上重讀�
   await csConverse(UID, "有光源嗎", { channel: "line" });
   assert.equal(gasOps("csKnowledge").length, 3, "同版本 → 不重讀");
   state.info = { kbVer: "b" };
-  await csConverse(UID, "有光源嗎", { channel: "line" });
+  await csConverse("U" + "8".repeat(32), "有光源嗎", { channel: "line" }); // 新訪客：一定讀最新設定
   assert.equal(gasOps("csKnowledge").length, 4, "版本變了 → 重讀");
 });
 

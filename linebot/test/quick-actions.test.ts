@@ -94,26 +94,82 @@ test("一般問題不附「看更多」", async () => {
   assert.equal(r.seeMore, false);
 });
 
-test("背景寫入對話紀錄時，同一位訪客的下一則會先等它寫完再讀歷史", async () => {
+// ---- 熱路徑：第二則起不等管理系統（Apps Script 一次約 2.5 秒），背景核對最新狀態、送出前再確認 ----
+function slowStart(opts: { delayMs: number; patch?: () => Partial<CsInfo> }) {
   const log: string[] = [];
   const inner = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : {};
-    if (String(input) === process.env.GAS_URL && body.op === "csRemember") {
-      log.push("remember:start");
-      await new Promise((r) => setTimeout(r, 150));
-      log.push("remember:end");
+    if (String(input) === process.env.GAS_URL && body.op === "csStart") {
+      log.push("start");
+      if (log.filter((x) => x === "start").length > 1) {
+        await new Promise((r) => setTimeout(r, opts.delayMs));
+        return new Response(JSON.stringify({ success: true, data: { ...info(), ...(opts.patch?.() ?? {}) } }));
+      }
     }
-    if (String(input) === process.env.GAS_URL && body.op === "csStart") log.push("start");
+    if (String(input) === process.env.GAS_URL && body.op === "csRemember") log.push("remember");
     return inner(input, init);
   }) as typeof fetch;
-  const jobs: Promise<unknown>[] = [];
+  return { log, restore: () => { globalThis.fetch = inner; } };
+}
+
+test("熱路徑：同一位訪客的第二則不用等管理系統，AI 看得到上一輪對話", async () => {
+  const net = slowStart({ delayMs: 400 });
+  const prompts: string[] = [];
   const U = "V" + "d".repeat(32);
   answer = () => text("保固一年。");
-  await csConverse(U, "保固多久", { channel: "web", defer: (j) => jobs.push(j) });
-  await csConverse(U, "那維修呢", { channel: "web", defer: (j) => jobs.push(j) }); // 立刻送下一則
-  await Promise.all(jobs);
-  assert.deepEqual(log.slice(0, 4), ["start", "remember:start", "remember:end", "start"], "第二則的 csStart 要在第一則的 csRemember 結束之後");
+  const jobs: Promise<unknown>[] = [];
+  try {
+    await csConverse(U, "保固多久", { channel: "web", defer: (j) => jobs.push(j) });
+    const base = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/v1beta/")) {
+        prompts.push(String(init?.body));
+        await new Promise((r) => setTimeout(r, 300)); // AI 想 300ms，管理系統 400ms：同時進行 → 約 400ms，不是 700ms
+      }
+      return base(input, init);
+    }) as typeof fetch;
+    const t = Date.now();
+    const r = await csConverse(U, "那維修呢", { channel: "web", defer: (j) => jobs.push(j) });
+    const took = Date.now() - t;
+    await Promise.all(jobs);
+    assert.ok(!r.silent && r.reply, "有回覆");
+    assert.ok(took < 600, `管理系統與 AI 同時進行（循序要 700ms）：${took}ms`);
+    assert.match(prompts[0], /保固多久/, "AI 看得到上一輪（記憶體裡的歷史）");
+    assert.equal(net.log.filter((x) => x === "start").length, 2, "背景仍然取得最新狀態");
+  } finally {
+    net.restore();
+  }
+});
+
+test("熱路徑：背景發現小編已接手 / 已停用 → 這則回覆作廢，不送出", async () => {
+  for (const patch of [{ paused: true }, { enabled: false }, { rateLimited: true }]) {
+    resetKnowledgeCache();
+    const net = slowStart({ delayMs: 50, patch: () => patch });
+    const U = "V" + "e".repeat(32);
+    try {
+      await csConverse(U, "保固多久", { channel: "web" });
+      const r = await csConverse(U, "那維修呢", { channel: "web" });
+      if ("rateLimited" in patch) assert.match(r.reply, /太快/);
+      else assert.equal(r.silent, true, JSON.stringify(patch));
+    } finally {
+      net.restore();
+    }
+  }
+});
+
+test("熱路徑：第一則、重新整理（新的執行個體）仍然等管理系統；後台測試聊天永遠讀最新設定", async () => {
+  const net = slowStart({ delayMs: 10 });
+  try {
+    const U = "V" + "f".repeat(32);
+    await csConverse(U, "保固多久", { channel: "web" });
+    assert.equal(net.log.filter((x) => x === "start").length, 1);
+    await csConverse(U, "保固多久", { channel: "test" });
+    await csConverse(U, "保固多久", { channel: "test" });
+    assert.equal(net.log.filter((x) => x === "start").length, 3, "測試聊天每則都等最新設定");
+  } finally {
+    net.restore();
+  }
 });
 
 test("Gemini 2.5 Flash：客服回覆關閉思考；型號不支援時自動拿掉再送", async () => {
