@@ -769,3 +769,55 @@ header, .tabs { position: relative; z-index: 300; }
 .export-fields label.internal { color: #c0392b; }
 .export-fields input[type=checkbox] { width: auto; margin: 0; }
 .export-ai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 16px; margin: 6px 0; }
+
+/* 開發名單庫 */
+.ps-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
+.ps-stats { font-size: 14px; }
+.ps-stats.ps-loading { opacity: .55; }
+.ps-top-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ps-top-btns button { margin: 0; }
+.ps-danger { background: #b03a2e !important; }
+.ps-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 14px; align-items: start; }
+.ps-filters { position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto; border: 1px solid #dde3ec; border-radius: 6px; background: #fff; padding: 4px 10px 10px; }
+.ps-facet { border-bottom: 1px solid #eef0f4; padding: 6px 0; }
+.ps-facet:last-child { border-bottom: none; }
+.ps-facet summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0; }
+.ps-sel { background: #2c5aa0; color: #fff; border-radius: 9px; padding: 0 7px; font-size: 12px; font-weight: 400; }
+.ps-groups { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 4px 0 6px; }
+.ps-groups .btn-mini { font-size: 11px; padding: 2px 6px; }
+.ps-opts { display: flex; flex-direction: column; }
+.ps-opt { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; cursor: pointer; }
+.ps-opt input { width: auto; margin: 0; flex: none; }
+.ps-opt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-n { color: #667; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ps-zero { opacity: .5; }
+.ps-more { background: none !important; color: #2c5aa0 !important; border: none; padding: 2px 0 !important; font-size: 12px; cursor: pointer; margin: 2px 0 0 !important; }
+.ps-main { min-width: 0; }
+.ps-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.ps-bar input { flex: 1; min-width: 240px; margin: 0; }
+.ps-bar select { margin: 0; }
+.ps-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.ps-chip { background: #e8eef8; color: #1f3d73; border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 12px; }
+.ps-chip button { background: none !important; color: #1f3d73 !important; border: none; padding: 0 5px !important; margin: 0 !important; cursor: pointer; font-size: 14px; }
+.ps-bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #fff7e0; border: 1px solid #f1d98a; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; font-size: 13px; }
+.ps-bulk select, .ps-bulk button { margin: 0; }
+.ps-table td { white-space: normal; }
+.ps-table { width: 100%; min-width: 0; }
+.ps-table .ps-name { width: 24%; min-width: 170px; }
+.ps-table .ps-cat { width: 26%; min-width: 180px; }
+.ps-table .ps-addr { width: 20%; min-width: 150px; }
+.ps-table .ps-contact { width: 14%; min-width: 130px; font-size: 12px; overflow-wrap: anywhere; }
+.ps-table .ps-prod { font-size: 12px; color: #667; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ps-table .ps-src { font-size: 11px; color: #889; margin-top: 2px; }
+.ps-table .ps-stage { margin: 0; padding: 3px 4px; font-size: 12px; }
+.ps-table tr.ps-optout td { background: #fbeceb; }
+.ps-tag { display: inline-block; background: #eef2f7; color: #334; border-radius: 4px; padding: 1px 6px; margin: 0 3px 3px 0; font-size: 12px; }
+.ps-tag-more { background: #dde3ec; }
+.ps-pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; margin: 12px 0; font-size: 13px; }
+.ps-pager button { margin: 0; }
+.ps-map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; margin-top: 6px; }
+.ps-map-row { display: grid; grid-template-columns: 96px 1fr; gap: 6px; align-items: center; font-size: 13px; }
+.ps-map-row select { margin: 0; }
+.ps-progress { height: 14px; background: #e6eaf0; border-radius: 7px; overflow: hidden; }
+.ps-progress #ps-progress-bar { height: 100%; width: 0; background: #2c5aa0; transition: width .3s; }
+@media (max-width: 900px) { .ps-layout { grid-template-columns: 1fr; } .ps-filters { position: static; max-height: none; } .ps-map { grid-template-columns: 1fr; } }

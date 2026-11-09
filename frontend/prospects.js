@@ -1,0 +1,594 @@
+/**
+ * prospects.js - 開發名單庫頁面
+ * 依賴 prospects-lib.js（讀檔 / 欄位對應 / CSV）與 common.js（callApi、htmlEsc）。
+ * 篩選、分頁、統計都在伺服器做（十萬筆不能全部載到瀏覽器）；這裡只負責畫面與操作。
+ */
+
+const IMPORT_CHUNK = 2000;
+const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', page: 1, size: 30 };
+let data = null; // 最近一次查詢結果
+let selected = new Set(); // 勾選的 Key
+let selectAllMatching = false; // 是否已選「符合條件的全部」
+let reqSeq = 0;
+let searchTimer = null;
+let industry = {};
+let stages = ['未處理', '開發中', '已聯絡', '有興趣', '無意願', '已轉客戶', '無效'];
+let editRow = null;
+const e = (v) => htmlEsc(v);
+
+function readOnly() {
+  return typeof canWrite === 'function' && !canWrite('customers');
+}
+
+// ---------- 查詢 ----------
+function filterBody() {
+  return {
+    q: state.q,
+    sources: [...state.sources],
+    cities: [...state.cities],
+    cats: [...state.cats],
+    stages: [...state.stages],
+    has: [...state.has].join(''),
+    assigned: state.assigned,
+  };
+}
+
+async function load(page) {
+  if (page) state.page = page;
+  const seq = ++reqSeq;
+  const status = document.getElementById('ps-stats');
+  if (!data) status.textContent = '讀取中…（名單很多時第一次需要幾秒）';
+  else status.classList.add('ps-loading');
+  const r = await callApi('prospectQuery', Object.assign(filterBody(), { page: state.page, size: state.size }), { silent: true });
+  if (seq !== reqSeq) return; // 已經有更新的查詢，丟掉這個舊結果
+  status.classList.remove('ps-loading');
+  if (!r || !r.success) {
+    status.textContent = (r && r.message) || '讀取失敗，請稍後再試';
+    return;
+  }
+  data = r;
+  industry = r.industry || industry;
+  stages = r.stages || stages;
+  state.page = r.page;
+  render();
+}
+
+function render() {
+  const empty = !data.ready || data.all === 0;
+  document.getElementById('ps-empty').style.display = empty ? '' : 'none';
+  document.getElementById('ps-layout').style.display = empty ? 'none' : '';
+  renderStats();
+  document.getElementById('ps-export-btn').style.display = empty ? 'none' : '';
+  if (empty) return;
+  renderFilters();
+  renderChips();
+  renderRows();
+  renderPager();
+  renderBulk();
+}
+
+function renderStats() {
+  const parts = [`名單庫共 <b>${data.all.toLocaleString()}</b> 筆`];
+  if (data.all) parts.push(`符合條件 <b>${data.total.toLocaleString()}</b> 筆`);
+  const st = window.__psStatus;
+  if (st && st.last && st.last.time) parts.push(`最後匯入：${e(st.last.time)}（${e(st.last.source || '')}）`);
+  document.getElementById('ps-stats').innerHTML = parts.join('　｜　');
+}
+
+async function loadStatus() {
+  const r = await callApi('prospectStatus', {}, { silent: true });
+  if (r && r.success) {
+    window.__psStatus = r;
+    const a = document.getElementById('ps-sheet-link');
+    if (r.url) {
+      a.href = r.url;
+      a.style.display = '';
+    }
+    if (data) renderStats();
+  }
+}
+
+// ---------- 篩選面板 ----------
+function facetBlock(title, key, list, setRef, labelOf, opts) {
+  opts = opts || {};
+  const items = list.slice();
+  // 已勾選、但現在統計是 0 的項目也要列出來，才能取消勾選
+  setRef.forEach((v) => {
+    if (!items.some((x) => x.v === v)) items.push({ v, n: 0 });
+  });
+  const shown = opts.limit && !opts.expanded ? items.slice(0, opts.limit) : items;
+  const rows = shown
+    .map(
+      (x) =>
+        `<label class="ps-opt${x.n === 0 ? ' ps-zero' : ''}"><input type="checkbox" data-facet="${key}" value="${e(x.v)}" ${setRef.has(x.v) ? 'checked' : ''}/> <span class="ps-opt-name" title="${e(labelOf(x.v))}">${e(labelOf(x.v))}</span><span class="ps-n">${x.n.toLocaleString()}</span></label>`
+    )
+    .join('');
+  const more = opts.limit && items.length > opts.limit ? `<button type="button" class="ps-more" data-more="${key}">${opts.expanded ? '收合' : `顯示全部 ${items.length} 項`}</button>` : '';
+  return `<details class="ps-facet" open><summary>${title}${setRef.size ? ` <span class="ps-sel">${setRef.size}</span>` : ''}</summary>${opts.pre || ''}<div class="ps-opts">${rows || '<div class="calc-hint">沒有資料</div>'}</div>${more}</details>`;
+}
+
+const expandedFacets = new Set();
+
+function renderFilters() {
+  const f = data.facets;
+  const catLabel = (c) => `${c}｜${industry[c] || c}`.replace(/^(.+)｜\1$/, '$1');
+  const groups = PS_GROUPS.map((g, i) => `<button type="button" class="btn-mini ps-group" data-group="${i}">${e(g.label)}</button>`).join('');
+  const hasList = [
+    { v: 'P', n: (f.has.find((x) => x.v === 'P') || {}).n || 0 },
+    { v: 'E', n: (f.has.find((x) => x.v === 'E') || {}).n || 0 },
+    { v: 'W', n: (f.has.find((x) => x.v === 'W') || {}).n || 0 },
+  ];
+  const hasLabel = { P: '有電話', E: '有 Email', W: '有網站' };
+  document.getElementById('ps-filters').innerHTML =
+    facetBlock('產業分類', 'cat', f.cat, state.cats, catLabel, { pre: `<div class="ps-groups"><span class="calc-hint">快速選取：</span>${groups}</div>`, limit: 12, expanded: expandedFacets.has('cat') }) +
+    facetBlock('來源', 'source', f.source, state.sources, (v) => v) +
+    facetBlock('縣市', 'city', f.city, state.cities, (v) => v, { limit: 10, expanded: expandedFacets.has('city') }) +
+    facetBlock('開發狀態', 'stage', f.stage, state.stages, (v) => v) +
+    facetBlock('聯絡方式', 'has', hasList, state.has, (v) => hasLabel[v]);
+}
+
+document.addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (!t || !t.dataset || !t.dataset.facet) return;
+  const set = { cat: state.cats, source: state.sources, city: state.cities, stage: state.stages, has: state.has }[t.dataset.facet];
+  if (!set) return;
+  if (t.checked) set.add(t.value);
+  else set.delete(t.value);
+  filtersChanged();
+});
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target;
+  if (!t || !t.dataset) return;
+  if (t.dataset.more) {
+    if (expandedFacets.has(t.dataset.more)) expandedFacets.delete(t.dataset.more);
+    else expandedFacets.add(t.dataset.more);
+    renderFilters();
+  } else if (t.dataset.group !== undefined) {
+    const codes = PS_GROUPS[Number(t.dataset.group)].codes;
+    const allOn = codes.every((c) => state.cats.has(c));
+    codes.forEach((c) => (allOn ? state.cats.delete(c) : state.cats.add(c)));
+    filtersChanged();
+  } else if (t.dataset.chip) {
+    const [k, v] = JSON.parse(t.dataset.chip);
+    if (k === 'q') {
+      state.q = '';
+      document.getElementById('ps-q').value = '';
+    } else if (k === 'assigned') {
+      state.assigned = '';
+      document.getElementById('ps-assigned').value = '';
+    } else ({ cat: state.cats, source: state.sources, city: state.cities, stage: state.stages, has: state.has }[k] || new Set()).delete(v);
+    filtersChanged();
+  }
+});
+
+function filtersChanged() {
+  state.page = 1;
+  clearSelection();
+  load();
+}
+
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.q = document.getElementById('ps-q').value.trim();
+    filtersChanged();
+  }, 450);
+}
+
+function onAssignedChange() {
+  state.assigned = document.getElementById('ps-assigned').value;
+  filtersChanged();
+}
+
+function onSizeChange() {
+  state.size = Number(document.getElementById('ps-size').value) || 30;
+  filtersChanged();
+}
+
+function resetFilters() {
+  ['sources', 'cities', 'cats', 'stages', 'has'].forEach((k) => state[k].clear());
+  state.q = '';
+  state.assigned = '';
+  document.getElementById('ps-q').value = '';
+  document.getElementById('ps-assigned').value = '';
+  filtersChanged();
+}
+
+function renderChips() {
+  const chips = [];
+  const catName = (c) => industry[c] || c;
+  if (state.q) chips.push(['q', state.q, `關鍵字：${state.q}`]);
+  state.cats.forEach((v) => chips.push(['cat', v, `產業：${catName(v)}`]));
+  state.sources.forEach((v) => chips.push(['source', v, `來源：${v}`]));
+  state.cities.forEach((v) => chips.push(['city', v, v]));
+  state.stages.forEach((v) => chips.push(['stage', v, `狀態：${v}`]));
+  const hasLabel = { P: '有電話', E: '有 Email', W: '有網站' };
+  state.has.forEach((v) => chips.push(['has', v, hasLabel[v]]));
+  if (state.assigned) chips.push(['assigned', state.assigned, state.assigned === 'me' ? '我負責的' : '尚未指派']);
+  document.getElementById('ps-chips').innerHTML = chips.map((c) => `<span class="ps-chip">${e(c[2])} <button type="button" data-chip="${e(JSON.stringify([c[0], c[1]]))}" title="移除這個條件">×</button></span>`).join('');
+}
+
+// ---------- 表格 ----------
+function contactHtml(r) {
+  const out = [];
+  if (r.Contact) out.push(`<div>👤 ${e(r.Contact)}</div>`);
+  if (r.Phone) out.push(`<div>📞 <a href="tel:${e(String(r.Phone).replace(/[^\d+]/g, ''))}">${e(r.Phone)}</a></div>`);
+  if (r.Email) out.push(`<div>✉️ <a href="mailto:${e(r.Email)}">${e(r.Email)}</a></div>`);
+  const url = psSafeUrl(r.Website);
+  if (url) out.push(`<div>🌐 <a href="${e(url)}" target="_blank" rel="noopener noreferrer">${e(String(r.Website).replace(/^https?:\/\//i, '').slice(0, 32))}</a></div>`);
+  else if (r.Website) out.push(`<div>🌐 ${e(r.Website)}</div>`);
+  return out.join('') || '<span class="calc-hint">—</span>';
+}
+
+function catHtml(r) {
+  const names = psCatNames(r.CatCodes, industry);
+  if (!names.length) return '<span class="calc-hint">—</span>';
+  const full = names.join('、');
+  return `<div title="${e(full)}">${names.slice(0, 3).map((n) => `<span class="ps-tag">${e(n.replace(/製造業$/, ''))}</span>`).join('')}${names.length > 3 ? `<span class="ps-tag ps-tag-more">+${names.length - 3}</span>` : ''}</div>`;
+}
+
+function renderRows() {
+  const ro = readOnly();
+  const body = document.getElementById('ps-body');
+  const none = document.getElementById('ps-none');
+  none.style.display = data.rows.length ? 'none' : '';
+  none.textContent = '沒有符合條件的名單。試著放寬篩選條件，或按「清除全部條件」。';
+  body.innerHTML = data.rows
+    .map((r, i) => {
+      const stageOpts = stages.map((s) => `<option value="${e(s)}" ${s === r.Stage ? 'selected' : ''}>${e(s)}</option>`).join('');
+      const warn = r.Status && r.Status !== '生產中' ? `<span class="nc-badge" title="工廠登記狀態">${e(r.Status)}</span>` : '';
+      const src = (r.Source || '').split('、').join('、');
+      return `<tr data-i="${i}" class="${r.Optout ? 'ps-optout' : ''}">
+        <td><input type="checkbox" data-key="${e(r.Key)}" ${selected.has(r.Key) || selectAllMatching ? 'checked' : ''} ${selectAllMatching ? 'disabled' : ''} /></td>
+        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源">📂 ${e(src)}</div></td>
+        <td class="ps-cat">${catHtml(r)}<div class="ps-prod" title="${e(r.Products || '')}">${e((r.Products || '').slice(0, 70))}</div></td>
+        <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
+        <td class="ps-contact">${contactHtml(r)}</td>
+        <td><select class="ps-stage" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${r.AssignedTo ? `<div class="calc-hint">負責：${e(r.AssignedTo)}</div>` : ''}${r.Notes ? `<div class="calc-hint" title="${e(r.Notes)}">📝 ${e(r.Notes.slice(0, 18))}</div>` : ''}</td>
+        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看' : '編輯'}</button></td>
+      </tr>`;
+    })
+    .join('');
+  const all = data.rows.length > 0 && data.rows.every((r) => selected.has(r.Key));
+  const pageCheck = document.getElementById('ps-check-page');
+  pageCheck.checked = selectAllMatching || all;
+  pageCheck.disabled = selectAllMatching;
+}
+
+document.addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (!t) return;
+  if (t.dataset && t.dataset.key !== undefined) {
+    if (t.checked) selected.add(t.dataset.key);
+    else selected.delete(t.dataset.key);
+    renderBulk();
+    const pageCheck = document.getElementById('ps-check-page');
+    pageCheck.checked = data.rows.length > 0 && data.rows.every((r) => selected.has(r.Key));
+  } else if (t.classList && t.classList.contains('ps-stage')) {
+    changeStage(Number(t.dataset.i), t.value, t);
+  }
+});
+
+function togglePage(on) {
+  data.rows.forEach((r) => (on ? selected.add(r.Key) : selected.delete(r.Key)));
+  renderRows();
+  renderBulk();
+}
+
+function clearSelection() {
+  selected = new Set();
+  selectAllMatching = false;
+}
+
+async function changeStage(i, value, selectEl) {
+  const r = data.rows[i];
+  const res = await callApi('prospectUpdate', { key: r.Key, row: r.RowIndex, fields: { Stage: value } }, { silent: true });
+  if (!res || !res.success) {
+    alert((res && res.message) || '儲存失敗');
+    selectEl.value = r.Stage;
+    return;
+  }
+  data.rows[i] = res.row;
+  load(); // 左邊的統計數字跟著更新
+}
+
+// ---------- 分頁 ----------
+function renderPager() {
+  const el = document.getElementById('ps-pager');
+  if (data.pages <= 1) {
+    el.innerHTML = data.total ? `<span class="calc-hint">共 ${data.total.toLocaleString()} 筆</span>` : '';
+    return;
+  }
+  const p = data.page;
+  const btn = (label, page, dis) => `<button type="button" class="btn-mini" ${dis ? 'disabled' : `onclick="load(${page})"`}>${label}</button>`;
+  el.innerHTML = `${btn('« 第一頁', 1, p === 1)} ${btn('‹ 上一頁', p - 1, p === 1)} <span>第 <input id="ps-goto" type="number" min="1" max="${data.pages}" value="${p}" onchange="load(Number(this.value))" style="width:80px;display:inline-block;margin:0 4px;" /> / ${data.pages.toLocaleString()} 頁（共 ${data.total.toLocaleString()} 筆）</span> ${btn('下一頁 ›', p + 1, p === data.pages)} ${btn('最後一頁 »', data.pages, p === data.pages)}`;
+}
+
+// ---------- 批次操作 ----------
+function renderBulk() {
+  const el = document.getElementById('ps-bulk');
+  const n = selectAllMatching ? data.total : selected.size;
+  if (!n || readOnly()) {
+    el.style.display = 'none';
+    return;
+  }
+  const canAll = !selectAllMatching && data.total > data.rows.length && data.rows.length > 0 && data.rows.every((r) => selected.has(r.Key));
+  el.style.display = '';
+  el.innerHTML = `<span>已選 <b>${n.toLocaleString()}</b> 筆${selectAllMatching ? '（符合目前條件的全部）' : ''}</span>
+    ${canAll ? `<button type="button" class="btn-mini" onclick="pickAllMatching()">改選符合條件的全部 ${data.total.toLocaleString()} 筆</button>` : ''}
+    <select id="ps-bulk-stage"><option value="">設定開發狀態…</option>${stages.map((s) => `<option value="${e(s)}">${e(s)}</option>`).join('')}</select>
+    <button type="button" class="btn-mini" onclick="applyBulk('stage')">套用狀態</button>
+    <button type="button" class="btn-mini" onclick="applyBulk('me')">指派給我</button>
+    <button type="button" class="btn-mini" onclick="applyBulk('unassign')">取消指派</button>
+    <button type="button" class="btn-mini ps-danger" onclick="applyBulk('optout')">標記拒絕聯絡</button>
+    <button type="button" class="btn-mini" onclick="clearSelection();renderRows();renderBulk();">取消勾選</button>`;
+}
+
+function pickAllMatching() {
+  selectAllMatching = true;
+  renderRows();
+  renderBulk();
+}
+
+async function applyBulk(kind) {
+  const set = {};
+  let what = '';
+  if (kind === 'stage') {
+    const v = document.getElementById('ps-bulk-stage').value;
+    if (!v) return alert('請先選要設定的開發狀態');
+    set.Stage = v;
+    what = `開發狀態設為「${v}」`;
+  } else if (kind === 'me') {
+    set.AssignedTo = '@me'; // 伺服器換成登入帳號
+    what = '指派給你';
+  } else if (kind === 'unassign') {
+    set.AssignedTo = '';
+    what = '取消指派';
+  } else {
+    set.Optout = true;
+    what = '標記為「拒絕聯絡」';
+  }
+  const n = selectAllMatching ? data.total : selected.size;
+  if (!selectAllMatching && selected.size > 3000) return alert('一次最多勾選 3,000 筆；要處理更多請用「改選符合條件的全部」');
+  if (!confirm(`確定要把 ${n.toLocaleString()} 筆名單${what}嗎？`)) return;
+  const body = selectAllMatching ? { filter: filterBody(), set } : { keys: [...selected], set };
+  const r = await callApi('prospectBulk', body);
+  if (!r || !r.success) return alert((r && r.message) || '批次修改失敗');
+  clearSelection();
+  await load();
+  alert(`完成：已更新 ${r.count.toLocaleString()} 筆`);
+}
+
+// ---------- 匯出 ----------
+async function exportResult() {
+  if (!data || !data.total) return alert('目前沒有符合條件的名單可以匯出');
+  const r = await callApi('prospectExport', filterBody());
+  if (!r || !r.success) return alert((r && r.message) || '匯出失敗');
+  const csv = '﻿' + psRowsToCsv(r.rows, industry);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const d = new Date();
+  a.download = `開發名單_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }, 1000);
+  if (r.truncated) alert(`符合的有 ${r.total.toLocaleString()} 筆，一次最多匯出 ${r.exported.toLocaleString()} 筆。請再加上篩選條件（例如縣市、產業）分批匯出。`);
+}
+
+// ---------- 編輯 ----------
+function openEdit(i) {
+  const r = data.rows[i];
+  editRow = r;
+  const ro = readOnly();
+  document.getElementById('pse-title').textContent = r.Name;
+  document.getElementById('pse-sub').textContent = [r.TaxId ? '統編 ' + r.TaxId : '', r.City, r.Source].filter(Boolean).join('｜');
+  document.getElementById('pse-stage').innerHTML = stages.map((s) => `<option value="${e(s)}" ${s === r.Stage ? 'selected' : ''}>${e(s)}</option>`).join('');
+  const set = (id, v) => (document.getElementById(id).value = v || '');
+  set('pse-assigned', r.AssignedTo);
+  set('pse-contact', r.Contact);
+  set('pse-phone', r.Phone);
+  set('pse-email', r.Email);
+  set('pse-website', r.Website);
+  set('pse-notes', r.Notes);
+  document.getElementById('pse-optout').checked = !!r.Optout;
+  document.getElementById('pse-msg').textContent = ro ? '你只有查看權限' : '';
+  ['pse-stage', 'pse-assigned', 'pse-contact', 'pse-phone', 'pse-email', 'pse-website', 'pse-notes', 'pse-optout'].forEach((id) => (document.getElementById(id).disabled = ro));
+  document.getElementById('ps-edit-modal').style.display = 'flex';
+}
+
+function assignMe() {
+  document.getElementById('pse-assigned').value = '@me'; // 儲存時伺服器換成你的帳號
+}
+
+async function saveEdit() {
+  const v = (id) => document.getElementById(id).value.trim();
+  const fields = { Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked };
+  const r = await callApi('prospectUpdate', { key: editRow.Key, row: editRow.RowIndex, fields });
+  if (!r || !r.success) {
+    document.getElementById('pse-msg').textContent = (r && r.message) || '儲存失敗';
+    return;
+  }
+  closeModal('ps-edit-modal');
+  load();
+}
+
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+// ---------- 匯入 ----------
+let importFile = null; // { headers, rows, fileName }
+let importMap = {};
+let importing = false;
+let importCancelled = false;
+
+function openImport() {
+  if (readOnly()) return alert('你只有查看權限，不能匯入名單');
+  importFile = null;
+  document.getElementById('ps-file').value = '';
+  document.getElementById('ps-file-msg').textContent = '';
+  document.getElementById('ps-step-file').style.display = '';
+  document.getElementById('ps-step-map').style.display = 'none';
+  document.getElementById('ps-step-run').style.display = 'none';
+  document.getElementById('ps-import-modal').style.display = 'flex';
+}
+
+function closeImport() {
+  if (importing && !confirm('正在匯入中，確定要關閉嗎？（已經匯入的不會消失，之後可以從中斷的筆數接續）')) return;
+  importCancelled = true;
+  closeModal('ps-import-modal');
+  if (data) load();
+}
+
+async function onFilePicked(file) {
+  if (!file) return;
+  const msg = document.getElementById('ps-file-msg');
+  msg.textContent = '讀取並解析檔案中…';
+  try {
+    const buf = await file.arrayBuffer();
+    importFile = await psReadFileBuffer(buf, file.name);
+  } catch (err) {
+    msg.textContent = '讀取失敗：' + err.message;
+    return;
+  }
+  importMap = psAutoMap(importFile.headers);
+  document.getElementById('ps-file-info').textContent = `${importFile.fileName || file.name}：共 ${importFile.rows.length.toLocaleString()} 筆資料、${importFile.headers.length} 個欄位`;
+  document.getElementById('ps-source').value = psDetectSource(importFile.headers) || file.name.replace(/\.[^.]+$/, '');
+  document.getElementById('ps-start').value = 1;
+  renderMapping();
+  document.getElementById('ps-step-file').style.display = 'none';
+  document.getElementById('ps-step-map').style.display = '';
+  msg.textContent = '';
+}
+
+function renderMapping() {
+  const opts = (sel) => '<option value="">不匯入</option>' + importFile.headers.map((h, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${e(h || '（第 ' + (i + 1) + ' 欄）')}</option>`).join('');
+  document.getElementById('ps-map').innerHTML = PS_FIELDS.map((f) => `<label class="ps-map-row"><span>${e(f.label)}${f.required ? ' <b style="color:#c0392b">*</b>' : ''}</span><select data-map="${f.key}">${opts(importMap[f.key])}</select></label>`).join('');
+  renderPreview();
+}
+
+document.addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (!t || !t.dataset || !t.dataset.map) return;
+  if (t.value === '') delete importMap[t.dataset.map];
+  else importMap[t.dataset.map] = Number(t.value);
+  renderPreview();
+});
+
+function renderPreview() {
+  const keys = PS_FIELDS.filter((f) => importMap[f.key] !== undefined);
+  const sample = importFile.rows.slice(0, 3).map((r) => psRowToRecord(r, importMap) || {});
+  document.getElementById('ps-preview').innerHTML = `<thead><tr>${keys.map((f) => `<th>${e(f.label)}</th>`).join('')}</tr></thead><tbody>${sample.map((r) => `<tr>${keys.map((f) => `<td>${e(String(r[f.key] || '').slice(0, 60))}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+async function startImport() {
+  if (importMap.Name === undefined) return alert('一定要對應「公司名稱」欄位');
+  const source = document.getElementById('ps-source').value.trim();
+  if (!source) return alert('請填來源名稱');
+  const { records, skipped } = psBuildRecords(importFile.rows, importMap);
+  if (!records.length) return alert('沒有可匯入的資料（公司名稱都是空白）');
+  const update = document.getElementById('ps-update').checked;
+  const startAt = Math.max(1, Math.floor(Number(document.getElementById('ps-start').value)) || 1);
+  if (startAt > records.length) return alert('起始筆數超過資料總數');
+  const todo = records.length - (startAt - 1);
+  if (!confirm(`要匯入 ${todo.toLocaleString()} 筆（來源：${source}）。${todo > 20000 ? '\n筆數很多，約需要 ' + Math.ceil(todo / IMPORT_CHUNK / 4) + ' 分鐘以上，過程中請不要關閉這個分頁。' : ''}\n確定開始嗎？`)) return;
+
+  importing = true;
+  importCancelled = false;
+  document.getElementById('ps-step-map').style.display = 'none';
+  document.getElementById('ps-step-run').style.display = '';
+  document.getElementById('ps-cancel').style.display = '';
+  const bar = document.getElementById('ps-progress-bar');
+  const text = document.getElementById('ps-progress-text');
+  const log = document.getElementById('ps-progress-log');
+  const warn = (ev) => {
+    ev.preventDefault();
+    ev.returnValue = '';
+  };
+  window.addEventListener('beforeunload', warn);
+  const totals = { added: 0, merged: 0, same: 0, invalid: skipped, dup: 0 };
+  let done = startAt - 1;
+  const t0 = Date.now();
+  let failed = '';
+  while (done < records.length && !importCancelled) {
+    const chunk = records.slice(done, done + IMPORT_CHUNK);
+    let r = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      r = await callApi('prospectImport', { source, update, rows: chunk }, { silent: true });
+      if (r && r.success) break;
+      const msg = (r && r.message) || '';
+      if (!(r && r.networkError) && !/忙碌|逾時|timeout/i.test(msg)) break; // 非網路 / 忙碌問題，重試也沒用
+      text.textContent = `連線不穩或系統忙碌，${attempt + 1}/3 次重試中…`;
+      await sleep(3000 * (attempt + 1));
+    }
+    if (!r || !r.success) {
+      failed = (r && r.message) || '匯入失敗';
+      break;
+    }
+    totals.added += r.added;
+    totals.merged += r.merged;
+    totals.same += r.same;
+    totals.invalid += r.invalid;
+    totals.dup += r.duplicateInBatch;
+    done += chunk.length;
+    const pct = Math.round((done / records.length) * 100);
+    bar.style.width = pct + '%';
+    const elapsed = (Date.now() - t0) / 1000;
+    const rate = (done - (startAt - 1)) / elapsed;
+    const eta = rate > 0 ? Math.ceil((records.length - done) / rate / 60) : 0;
+    text.textContent = `已處理 ${done.toLocaleString()} / ${records.length.toLocaleString()} 筆（${pct}%）${done < records.length ? `，預估還要約 ${eta} 分鐘` : ''}`;
+    log.textContent = `新增 ${totals.added.toLocaleString()}　合併 ${totals.merged.toLocaleString()}　已存在 ${totals.same.toLocaleString()}　略過 ${totals.invalid.toLocaleString()}　同批重複 ${totals.dup.toLocaleString()}`;
+  }
+  window.removeEventListener('beforeunload', warn);
+  importing = false;
+  document.getElementById('ps-cancel').style.display = 'none';
+  const summary = `新增 ${totals.added.toLocaleString()}、合併 ${totals.merged.toLocaleString()}、已存在 ${totals.same.toLocaleString()}、略過 ${totals.invalid.toLocaleString()}`;
+  if (failed) {
+    text.textContent = `⚠️ 匯入中斷：${failed}`;
+    log.textContent += `\n已處理到第 ${done.toLocaleString()} 筆。重新選同一個檔案、把「從第幾筆開始」填 ${(done + 1).toLocaleString()} 即可接續。\n${summary}`;
+  } else if (importCancelled) {
+    text.textContent = `已停止（處理到第 ${done.toLocaleString()} 筆）`;
+    log.textContent += `\n要接續請重新選檔案，「從第幾筆開始」填 ${(done + 1).toLocaleString()}。`;
+  } else {
+    text.textContent = `✅ 匯入完成：${summary}`;
+  }
+  loadStatus();
+  load();
+}
+
+function cancelImport() {
+  importCancelled = true;
+  document.getElementById('ps-cancel').style.display = 'none';
+  document.getElementById('ps-progress-text').textContent = '正在停止（等這一批處理完）…';
+}
+
+// ---------- 管理 ----------
+async function clearAll() {
+  if (!data || !data.all) return alert('名單庫已經是空的');
+  const input = prompt(`這會刪除名單庫裡全部 ${data.all.toLocaleString()} 筆資料（含開發狀態與備註），無法復原。\n確定的話請輸入 CLEAR：`);
+  if (input !== 'CLEAR') return;
+  const r = await callApi('prospectClear', { confirm: 'CLEAR' });
+  if (!r || !r.success) return alert((r && r.message) || '清空失敗');
+  clearSelection();
+  alert(`已清空 ${r.removed.toLocaleString()} 筆`);
+  loadStatus();
+  load();
+}
+
+window.refreshPageData = () => load();
+
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!(await ensureAuth())) return;
+  renderHeaderUser();
+  applyAdminOnlyVisibility();
+  if (readOnly()) document.querySelectorAll('.ps-write').forEach((b) => (b.style.display = 'none'));
+  loadStatus();
+  await load();
+});

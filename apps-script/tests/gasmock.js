@@ -32,6 +32,12 @@ class Sheet {
     this.fmt = {};
   }
   getName() { return this.name; }
+  setName(n) {
+    if (this.parent && this.parent._rename) this.parent._rename(this.name, n, this);
+    this.name = n;
+    return this;
+  }
+  getParent() { return this.parent || null; }
   getLastRow() {
     for (let i = this.rows.length - 1; i >= 0; i--) if ((this.rows[i] || []).some((v) => v !== '' && v != null)) return i + 1;
     return 0;
@@ -63,7 +69,18 @@ class Sheet {
     this.fmt = nf;
     this.maxRows--;
   }
-  deleteRows(s, n) { for (let i = 0; i < n; i++) this.deleteRow(s); }
+  deleteRows(s, n) {
+    // 一次刪除多列（逐列刪除在上萬列時會慢到無法測試）
+    this.rows.splice(s - 1, n);
+    const nf = {};
+    Object.keys(this.fmt).forEach((k) => {
+      const [rr, cc] = k.split(',').map(Number);
+      if (rr < s) nf[k] = this.fmt[k];
+      else if (rr >= s + n) nf[(rr - n) + ',' + cc] = this.fmt[k];
+    });
+    this.fmt = nf;
+    this.maxRows -= n;
+  }
   insertRowsAfter(after, n) { this.maxRows += n; }
   appendRow(arr) { const r = this.getLastRow() + 1; arr.forEach((v, i) => this.set(r, i + 1, v)); }
   setFrozenRows() {}
@@ -98,6 +115,10 @@ class Range {
   }
   setFontWeight() { return this; }
   setBackground() { return this; }
+  clearContent() {
+    for (let i = 0; i < this.nr; i++) for (let j = 0; j < this.nc; j++) { const row = this.sh.rows[this.r + i - 1]; if (row) row[this.c + j - 1] = ''; }
+    return this;
+  }
 }
 
 /** opts.files：要載入的 .gs 檔案路徑陣列（依序，模擬 Apps Script 專案多個檔案共用全域範圍）；opts.fetch：UrlFetchApp.fetch 的模擬函式 */
@@ -105,6 +126,7 @@ function makeEnv(opts) {
   opts = opts || {};
   const files = opts.files || [require('path').join(__dirname, '..', 'Code.gs')];
   const sheets = {};
+  const extraSs = {};
   const ss = {
     getSheetByName: (n) => sheets[n] || null,
     getSheets: () => Object.values(sheets),
@@ -156,7 +178,34 @@ function makeEnv(opts) {
   const fetchLog = [];
   const ctx = {
     console,
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {} },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ss,
+      flush: () => {},
+      // 另外建立的試算表（例如開發名單庫）：create / openById 各自有獨立的分頁
+      create: (name) => {
+        const id = 'mock-' + (Object.keys(extraSs).length + 1);
+        const sheetsX = {};
+        const x = {
+          id, name,
+          getId: () => id,
+          getUrl: () => 'mock://' + id,
+          getSheetByName: (n) => sheetsX[n] || null,
+          getSheets: () => Object.values(sheetsX),
+          insertSheet: (n) => { const sh = (sheetsX[n] = new Sheet(n, [])); sh.parent = x; return sh; },
+          deleteSheet: (sh) => delete sheetsX[sh.name],
+          _rename: (from, to, sh) => { delete sheetsX[from]; sheetsX[to] = sh; },
+        };
+        // 新試算表附一張空白的「工作表1」
+        const d = (sheetsX['工作表1'] = new Sheet('工作表1', []));
+        d.parent = x;
+        extraSs[id] = x;
+        return x;
+      },
+      openById: (id) => {
+        if (!extraSs[id]) throw new Error('找不到試算表 ' + id);
+        return extraSs[id];
+      },
+    },
     CalendarApp: { getDefaultCalendar: () => calendar },
     Utilities: {
       formatDate: fmtDate,
@@ -202,7 +251,7 @@ function makeEnv(opts) {
       for (let r = 2; r <= sh.maxRows; r++) sh.fmt[r + ',' + ci] = '@';
     });
   });
-  return { ctx, sheets, events, cache, props, fetchLog, drive };
+  return { ctx, sheets, extraSs, events, cache, props, fetchLog, drive };
 }
 
 module.exports = { makeEnv };

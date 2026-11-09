@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<script src="theme.js?v=20261109b"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>開發名單庫 - AOI 業務系統</title>
+<link rel="stylesheet" href="style.css?v=20261109c" />
+<link rel="stylesheet" href="dark.css?v=20261109c" />
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
+<link rel="apple-touch-icon" href="img/icon-192.png" />
+</head>
+<body data-block="customers">
+
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="loading-box"><div class="spinner"></div><div>處理中，請稍候...</div></div>
+</div>
+
+<header>
+  <h1>AOI 業務系統</h1>
+  <div><span id="current-user"></span><button onclick="logout()">登出</button></div>
+</header>
+<nav class="tabs tabs-grouped">
+  <button class="tab-btn nav-single" onclick="location.href='home.html'">首頁</button>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='products.html'">業務工具 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="products" onclick="location.href='products.html'">產品搜尋 / 詢價</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='calc.html'">選型計算</button>
+      <button class="tab-btn" data-block="products" onclick="location.href='quote.html'">報價系統</button>
+    </div>
+  </div>
+  <div class="nav-group active-group">
+    <button class="nav-group-btn" onclick="location.href='cases.html'">案件與客戶 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="cases" onclick="location.href='cases.html'">案件管理</button>
+      <button class="tab-btn" data-block="customers" onclick="location.href='customers.html'">客戶管理</button>
+      <button class="tab-btn" data-block="customers" onclick="location.href='namecards.html'">名片客戶專區</button>
+      <button class="tab-btn active" data-block="customers" onclick="location.href='prospects.html'">開發名單庫</button>
+      <button class="tab-btn" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
+      <button class="tab-btn" onclick="location.href='todos.html'">工作清單</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='evalreport.html'">檔案製作 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="files" onclick="location.href='evalreport.html'">評估報告（自由製作）</button>
+      <button class="tab-btn" data-block="files" onclick="location.href='marketing.html'">行銷宣傳製作</button>
+      <button class="tab-btn" data-block="copy" onclick="location.href='copy.html'">文案製作</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" data-block="bot" onclick="location.href='bot.html'">BOT 設定 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" data-block="bot" onclick="location.href='bot.html'">客服機器人</button>
+      <button class="tab-btn" data-block="bot" onclick="location.href='bot.html#staff'">員工助理</button>
+    </div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-group-btn" onclick="location.href='devices.html'">系統 ▾</button>
+    <div class="nav-dropdown">
+      <button class="tab-btn" onclick="location.href='devices.html'">登入紀錄</button>
+      <button class="tab-btn admin-only" onclick="location.href='staff.html'">人員管理</button>
+      <button class="tab-btn admin-only" onclick="location.href='users.html'">帳號管理</button>
+    </div>
+  </div>
+</nav>
+
+<section class="tab-content wide">
+  <h2>開發名單庫</h2>
+  <div class="calc-hint">潛在客戶名單：把政府公開的工廠名錄、展覽名錄、自己整理的 CSV 匯進來，依<b>產業分類、來源、縣市</b>篩選，勾選後標記開發狀態、指派業務。名單存在獨立的試算表，不佔用主資料庫的容量。</div>
+
+  <div class="ps-top">
+    <div id="ps-stats" class="ps-stats">讀取中…</div>
+    <div class="ps-top-btns">
+      <button type="button" class="ps-write" onclick="openImport()">📥 匯入名單</button>
+      <button type="button" id="ps-export-btn" onclick="exportResult()">📤 匯出目前結果（CSV）</button>
+      <a id="ps-sheet-link" class="admin-only" href="#" target="_blank" rel="noopener" style="display:none;">開啟名單試算表</a>
+      <button type="button" class="admin-only ps-danger" onclick="clearAll()">清空名單庫</button>
+    </div>
+  </div>
+
+  <div id="ps-empty" class="panel" style="display:none;">
+    <h3 style="margin-top:0;">名單庫還是空的</h3>
+    <p>建議先匯入<b>經濟部「生產中工廠名錄」</b>（約 10 萬家，每家有統編、地址、負責人、<b>產業類別、主要產品</b>，不含電話與 Email）：</p>
+    <ol>
+      <li>下載：<a href="https://serv.gcis.nat.gov.tw/RDownLoad/Data/statistical/%E7%94%9F%E7%94%A2%E4%B8%AD%E5%B7%A5%E5%BB%A0%E6%B8%85%E5%86%8A.zip" target="_blank" rel="noopener">生產中工廠清冊.zip</a>（資料來源：<a href="https://data.gov.tw/dataset/6569" target="_blank" rel="noopener">政府資料開放平臺「登記工廠名錄」</a>）</li>
+      <li>按上面的「📥 匯入名單」，直接選那個 .zip（不用解壓縮），系統會自動對好欄位。</li>
+      <li>約 10 萬筆，匯入需要十幾分鐘，過程中請不要關閉這個分頁。</li>
+    </ol>
+    <p class="calc-hint">之後有電話、Email 的名單（展覽名錄、自己整理的 Excel 另存 CSV）也用同一個按鈕匯入；統編相同的會自動合併成同一家，並記錄來源。</p>
+  </div>
+
+  <div id="ps-layout" class="ps-layout">
+    <aside class="ps-filters" id="ps-filters"></aside>
+    <div class="ps-main">
+      <div class="ps-bar">
+        <input id="ps-q" placeholder="搜尋公司名稱 / 統編 / 負責人 / 主要產品 / 地址（多個關鍵字用空白分開）" oninput="onSearchInput()" />
+        <select id="ps-assigned" onchange="onAssignedChange()">
+          <option value="">負責業務：全部</option>
+          <option value="me">我負責的</option>
+          <option value="none">尚未指派</option>
+        </select>
+        <select id="ps-size" onchange="onSizeChange()">
+          <option value="30">每頁 30 筆</option>
+          <option value="50">每頁 50 筆</option>
+          <option value="100">每頁 100 筆</option>
+        </select>
+        <button type="button" class="btn-mini" onclick="resetFilters()">清除全部條件</button>
+      </div>
+      <div id="ps-chips" class="ps-chips"></div>
+      <div id="ps-bulk" class="ps-bulk" style="display:none;"></div>
+      <div class="nc-scroll">
+        <table class="nc-table ps-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="ps-check-page" title="勾選本頁全部" onchange="togglePage(this.checked)" /></th>
+              <th>公司</th><th>產業分類 / 主要產品</th><th>地址 / 負責人</th><th>聯絡方式</th><th>開發狀態</th>
+              <th class="nc-act">操作</th>
+            </tr>
+          </thead>
+          <tbody id="ps-body"></tbody>
+        </table>
+      </div>
+      <div id="ps-none" class="calc-hint" style="display:none;padding:10px 0;"></div>
+      <div id="ps-pager" class="ps-pager"></div>
+    </div>
+  </div>
+</section>
+
+<div id="ps-import-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:820px;">
+    <div class="modal-header"><h3 style="margin:0;">匯入名單</h3><button type="button" id="ps-import-close" onclick="closeImport()">關閉</button></div>
+    <div id="ps-step-file">
+      <div class="calc-hint">選一個 CSV（或政府下載的 .zip，不用解壓縮）。第一列要是欄位標題；Excel 請「另存新檔 → CSV UTF-8」。統編相同的資料會合併成同一家，來源會累加記錄。</div>
+      <input type="file" id="ps-file" accept=".csv,.txt,.zip" onchange="onFilePicked(this.files[0])" style="margin:10px 0;" />
+      <div id="ps-file-msg" class="calc-hint"></div>
+    </div>
+    <div id="ps-step-map" style="display:none;">
+      <div id="ps-file-info" style="font-weight:600;"></div>
+      <label style="display:block;margin-top:8px;">來源名稱（之後可以依來源篩選）：</label>
+      <input id="ps-source" maxlength="60" placeholder="例如：經濟部生產中工廠名錄、2026 台北國際自動化工業大展" />
+      <div class="calc-hint" style="margin-top:10px;">欄位對應（系統已自動對好，錯的可以改；不需要的選「不匯入」）：</div>
+      <div id="ps-map" class="ps-map"></div>
+      <div class="calc-hint" style="margin-top:8px;">預覽（前 3 筆）：</div>
+      <div class="nc-scroll"><table class="nc-table" id="ps-preview"></table></div>
+      <label style="display:block;margin-top:10px;"><input type="checkbox" id="ps-update" style="width:auto;" /> 覆蓋更新：已存在的公司，有差異的欄位也更新（預設只補空白欄位，不動你已經修改的資料；開發狀態與備註永遠不會被覆蓋）</label>
+      <label style="display:block;margin-top:8px;">從第幾筆開始（上次中斷時接續用，一般維持 1）：<input id="ps-start" type="number" min="1" value="1" style="width:110px;display:inline-block;margin-left:6px;" /></label>
+      <div style="margin-top:12px;"><button type="button" id="ps-go" onclick="startImport()">開始匯入</button></div>
+    </div>
+    <div id="ps-step-run" style="display:none;">
+      <div class="ps-progress"><div id="ps-progress-bar"></div></div>
+      <div id="ps-progress-text" style="margin-top:6px;"></div>
+      <div id="ps-progress-log" class="calc-hint" style="margin-top:6px;white-space:pre-wrap;"></div>
+      <div style="margin-top:10px;"><button type="button" id="ps-cancel" class="ps-danger" onclick="cancelImport()">停止匯入</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="ps-edit-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:600px;">
+    <div class="modal-header"><h3 style="margin:0;">開發紀錄</h3><button type="button" onclick="closeModal('ps-edit-modal')">關閉</button></div>
+    <div id="pse-title" style="font-weight:600;"></div>
+    <div id="pse-sub" class="calc-hint"></div>
+    <label>開發狀態：</label><select id="pse-stage"></select>
+    <label>負責業務（帳號）：</label>
+    <div style="display:flex;gap:6px;"><input id="pse-assigned" maxlength="40" style="margin:0;" /><button type="button" class="btn-mini" onclick="assignMe()">指派給我</button></div>
+    <label>聯絡人：</label><input id="pse-contact" maxlength="80" />
+    <label>電話：</label><input id="pse-phone" maxlength="60" />
+    <label>Email：</label><input id="pse-email" maxlength="120" />
+    <label>網站：</label><input id="pse-website" maxlength="200" />
+    <label>備註：</label><textarea id="pse-notes" rows="4" maxlength="500"></textarea>
+    <label style="display:block;margin-top:6px;"><input type="checkbox" id="pse-optout" style="width:auto;" /> 拒絕聯絡（對方要求不要再聯絡；之後寄信一定會排除）</label>
+    <div style="margin-top:10px;"><button type="button" onclick="saveEdit()">儲存</button> <span id="pse-msg" class="calc-hint"></span></div>
+  </div>
+</div>
+
+<script src="config.js?v=20261109b"></script>
+<script src="demo.js?v=20261109b"></script>
+<script src="common.js?v=20261109b"></script>
+<script src="assistant.js?v=20261109b"></script>
+<script src="alerts.js?v=20261109b"></script>
+<script src="prospects-lib.js?v=20261109c"></script>
+<script src="prospects.js?v=20261109c"></script>
+</body>
+</html>

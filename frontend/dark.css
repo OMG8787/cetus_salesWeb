@@ -262,3 +262,17 @@ html[data-theme="dark"] .bot-old-key { background: #2b333e; color: #aab4c2; }
 html[data-theme="dark"] .login-forgot a { color: #7fb0ee; }
 html[data-theme="dark"] .forgot-box { border-top-color: #3b4552; }
 html[data-theme="dark"] .force-banner { background: rgba(240,201,135,.12); border-color: rgba(240,201,135,.4); color: #f0d49a; }
+
+/* 開發名單庫 */
+html[data-theme="dark"] .ps-filters { background: #1d232b; border-color: #323b48; }
+html[data-theme="dark"] .ps-facet { border-color: #323b48; }
+html[data-theme="dark"] .ps-n { color: #9aa4b2; }
+html[data-theme="dark"] .ps-chip { background: #25324a; color: #bcd0f5; }
+html[data-theme="dark"] .ps-chip button { color: #bcd0f5 !important; }
+html[data-theme="dark"] .ps-bulk { background: #3a3318; border-color: #6b5b1f; color: #f3e7b5; }
+html[data-theme="dark"] .ps-tag { background: #2a3340; color: #d7dde6; }
+html[data-theme="dark"] .ps-tag-more { background: #364152; }
+html[data-theme="dark"] .ps-table tr.ps-optout td { background: #3a2220; }
+html[data-theme="dark"] .ps-table .ps-src, html[data-theme="dark"] .ps-table .ps-prod { color: #9aa4b2; }
+html[data-theme="dark"] .ps-progress { background: #323b48; }
+html[data-theme="dark"] .ps-more { color: #8db8f5 !important; }

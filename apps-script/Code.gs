@@ -418,6 +418,10 @@ function permFor_(action) {
       var t2 = copyPerms_();
       if (t2 && t2[action]) return t2[action];
     }
+    if (typeof prospectPerms_ === 'function') {
+      var t3 = prospectPerms_();
+      if (t3 && t3[action]) return t3[action];
+    }
   } catch (e) {
     // 模組出錯不影響其他動作的權限判斷
   }
@@ -512,6 +516,10 @@ function getRoute_(action) {
   if (typeof copyRoutes_ === 'function') {
     var t2 = copyRoutes_();
     if (t2 && t2[action]) return t2[action];
+  }
+  if (typeof prospectRoutes_ === 'function') {
+    var t3 = prospectRoutes_();
+    if (t3 && t3[action]) return t3[action];
   }
   return null;
 }
@@ -11349,4 +11357,619 @@ function handleCopyGenerate(body) {
     }
   }
   return { success: false, message: 'AI 都失敗了：' + failures.join('；').slice(0, 500) };
+}
+
+// ============================================================
+// 開發名單庫（Prospects）
+// 從政府公開資料（經濟部生產中工廠名錄等）、展覽名錄、自己整理的 CSV 匯入大量「潛在客戶」，
+// 依產業分類 / 來源 / 縣市 / 開發狀態篩選，標記誰在開發。
+// 資料量很大（單一來源就超過 10 萬筆），所以放在獨立的試算表「AOI開發名單庫」（ID 存在指令碼屬性 PROSPECT_SSID，
+// 第一次匯入時自動建立），不佔用主資料庫的 1,000 萬格上限。
+// 匯入由網頁把 CSV 切成小批（每批約 2,000 筆）送來；篩選、分頁、統計都在這裡做。
+// ============================================================
+var PS_SHEET = 'Prospects';
+// 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt'];
+var PS_STAGES = ['未處理', '開發中', '已聯絡', '有興趣', '無意願', '已轉客戶', '無效'];
+var PS_MERGE_FIELDS = ['Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact'];
+var PS_IMPORT_MAX = 3000;
+var PS_EXPORT_MAX = 5000;
+var PS_CITIES = ['臺北市', '新北市', '桃園市', '臺中市', '臺南市', '高雄市', '基隆市', '新竹市', '嘉義市', '新竹縣', '苗栗縣', '彰化縣', '南投縣', '雲林縣', '嘉義縣', '屏東縣', '宜蘭縣', '花蓮縣', '臺東縣', '澎湖縣', '金門縣', '連江縣'];
+// 行政院主計總處「行業統計分類」製造業中類（經濟部工廠登記的產業類別就是這個代碼）
+var PS_INDUSTRY = {
+  '08': '食品製造業', '09': '飲料製造業', '10': '菸草製造業', '11': '紡織業', '12': '成衣及服飾品製造業', '13': '皮革、毛皮及其製品製造業',
+  '14': '木竹製品製造業', '15': '紙漿、紙及紙製品製造業', '16': '印刷及資料儲存媒體複製業', '17': '石油及煤製品製造業', '18': '化學材料及肥料製造業',
+  '19': '其他化學製品製造業', '20': '藥品及醫用化學製品製造業', '21': '橡膠製品製造業', '22': '塑膠製品製造業', '23': '非金屬礦物製品製造業',
+  '24': '基本金屬製造業', '25': '金屬製品製造業', '26': '電子零組件製造業', '27': '電腦、電子產品及光學製品製造業', '28': '電力設備及配備製造業',
+  '29': '機械設備製造業', '30': '汽車及其零件製造業', '31': '其他運輸工具及其零件製造業', '32': '家具製造業', '33': '其他製造業', '34': '產業用機械設備維修及安裝業',
+};
+
+function prospectPerms_() {
+  return {
+    prospectStatus: ['customers', 'r'], prospectQuery: ['customers', 'r'], prospectExport: ['customers', 'r'],
+    prospectUpdate: ['customers', 'w'], prospectBulk: ['customers', 'w'], prospectImport: ['customers', 'w'],
+    prospectClear: ['admin', 'd'],
+  };
+}
+
+function prospectRoutes_() {
+  return {
+    prospectStatus: { auth: true, fn: handleProspectStatus },
+    prospectQuery: { auth: true, fn: handleProspectQuery },
+    prospectExport: { auth: true, fn: handleProspectExport },
+    prospectUpdate: { auth: true, fn: handleProspectUpdate },
+    prospectBulk: { auth: true, fn: handleProspectBulk },
+    prospectImport: { auth: true, fn: handleProspectImport },
+    prospectClear: { auth: true, fn: handleProspectClear },
+  };
+}
+
+// ---------- 儲存 ----------
+function psSs_(create) {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('PROSPECT_SSID');
+  if (id) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (e) {
+      if (!create) throw new Error('開發名單庫試算表打不開（可能被刪除或沒有權限）');
+    }
+  }
+  if (!create) return null;
+  var ss = SpreadsheetApp.create('AOI開發名單庫');
+  props.setProperty('PROSPECT_SSID', ss.getId());
+  return ss;
+}
+
+/** 取得名單分頁；create = true 時沒有就建立（含標題列、全欄純文字）。沒建立過又 create = false → null。 */
+function psSheet_(create) {
+  var ss = psSs_(create);
+  if (!ss) return null;
+  var sh = ss.getSheetByName(PS_SHEET);
+  if (sh) return sh;
+  if (!create) return null;
+  ['工作表1', 'Sheet1'].forEach(function (n) {
+    var d = ss.getSheetByName(n);
+    if (!sh && d && d.getLastRow() === 0) {
+      d.setName(PS_SHEET);
+      sh = d;
+    }
+  });
+  if (!sh) sh = ss.insertSheet(PS_SHEET);
+  sh.getRange(1, 1, 1, PS_COLS.length).setValues([PS_COLS]).setFontWeight('bold').setBackground('#eef2f7');
+  sh.setFrozenRows(1);
+  // 統編、電話、登記編號都要純文字，不然開頭的 0 會被吃掉
+  sh.getRange(1, 1, sh.getMaxRows(), PS_COLS.length).setNumberFormat('@');
+  return sh;
+}
+
+function psCol_(name) {
+  return PS_COLS.indexOf(name) + 1;
+}
+
+function psObj_(arr) {
+  var o = {};
+  PS_COLS.forEach(function (c, i) {
+    o[c] = arr[i] == null ? '' : arr[i];
+  });
+  return o;
+}
+
+function psArr_(o) {
+  return PS_COLS.map(function (c) {
+    return o[c] == null ? '' : o[c];
+  });
+}
+
+function psColVals_(sh, col, n) {
+  return n < 1 ? [] : sh.getRange(2, col, n, 1).getValues().map(function (r) {
+    return String(r[0]);
+  });
+}
+
+/** 讀指定的列（列號陣列）。相鄰的列合併成一次讀取；太分散就整段一次讀。回傳 { 列號: 值陣列 }。 */
+function psReadRows_(sh, rows) {
+  var sorted = rows.slice().sort(function (a, b) { return a - b; }).filter(function (r, i, a) { return i === 0 || r !== a[i - 1]; });
+  var out = {};
+  if (!sorted.length) return out;
+  var runs = [];
+  sorted.forEach(function (r) {
+    var last = runs[runs.length - 1];
+    if (last && r - last.end <= 30) last.end = r;
+    else runs.push({ start: r, end: r });
+  });
+  if (runs.length > 200) runs = [{ start: sorted[0], end: sorted[sorted.length - 1] }];
+  var want = {};
+  sorted.forEach(function (r) { want[r] = true; });
+  runs.forEach(function (run) {
+    var vals = sh.getRange(run.start, 1, run.end - run.start + 1, PS_COLS.length).getValues();
+    vals.forEach(function (v, i) {
+      if (want[run.start + i]) out[run.start + i] = v;
+    });
+  });
+  return out;
+}
+
+// ---------- 欄位清理 / 衍生欄位 ----------
+function psClean_(v, max, keepNewline) {
+  var s = v == null ? '' : String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F​﻿]/g, '');
+  s = keepNewline ? s.replace(/[ \t　]+/g, ' ').replace(/\r\n?/g, '\n').trim() : s.replace(/[\s　]+/g, ' ').trim();
+  return s.slice(0, max || 200);
+}
+
+/** 統一編號：8 碼數字（Excel 吃掉開頭 0 變 7 碼會補回）；不是就當作沒有。 */
+function psTaxId_(v) {
+  var s = String(v == null ? '' : v).replace(/\D/g, '');
+  if (s.length === 7) s = '0' + s;
+  return s.length === 8 ? s : '';
+}
+
+function psWebsite_(v) {
+  var s = psClean_(v, 200).replace(/\s/g, '');
+  if (!s) return '';
+  if (/^[a-z][a-z0-9+.\-]*:/i.test(s) && !/^https?:\/\//i.test(s)) return ''; // javascript: 之類的不收
+  return s;
+}
+
+function psEmail_(v) {
+  var s = psClean_(v, 120).split(/[;,，；\s]+/)[0].toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? s : '';
+}
+
+function psCityOf_(address) {
+  var a = String(address || '').replace(/^\d{3,6}\s*/, '').replace(/台/g, '臺').replace(/^桃園縣/, '桃園市');
+  for (var i = 0; i < PS_CITIES.length; i++) if (a.indexOf(PS_CITIES[i]) === 0) return PS_CITIES[i];
+  return '';
+}
+
+/** 產業類別文字 → [{code, name}]。工廠登記的格式是「29機械設備製造業、25金屬製品製造業」（代碼 2 碼開頭，名稱裡也可能有頓號）；其他來源是自由文字，用符號切開。 */
+function psCatParse_(s) {
+  s = String(s || '').replace(/　/g, ' ').trim();
+  var out = [];
+  var add = function (code, name) {
+    if (code && out.every(function (o) { return o.code !== code; })) out.push({ code: code, name: name });
+  };
+  if (/^\d{2}/.test(s)) {
+    (s.match(/\d{2}[^\d]*/g) || []).forEach(function (t) {
+      add(t.slice(0, 2), t.slice(2).replace(/[、,，;；\s]+$/, '').trim());
+    });
+  } else {
+    s.split(/[、,，;；\/／|]/).forEach(function (t) {
+      t = t.trim().slice(0, 30);
+      add(t, t);
+    });
+  }
+  return out;
+}
+
+function psKey_(r) {
+  if (r.RegNo) return 'R:' + r.RegNo;
+  if (r.TaxId) return 'T:' + r.TaxId;
+  return 'N:' + String(r.Name || '').toLowerCase();
+}
+
+/** 補齊衍生欄位：縣市、產業代碼、有無聯絡方式、搜尋文字、Key。 */
+function psDerive_(r) {
+  r.City = psCityOf_(r.Address) || r.City || '';
+  r.CatCodes = psCatParse_(r.Category).map(function (c) { return c.code; }).join('|');
+  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '');
+  r.Search = [r.Name, r.TaxId, r.Owner, r.Products, r.Address, r.Phone, r.Email, r.Website, r.Contact].join(' ').toLowerCase().replace(/台/g, '臺').replace(/\s+/g, ' ').slice(0, 400);
+  r.Key = psKey_(r);
+  return r;
+}
+
+/** 匯入的一筆（前端已經把欄位對好英文名稱）→ 清理後的名單物件。沒有名稱就丟掉（回 null）。 */
+function psIncoming_(o, source) {
+  var r = {
+    Name: psClean_(o.Name, 120), TaxId: psTaxId_(o.TaxId), RegNo: psClean_(o.RegNo, 30).replace(/\s/g, ''), Address: psClean_(o.Address, 200),
+    Owner: psClean_(o.Owner, 60), Category: psClean_(o.Category, 300), Products: psClean_(o.Products, 400), Status: psClean_(o.Status, 40), Org: psClean_(o.Org, 40),
+    Website: psWebsite_(o.Website), Phone: psClean_(o.Phone, 60), Email: psEmail_(o.Email), Contact: psClean_(o.Contact, 80), Notes: psClean_(o.Notes, 500, true),
+    Source: source, Stage: '', Optout: '', AssignedTo: '',
+  };
+  if (!r.Name) return null;
+  return r;
+}
+
+/** 把新資料合併進既有的一筆：預設只補「原本是空的」欄位；update = true 時有差異的欄位也更新。開發狀態 / 備註 / 指派 / 拒絕聯絡一律不動。回傳有沒有改變。 */
+function psMergeInto_(ex, inc, update) {
+  var changed = false;
+  PS_MERGE_FIELDS.forEach(function (f) {
+    if (inc[f] && (!ex[f] || (update && ex[f] !== inc[f]))) {
+      ex[f] = inc[f];
+      changed = true;
+    }
+  });
+  if (!ex.RegNo && inc.RegNo) {
+    ex.RegNo = inc.RegNo;
+    changed = true;
+  }
+  if (!ex.TaxId && inc.TaxId) {
+    ex.TaxId = inc.TaxId;
+    changed = true;
+  }
+  if (update && inc.Name && ex.Name !== inc.Name && (!ex.RegNo || ex.RegNo === inc.RegNo)) {
+    ex.Name = inc.Name;
+    changed = true;
+  }
+  if (!ex.Notes && inc.Notes) {
+    ex.Notes = inc.Notes;
+    changed = true;
+  }
+  var srcs = String(ex.Source || '').split('、').filter(Boolean);
+  if (srcs.indexOf(inc.Source) < 0) {
+    srcs.push(inc.Source);
+    ex.Source = srcs.join('、');
+    changed = true;
+  }
+  return changed;
+}
+
+// ---------- 匯入 ----------
+function handleProspectImport(body) {
+  var rows = body.rows;
+  if (!Array.isArray(rows) || !rows.length) return { success: false, message: '沒有要匯入的資料' };
+  if (rows.length > PS_IMPORT_MAX) return { success: false, message: '一次最多匯入 ' + PS_IMPORT_MAX + ' 筆，請分批送' };
+  var source = psClean_(body.source, 60).replace(/[、|]/g, ',');
+  if (!source) return { success: false, message: '請填「來源」（例如：經濟部生產中工廠名錄）' };
+  var update = !!body.update;
+  return withLock_(function () {
+    var sh = psSheet_(true);
+    var last = sh.getLastRow();
+    var n = Math.max(0, last - 1);
+    var keyCol = psColVals_(sh, 1, n);
+    var taxCol = psColVals_(sh, psCol_('TaxId'), n);
+    var regCol = psColVals_(sh, psCol_('RegNo'), n);
+    var keyMap = {};
+    var taxFirst = {};
+    var taxNoReg = {};
+    for (var i = 0; i < n; i++) {
+      keyMap[keyCol[i]] = i + 2;
+      var t = taxCol[i];
+      if (t) {
+        if (!taxFirst[t]) taxFirst[t] = i + 2;
+        if (!regCol[i] && !taxNoReg[t]) taxNoReg[t] = i + 2;
+      }
+    }
+    var now = nowStr();
+    var nextRow = last + 1;
+    var firstNew = nextRow;
+    var steps = []; // { row, rec, isNew }
+    var invalid = 0;
+    rows.forEach(function (o) {
+      var rec = psIncoming_(o || {}, source);
+      if (!rec) {
+        invalid++;
+        return;
+      }
+      psDerive_(rec);
+      var target = keyMap[rec.Key];
+      if (!target && rec.TaxId) target = rec.RegNo ? taxNoReg[rec.TaxId] : taxFirst[rec.TaxId];
+      if (target) {
+        steps.push({ row: target, rec: rec, isNew: false });
+        return;
+      }
+      var row = nextRow++;
+      keyMap[rec.Key] = row;
+      if (rec.TaxId) {
+        if (!taxFirst[rec.TaxId]) taxFirst[rec.TaxId] = row;
+        if (!rec.RegNo && !taxNoReg[rec.TaxId]) taxNoReg[rec.TaxId] = row;
+      }
+      rec.ImportedAt = now;
+      rec.UpdatedAt = now;
+      steps.push({ row: row, rec: rec, isNew: true });
+    });
+
+    // 需要合併的既有列：一次讀進來
+    var existingRows = steps.filter(function (s) { return !s.isNew && s.row < firstNew; }).map(function (s) { return s.row; });
+    var read = psReadRows_(sh, existingRows);
+    var objs = {};
+    var added = 0;
+    var merged = 0;
+    var same = 0;
+    var dupInBatch = 0;
+    var changedRows = {};
+    steps.forEach(function (s) {
+      if (s.isNew) {
+        objs[s.row] = s.rec;
+        added++;
+        return;
+      }
+      if (!objs[s.row]) objs[s.row] = psObj_(read[s.row]);
+      var ex = objs[s.row];
+      var changed = psMergeInto_(ex, s.rec, update);
+      if (changed) {
+        ex.UpdatedAt = now;
+        psDerive_(ex);
+      }
+      if (s.row >= firstNew) {
+        dupInBatch++; // 同一批裡重複的列：合併進同批的新列，最後一起寫，不算新增也不算更新
+      } else if (changed) {
+        if (!changedRows[s.row]) merged++;
+        changedRows[s.row] = true;
+      } else if (!changedRows[s.row]) {
+        same++;
+      }
+    });
+
+    if (nextRow > firstNew) {
+      var data = [];
+      for (var r = firstNew; r < nextRow; r++) data.push(psArr_(objs[r]));
+      ensureRows_(sh, nextRow - 1);
+      var range = sh.getRange(firstNew, 1, data.length, PS_COLS.length);
+      range.setNumberFormat('@');
+      range.setValues(data);
+    }
+    // 改過的既有列：相鄰的合併成一次寫入
+    var rowsChanged = Object.keys(changedRows).map(Number).sort(function (a, b) { return a - b; });
+    var i2 = 0;
+    while (i2 < rowsChanged.length) {
+      var j = i2;
+      while (j + 1 < rowsChanged.length && rowsChanged[j + 1] === rowsChanged[j] + 1) j++;
+      var block = [];
+      for (var k = i2; k <= j; k++) block.push(psArr_(objs[rowsChanged[k]]));
+      sh.getRange(rowsChanged[i2], 1, block.length, PS_COLS.length).setValues(block);
+      i2 = j + 1;
+    }
+    PropertiesService.getScriptProperties().setProperty('PS_LAST_IMPORT', JSON.stringify({ time: now, source: source, by: (body._user && body._user.username) || '' }));
+    return { success: true, added: added, merged: merged, same: same, invalid: invalid, duplicateInBatch: dupInBatch, total: Math.max(0, sh.getLastRow() - 1) };
+  });
+}
+
+// ---------- 篩選 ----------
+function psList_(v, max) {
+  return (Array.isArray(v) ? v : []).map(function (x) { return String(x); }).filter(Boolean).slice(0, max || 60);
+}
+
+function psFilter_(b) {
+  b = b || {};
+  var q = String(b.q || '').toLowerCase().replace(/台/g, '臺').split(/\s+/).filter(Boolean).slice(0, 6);
+  var has = String(b.has || '').replace(/[^PEW]/g, '');
+  var assigned = b.assigned === 'me' || b.assigned === 'none' ? b.assigned : '';
+  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned };
+}
+
+function psSet_(arr) {
+  var o = {};
+  arr.forEach(function (x) { o[x] = true; });
+  return o;
+}
+
+/**
+ * 篩選 + 統計。scan = Source〜Has 五欄的值；search = 搜尋欄（沒有關鍵字就不用讀）；asg = 指派欄（沒用到就不用讀）。
+ * 每個分面（來源 / 縣市 / 產業 / 狀態 / 聯絡方式）的數字 = 「套用其他所有條件、不含自己」的筆數，
+ * 所以選了某個產業後，來源與縣市的數字會跟著變，但產業清單仍看得到其他產業有幾筆可選。
+ * 一個迴圈、每列算 6 個條件：全過 → 計入所有分面；只有 1 個沒過 → 只計入那個沒過的分面。
+ */
+function psRun_(scan, search, asg, f, me) {
+  var sSet = psSet_(f.sources), cSet = psSet_(f.cities), kSet = psSet_(f.cats), tSet = psSet_(f.stages);
+  var fac = { source: {}, city: {}, cat: {}, stage: {}, has: {} };
+  var hits = [];
+  var bump = function (m, k) { m[k] = (m[k] || 0) + 1; };
+  for (var i = 0; i < scan.length; i++) {
+    var r = scan[i];
+    var srcs = String(r[0]).split('、');
+    var city = String(r[1]) || '未知';
+    var cats = String(r[2]).split('|');
+    var stage = String(r[3]) || PS_STAGES[0];
+    var has = String(r[4]);
+    var fl = [true, true, true, true, true, true]; // source, city, cat, stage, has, other(q / assigned)
+    if (f.sources.length) fl[0] = srcs.some(function (x) { return sSet[x]; });
+    if (f.cities.length) fl[1] = !!cSet[city];
+    if (f.cats.length) fl[2] = cats.some(function (x) { return kSet[x]; });
+    if (f.stages.length) fl[3] = !!tSet[stage];
+    if (f.has) for (var h = 0; h < f.has.length; h++) if (has.indexOf(f.has.charAt(h)) < 0) fl[4] = false;
+    if (f.q.length) {
+      var text = String(search[i]);
+      for (var t = 0; t < f.q.length; t++) if (text.indexOf(f.q[t]) < 0) fl[5] = false;
+    }
+    if (f.assigned && fl[5]) {
+      var who = String(asg[i]);
+      fl[5] = f.assigned === 'me' ? who === me : !who;
+    }
+    var miss = 0, which = -1;
+    for (var k = 0; k < 6; k++) if (!fl[k]) { miss++; which = k; }
+    if (miss > 1 || (miss === 1 && which === 5)) continue;
+    if (miss === 0) hits.push(i);
+    if (miss === 0 || which === 0) srcs.forEach(function (x) { if (x) bump(fac.source, x); });
+    if (miss === 0 || which === 1) bump(fac.city, city);
+    if (miss === 0 || which === 2) cats.forEach(function (x) { if (x) bump(fac.cat, x); });
+    if (miss === 0 || which === 3) bump(fac.stage, stage);
+    if (miss === 0 || which === 4) for (var p = 0; p < has.length; p++) bump(fac.has, has.charAt(p));
+  }
+  return { hits: hits, facets: fac };
+}
+
+function psFacetList_(m, order) {
+  var list = Object.keys(m).map(function (k) { return { v: k, n: m[k] }; });
+  if (order) list.sort(function (a, b) { return order.indexOf(a.v) - order.indexOf(b.v); });
+  else list.sort(function (a, b) { return b.n - a.n || (a.v < b.v ? -1 : 1); });
+  return list;
+}
+
+/** 依篩選條件讀表、算出符合的列（陣列索引，0 = 第 2 列）與各分面統計。 */
+function psMatch_(sh, body) {
+  var f = psFilter_(body);
+  var n = Math.max(0, sh.getLastRow() - 1);
+  if (!n) return { f: f, n: 0, hits: [], facets: { source: {}, city: {}, cat: {}, stage: {}, has: {} } };
+  var scan = sh.getRange(2, 2, n, 5).getValues();
+  var search = f.q.length ? psColVals_(sh, psCol_('Search'), n) : null;
+  var me = String((body._user && body._user.username) || '');
+  var asg = f.assigned ? psColVals_(sh, psCol_('AssignedTo'), n) : null;
+  var res = psRun_(scan, search, asg, f, me);
+  res.f = f;
+  res.n = n;
+  return res;
+}
+
+function psOut_(arr, rowNum) {
+  var o = psObj_(arr);
+  delete o.Search;
+  o.RowIndex = rowNum;
+  o.Stage = o.Stage || PS_STAGES[0];
+  return o;
+}
+
+// ---------- 查詢 / 狀態 ----------
+function handleProspectStatus(body) {
+  var sh = psSheet_(false);
+  var last = {};
+  try {
+    last = JSON.parse(PropertiesService.getScriptProperties().getProperty('PS_LAST_IMPORT') || '{}');
+  } catch (e) {
+    last = {};
+  }
+  var out = { success: true, ready: !!sh, total: sh ? Math.max(0, sh.getLastRow() - 1) : 0, stages: PS_STAGES, industry: PS_INDUSTRY, last: last };
+  try {
+    var u = sh && body._user ? findUserRow_(body._user.username) : null;
+    if (u && u['Role'] === 'admin' && sh.getParent) out.url = sh.getParent().getUrl(); // 只給系統管理員看試算表連結
+  } catch (e) {
+    // 取不到連結不影響狀態查詢
+  }
+  return out;
+}
+
+function handleProspectQuery(body) {
+  var sh = psSheet_(false);
+  var empty = { success: true, ready: !!sh, total: 0, all: 0, page: 1, pages: 1, rows: [], facets: { source: [], city: [], cat: [], stage: [], has: [] }, industry: PS_INDUSTRY, stages: PS_STAGES };
+  if (!sh || sh.getLastRow() < 2) return empty;
+  var res = psMatch_(sh, body);
+  var size = Math.min(100, Math.max(10, Math.floor(Number(body.size)) || 30));
+  var pages = Math.max(1, Math.ceil(res.hits.length / size));
+  var page = Math.min(pages, Math.max(1, Math.floor(Number(body.page)) || 1));
+  var rowNums = res.hits.slice((page - 1) * size, page * size).map(function (i) { return i + 2; });
+  var read = psReadRows_(sh, rowNums);
+  return {
+    success: true, ready: true, all: res.n, total: res.hits.length, page: page, pages: pages, size: size,
+    rows: rowNums.map(function (r) { return psOut_(read[r], r); }),
+    facets: {
+      source: psFacetList_(res.facets.source),
+      city: psFacetList_(res.facets.city),
+      cat: psFacetList_(res.facets.cat).sort(function (a, b) { return a.v < b.v ? -1 : a.v > b.v ? 1 : 0; }),
+      stage: psFacetList_(res.facets.stage, PS_STAGES),
+      has: psFacetList_(res.facets.has),
+    },
+    industry: PS_INDUSTRY, stages: PS_STAGES,
+  };
+}
+
+function handleProspectExport(body) {
+  var sh = psSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return { success: false, message: '名單庫還是空的' };
+  var res = psMatch_(sh, body);
+  var take = res.hits.slice(0, PS_EXPORT_MAX).map(function (i) { return i + 2; });
+  var read = psReadRows_(sh, take);
+  return { success: true, total: res.hits.length, exported: take.length, truncated: res.hits.length > take.length, rows: take.map(function (r) { return psOut_(read[r], r); }) };
+}
+
+// ---------- 修改 ----------
+/** 負責業務：前端送 '@me' 代表「我」，由伺服器換成登入帳號（畫面上的顯示名稱不一定等於帳號）。 */
+function psAssignee_(v, body) {
+  var s = psClean_(v, 40);
+  return s === '@me' ? String((body._user && body._user.username) || '') : s;
+}
+
+var PS_EDITABLE = { Stage: 1, Notes: 1, Website: 1, Phone: 1, Email: 1, Contact: 1, Optout: 1, AssignedTo: 1 };
+
+function psCheckStage_(v) {
+  var s = psClean_(v, 20);
+  if (s && PS_STAGES.indexOf(s) < 0) throw new Error('開發狀態只能是：' + PS_STAGES.join('、'));
+  return s === PS_STAGES[0] ? '' : s;
+}
+
+function handleProspectUpdate(body) {
+  var f = body.fields || {};
+  return withLock_(function () {
+    var sh = psSheet_(false);
+    if (!sh) return { success: false, message: '名單庫還是空的' };
+    var key = String(body.key || '');
+    if (!key) return { success: false, message: '缺少名單編號' };
+    var row = Math.floor(Number(body.row)) || 0;
+    var arr = row >= 2 ? psReadRows_(sh, [row])[row] : null;
+    if (!arr || String(arr[0]) !== key) {
+      // 列號可能因為別人刪除 / 排序而變了：用 Key 重新找
+      var n = Math.max(0, sh.getLastRow() - 1);
+      var idx = psColVals_(sh, 1, n).indexOf(key);
+      if (idx < 0) return { success: false, message: '找不到這筆名單（可能已被刪除），請重新整理' };
+      row = idx + 2;
+      arr = psReadRows_(sh, [row])[row];
+    }
+    var o = psObj_(arr);
+    try {
+      Object.keys(f).forEach(function (k) {
+        if (!PS_EDITABLE[k]) return;
+        var v = f[k];
+        if (k === 'Stage') o.Stage = psCheckStage_(v);
+        else if (k === 'Notes') o.Notes = psClean_(v, 500, true);
+        else if (k === 'Website') o.Website = psWebsite_(v);
+        else if (k === 'Email') {
+          var em = String(v || '').trim();
+          o.Email = psEmail_(em);
+          if (em && !o.Email) throw new Error('Email 格式不正確');
+        } else if (k === 'Optout') o.Optout = v ? 'Y' : '';
+        else if (k === 'AssignedTo') o.AssignedTo = psAssignee_(v, body);
+        else o[k] = psClean_(v, k === 'Phone' ? 60 : 80);
+      });
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    o.UpdatedAt = nowStr();
+    psDerive_(o);
+    sh.getRange(row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+    return { success: true, row: psOut_(psArr_(o), row) };
+  });
+}
+
+/** 一次改很多筆（勾選的，或是「符合目前篩選的全部」）的開發狀態 / 指派 / 拒絕聯絡。用整欄讀寫，十萬筆也只要幾秒。 */
+function handleProspectBulk(body) {
+  var set = body.set || {};
+  var upd = {};
+  try {
+    if (set.Stage !== undefined) upd.Stage = psCheckStage_(set.Stage);
+    if (set.AssignedTo !== undefined) upd.AssignedTo = psAssignee_(set.AssignedTo, body);
+    if (set.Optout !== undefined) upd.Optout = set.Optout ? 'Y' : '';
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  if (!Object.keys(upd).length) return { success: false, message: '沒有要修改的欄位' };
+  return withLock_(function () {
+    var sh = psSheet_(false);
+    if (!sh || sh.getLastRow() < 2) return { success: false, message: '名單庫還是空的' };
+    var n = sh.getLastRow() - 1;
+    var hits;
+    if (Array.isArray(body.keys)) {
+      var keys = psSet_(psList_(body.keys, 3000));
+      hits = [];
+      psColVals_(sh, 1, n).forEach(function (k, i) {
+        if (keys[k]) hits.push(i);
+      });
+    } else {
+      var fb = Object.assign({}, body.filter || {}, { _user: body._user });
+      hits = psMatch_(sh, fb).hits;
+    }
+    if (!hits.length) return { success: true, count: 0 };
+    var stamp = nowStr();
+    Object.keys(upd).concat(['UpdatedAt']).forEach(function (c) {
+      var range = sh.getRange(2, psCol_(c), n, 1);
+      var vals = range.getValues();
+      hits.forEach(function (i) {
+        vals[i][0] = c === 'UpdatedAt' ? stamp : upd[c];
+      });
+      range.setValues(vals);
+    });
+    return { success: true, count: hits.length };
+  });
+}
+
+function handleProspectClear(body) {
+  if (String(body.confirm || '') !== 'CLEAR') return { success: false, message: '請輸入確認文字 CLEAR' };
+  return withLock_(function () {
+    var sh = psSheet_(false);
+    if (!sh || sh.getLastRow() < 2) return { success: true, removed: 0 };
+    var removed = sh.getLastRow() - 1;
+    sh.getRange(2, 1, removed, PS_COLS.length).clearContent();
+    var keep = 21;
+    if (sh.getMaxRows() > keep) sh.deleteRows(keep + 1, sh.getMaxRows() - keep);
+    PropertiesService.getScriptProperties().deleteProperty('PS_LAST_IMPORT');
+    return { success: true, removed: removed };
+  });
 }
