@@ -144,6 +144,8 @@ var ROUTES = {
 
   // 詢價信
   generateInquiryDraft:    { auth: true, fn: handleGenerateInquiryDraft },
+  getProductsExport:       { auth: true, fn: handleGetProductsExport },
+  writeProductCopy:        { auth: true, fn: handleWriteProductCopy },
   createGmailDraft:        { auth: true, fn: handleCreateGmailDraft },
 
   // 案件
@@ -378,6 +380,7 @@ var ACTION_PERM = {
   addStaff: ['admin', 'w'], updateStaff: ['admin', 'w'], deleteStaff: ['admin', 'd'], deleteSoftware: ['admin', 'd'],
   dbStatus: ['admin', 'r'], dbTrim: ['admin', 'w'], dedupeData: ['admin', 'w'],
   // 產品與詢價
+  getProductsExport: ['products', 'r'], writeProductCopy: ['products', 'r'],
   searchProducts: ['products', 'r'], getProduct: ['products', 'r'], getCalcCatalog: ['products', 'r'], getPriceHistory: ['products', 'r'], generateQuoteDoc: ['products', 'r'],
   addProduct: ['products', 'w'], updateProduct: ['products', 'w'], deleteProduct: ['products', 'd'], deleteProducts: ['products', 'd'],
   importCatalogProducts: ['products', 'w'], importDehongProducts: ['products', 'w'], importFlirProducts: ['products', 'w'], importBaslerProducts: ['products', 'w'],
@@ -1783,6 +1786,83 @@ function handleSearchProducts(body) {
     r.LastInquiryDate = lastDates[r['InternalModel']] || '';
   });
   return { success: true, products: results };
+}
+
+/** 匯出用：依列號取產品完整資料（含官網完整規格 Specs，已展開成物件）。一次最多 500 筆。 */
+function handleGetProductsExport(body) {
+  var want = {};
+  var rows = (Array.isArray(body.rowIndexes) ? body.rowIndexes : []).map(Number).filter(function (n) { return n >= 2; });
+  if (!rows.length) return { success: false, message: '沒有選取任何產品' };
+  if (rows.length > 500) return { success: false, message: '一次最多匯出 500 筆，請分批勾選' };
+  rows.forEach(function (n) { want[n] = true; });
+  var sheet = getSheet(SHEET_PRODUCTS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { success: true, products: [] };
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var all = sheet.getRange(2, 1, lastRow - 1, header.length).getValues();
+  var out = [];
+  all.forEach(function (r, i) {
+    if (!want[i + 2]) return;
+    var o = rowToObject(header, r);
+    o.RowIndex = i + 2;
+    var specs = {};
+    try { specs = o.Specs ? JSON.parse(o.Specs) : {}; } catch (e) { specs = {}; }
+    o.Specs = specs && typeof specs === 'object' ? specs : {};
+    out.push(o);
+  });
+  return { success: true, products: out };
+}
+
+/**
+ * AI 幫產品寫上架文案。只把「要上架對客人公開的資料」送給 AI：底價、供應商、供應商窗口絕不會送出；
+ * 售價由前端算好（底價 × 倍率）傳進來，使用者沒勾「售價」就不會帶。
+ * body.products：[{ name, category, brand, price, specs: { 欄位: 值 } }]；body.mode：each = 每個產品各一篇 / one = 整組寫成一篇。
+ */
+function handleWriteProductCopy(body) {
+  var items = (Array.isArray(body.products) ? body.products : []).slice(0, 30);
+  if (!items.length) return { success: false, message: '沒有選取任何產品' };
+  var user = String((body._user && body._user.username) || '');
+  var cache = CacheService.getScriptCache();
+  var key = 'pcopy:' + user + ':' + Math.floor(Date.now() / 3600000);
+  var used = Number(cache.get(key) || 0);
+  if (used >= 20) return { success: false, message: '這個小時已經產生太多次了（每人每小時最多 20 次），請稍後再試' };
+  cache.put(key, String(used + 1), 7200);
+
+  var tone = { pro: '專業、可信賴，用詞精準', friendly: '親切好懂，像業務在介紹', concise: '精簡有力，少形容詞' }[body.tone] || '專業、可信賴，用詞精準';
+  var platform = { site: '公司官網商品頁（可以較完整）', market: '電商平台商品頁（標題要含關鍵字，賣點條列清楚）', seo: '官網文章，兼顧搜尋引擎關鍵字（自然帶入型號與用途）' }[body.platform] || '公司官網商品頁（可以較完整）';
+  var length = { short: '每個產品約 100–150 字', mid: '每個產品約 250–350 字', long: '每個產品約 500–700 字' }[body.length] || '每個產品約 250–350 字';
+  var one = body.mode === 'one';
+  var extra = botClip_(body.extra, 400);
+
+  var system = [
+    '你是工業視覺（AOI、工業相機、鏡頭、光源等）產品的電商文案撰寫助理，為台灣公司撰寫產品上架文案，使用繁體中文。',
+    '【鐵則】只能使用使用者提供的資料。沒有提供的規格、價格、認證、保固、庫存、交期、應用案例，一律不要寫、不要推測、不要編造；資料不足就少寫，不要湊字數。',
+    '型號、數字、單位照原樣抄寫，不要改寫或換算。不要提到成本、底價、供應商、進貨管道。',
+    '輸出格式：每個產品包含「標題」「賣點（3–5 點條列）」「規格摘要（條列）」「適用情境」；結尾一句行動呼籲（例如歡迎洽詢）。' + (one ? '' : '多個產品時，每個產品之間用單獨一行 --- 分隔。'),
+    one ? '使用者選的是同一系列的多個產品：寫成「一篇」介紹文，先寫系列共通的賣點，再用條列或表格比較各型號差異。' : '',
+    '風格：' + tone + '。平台：' + platform + '。長度：' + length + '。',
+    extra ? '額外要求：' + extra : '',
+  ].filter(Boolean).join('\n');
+
+  var listing = items.map(function (p, i) {
+    var lines = ['【產品 ' + (i + 1) + '】', '名稱／型號：' + botClip_(p.name, 120)];
+    if (p.category) lines.push('類別：' + botClip_(p.category, 40));
+    if (p.brand) lines.push('品牌：' + botClip_(p.brand, 60));
+    if (p.price) lines.push('售價：' + botClip_(p.price, 40));
+    var specs = p.specs && typeof p.specs === 'object' ? p.specs : {};
+    Object.keys(specs).slice(0, 60).forEach(function (k) {
+      var v = botClip_(specs[k], 200);
+      if (v) lines.push(botClip_(k, 40) + '：' + v);
+    });
+    return lines.join('\n');
+  }).join('\n\n');
+
+  try {
+    var text = botGenerate_(system, [{ role: 'user', text: listing }]);
+    return { success: true, text: text };
+  } catch (e) {
+    return { success: false, message: String(e && e.message ? e.message : e) };
+  }
 }
 
 function handleGetProduct(body) {

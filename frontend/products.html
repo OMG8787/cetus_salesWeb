@@ -2,12 +2,12 @@
 <html lang="zh-Hant">
 
 <head>
-<script src="theme.js?v=20261109a"></script>
+<script src="theme.js?v=20261109b"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>產品搜尋 / 詢價 - AOI 業務系統</title>
-  <link rel="stylesheet" href="style.css?v=20261109a" />
-<link rel="stylesheet" href="dark.css?v=20261109a" />
+  <link rel="stylesheet" href="style.css?v=20261109b" />
+<link rel="stylesheet" href="dark.css?v=20261109b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -145,11 +145,47 @@
     </div>
 
     <div id="product-bulk-bar" class="panel" style="padding:8px 12px;">
-      <span id="bulk-info" class="calc-hint">批次刪除：勾選下方列左邊的方框，或按「全選目前篩選結果」（先用上面的搜尋把錯誤資料篩出來，例如輸入「尺寸图」）。</span>
+      <span id="bulk-info" class="calc-hint">勾選下方列左邊的方框，或按「全選目前篩選結果」（先用上面的搜尋篩出來，例如輸入「CVG-」），再按「匯出勾選的項目」或「AI 撰寫文案」；也可以批次刪除。</span>
       <button class="btn-secondary" onclick="bulkSelectFiltered()">全選目前篩選結果</button>
       <button class="btn-secondary" onclick="bulkSelectPage()">全選本頁</button>
       <button class="btn-secondary" onclick="bulkClear()">清除選取</button>
+      <button id="bulk-export-btn" onclick="openExportPanel('export')">📤 匯出勾選的項目</button>
+      <button id="bulk-copy-btn" onclick="openExportPanel('copy')">✍️ AI 撰寫文案</button>
       <button id="bulk-delete-btn" style="background:#c0392b;color:#fff;" onclick="bulkDelete()">刪除所選</button>
+    </div>
+
+    <div id="export-panel" class="panel" style="display:none;">
+      <h3 style="margin-top:0;">📤 匯出勾選的產品 / ✍️ AI 撰寫上架文案 <span id="export-count" class="calc-hint"></span></h3>
+      <div class="calc-hint">用法：先在上面搜尋（例如 CVG-），勾選要上架的產品，再選要匯出的欄位。匯出的檔案可以直接用 Excel 開，或按「複製」貼進 Google 試算表 / 電商後台的批次上架表。</div>
+
+      <div class="pd-section-title">1. 要匯出哪些欄位</div>
+      <div id="export-fields" class="export-fields"></div>
+      <div class="calc-hint"><b>售價</b> = 底價 × <input id="export-multiplier" type="number" step="0.01" min="0" style="width:80px;display:inline-block;" value="2" />（系統的牌價是底價的 2 倍；電商價格要不同就改這個倍率）
+        取整數方式 <select id="export-rounding" style="width:auto;display:inline-block;"><option value="ceil">無條件進位到整數</option><option value="round">四捨五入到整數</option><option value="ceil10">無條件進位到 10 的倍數</option><option value="none">不處理（保留兩位小數）</option></select></div>
+      <div class="calc-hint" style="color:#c0392b;">紅色的「內部資料」（底價、供應商）預設不勾，上架到公開網站前請確認不要帶出去；它們也<b>絕對不會</b>送給 AI。</div>
+      <div style="margin-top:8px;">
+        <button onclick="exportDownload('csv')">⬇️ 下載 CSV（Excel 可開）</button>
+        <button class="btn-secondary" onclick="exportDownload('json')">⬇️ 下載 JSON</button>
+        <button class="btn-secondary" onclick="exportCopyTable()">📋 複製（貼進試算表）</button>
+        <span id="export-msg" class="calc-hint"></span>
+      </div>
+
+      <div class="pd-section-title" style="margin-top:18px;">2. AI 撰寫上架文案</div>
+      <div class="calc-hint">AI 只會用你勾選的欄位（不含底價、供應商）加上官網完整規格來寫，沒有的資料不會亂編；寫完請自己檢查型號與規格再上架。</div>
+      <div class="export-ai-grid">
+        <label>風格 <select id="copy-tone"><option value="pro">專業可信賴</option><option value="friendly">親切好懂</option><option value="concise">精簡有力</option></select></label>
+        <label>用途 <select id="copy-platform"><option value="site">公司官網商品頁</option><option value="market">電商平台商品頁</option><option value="seo">官網文章（SEO）</option></select></label>
+        <label>長度 <select id="copy-length"><option value="short">短（每個約 100–150 字）</option><option value="mid" selected>中（約 250–350 字）</option><option value="long">長（約 500–700 字）</option></select></label>
+        <label>寫法 <select id="copy-mode"><option value="each">每個產品各寫一篇</option><option value="one">整組寫成一篇（同系列）</option></select></label>
+      </div>
+      <label>額外要求（選填，例如：強調防塵防水、對象是產線工程師、不要用驚嘆號）</label>
+      <textarea id="copy-extra" rows="2" maxlength="400"></textarea>
+      <div style="margin-top:8px;"><button id="copy-write-btn" onclick="writeCopy()">✍️ 產生文案</button> <span id="copy-msg" class="calc-hint"></span></div>
+      <textarea id="copy-result" rows="14" style="margin-top:8px;display:none;"></textarea>
+      <div id="copy-actions" style="display:none;margin-top:6px;">
+        <button class="btn-secondary" onclick="copyResultText()">📋 複製文案</button>
+        <button class="btn-secondary" onclick="downloadResultText()">⬇️ 下載文案（.txt）</button>
+      </div>
     </div>
     <table id="product-table">
       <thead>
@@ -295,12 +331,13 @@
     </div>
   </div>
 
-  <script src="config.js?v=20261109a"></script>
-  <script src="demo.js?v=20261109a"></script>
-  <script src="common.js?v=20261109a"></script>
-<script src="assistant.js?v=20261109a"></script>
-<script src="alerts.js?v=20261109a"></script>
-  <script src="products.js?v=20261109a"></script>
+  <script src="config.js?v=20261109b"></script>
+  <script src="demo.js?v=20261109b"></script>
+  <script src="common.js?v=20261109b"></script>
+<script src="assistant.js?v=20261109b"></script>
+<script src="alerts.js?v=20261109b"></script>
+  <script src="products.js?v=20261109b"></script>
+  <script src="product-export.js?v=20261109b"></script>
 </body>
 
 </html>

@@ -258,9 +258,11 @@ const selectedRows = new Set();
 function updateBulkInfo() {
   const n = selectedRows.size;
   const info = document.getElementById('bulk-info');
-  if (info) info.textContent = n ? '已選取 ' + n + ' 筆（目前篩選結果共 ' + filteredProducts.length + ' 筆）' : '批次刪除：勾選下方列左邊的方框，或按「全選目前篩選結果」（先用上面的搜尋把錯誤資料篩出來，例如輸入「尺寸图」）。';
+  if (info) info.textContent = n ? '已選取 ' + n + ' 筆（目前篩選結果共 ' + filteredProducts.length + ' 筆）' : '勾選下方列左邊的方框，或按「全選目前篩選結果」（先用上面的搜尋篩出來，例如輸入「CVG-」），再按「匯出勾選的項目」或「AI 撰寫文案」；也可以批次刪除。';
   const btn = document.getElementById('bulk-delete-btn');
   if (btn) btn.textContent = n ? '刪除所選（' + n + '）' : '刪除所選';
+  const ec = document.getElementById('export-count');
+  if (ec) ec.textContent = '（已選 ' + n + ' 筆）';
 }
 
 function toggleRowSelect(rowIndex, checked) {
