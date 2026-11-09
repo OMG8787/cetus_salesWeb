@@ -3,6 +3,7 @@ import { calcTool, cameraPixelTool, CALC_RULES } from "./calc-tool.js";
 import { cleanReply, processEvents } from "./common.js";
 import { gas, type CsInfo, type CsStyle, type CsTopic, type EmbedConfig } from "./gas.js";
 import { imageUrl, type ReplyImage } from "./img.js";
+import { DEFAULT_GUARD, guardCheck, limitText, resetGuard } from "./guard.js";
 import { choicesTool, humanPause } from "./human.js";
 import { channels, getProfile, MAX_CHOICES, replyText, showLoading, type LineEvent } from "./line.js";
 import { DEFAULT_SEARCH, formatHits, KnowledgeIndex, loadVectorMap, searchKnowledge, type Hit, type SearchConfig, type SearchResult } from "./rag.js";
@@ -81,6 +82,7 @@ export function resetKnowledgeCache(): void {
   catalogCache = null;
   sessions.clear();
   template = null;
+  resetGuard();
 }
 
 // ---- 熱路徑：同一個執行個體內，第二則訊息起不用等管理系統（Apps Script 一次約 2.5 秒）----
@@ -422,23 +424,32 @@ const PENDING_WAIT_MS = 8000;
  * 沒啟用 / 專人服務時間 / 小編接手中 → 不回；重新開始；轉真人關鍵字；指定問題；知識庫 + AI 回答。
  * 回覆前不會等待（像真人打字的停頓由呼叫端用 humanPause 處理）。
  */
-export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string>; human?: boolean; defer?: (job: Promise<unknown>) => void }): Promise<CsResult> {
+export async function csConverse(uid: string, text: string, opts: { channel: CsChannel; displayName?: () => Promise<string>; human?: boolean; defer?: (job: Promise<unknown>) => void; ip?: string }): Promise<CsResult> {
   const t0 = Date.now();
-  // 同一位訪客上一則的對話紀錄還在背景寫入時，先等它寫完再讀歷史（否則 AI 會看不到上一輪）；最多等 8 秒
   const testing = opts.channel === "test";
+  // 防濫用第一道：網站訪客超過流量上限就直接擋（不打管理系統、不呼叫 AI）。換訪客編號也繞不過（同一個 IP / 全站一起算）；
+  // 熱路徑也先擋在這裡，不然「先想答案、送出前才核對」會讓被擋下的訊息白白花掉 AI 費用
+  if (opts.channel === "web") {
+    const g = template?.info.guard ?? DEFAULT_GUARD;
+    const why = guardCheck({ ip: opts.ip, uid }, g);
+    if (why) {
+      const stub = { ...(template?.info ?? { history: [] }), replyDelay: 0 } as CsInfo;
+      return { ...NO_REPLY(stub), silent: false, reply: limitText(why, g) };
+    }
+  }
   // 熱路徑：這位客人剛在這個執行個體聊過、設定也是新的 → 先用記憶體裡的狀態開始想答案，管理系統的最新狀態在背景取得、送出前再核對
   const local = sessions.get(uid);
   const quick = !testing && !!local && Date.now() - local.at < SESSION_TTL_MS && !!template && template.info.enabled && !!template.info.ai && template.info.replyWhen !== "offHours";
   let info: CsInfo;
   let freshP: Promise<CsInfo | null>;
   if (quick) {
-    freshP = gas.csStart(uid).then((i) => { template = { at: Date.now(), info: i }; return i; }, (err) => { console.warn("背景取得客服狀態失敗，沿用記憶體裡的", (err as Error).message); return null; });
+    freshP = gas.csStart(uid, opts.ip).then((i) => { template = { at: Date.now(), info: i }; return i; }, (err) => { console.warn("背景取得客服狀態失敗，沿用記憶體裡的", (err as Error).message); return null; });
     info = { ...template!.info, history: local!.history, turnCount: local!.turnCount, leadState: local!.leadState, known: local!.known, paused: false, rateLimited: false };
   } else {
     // 同一位訪客上一則的對話紀錄還在背景寫入時，先等它寫完再讀歷史（否則 AI 會看不到上一輪）；最多等 8 秒
     const pending = pendingRemember.get(uid);
     if (pending) await Promise.race([pending, new Promise((r) => setTimeout(r, PENDING_WAIT_MS))]);
-    info = await gas.csStart(uid);
+    info = await gas.csStart(uid, opts.ip);
     template = { at: Date.now(), info };
     freshP = Promise.resolve(info);
   }
@@ -450,7 +461,7 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
     const fresh = await freshP;
     if (!fresh) return null;
     if (!testing && (!fresh.enabled || !fresh.ai)) return NO_REPLY(fresh);
-    if (fresh.rateLimited) return { ...NO_REPLY(fresh), silent: false, reply: "訊息傳得太快了，請稍等一下再試 🙏" };
+    if (fresh.rateLimited) return { ...NO_REPLY(fresh), silent: false, reply: limitText(fresh.limitReason, fresh.guard) };
     if (!testing && fresh.replyWhen === "offHours" && fresh.inHours === true) return NO_REPLY(fresh);
     if (fresh.paused && !reset && !testing) return NO_REPLY(fresh, true);
     const leadState: CsInfo["leadState"] = (LEAD_RANK[fresh.leadState ?? ""] ?? 0) >= (LEAD_RANK[info.leadState ?? ""] ?? 0) ? fresh.leadState : info.leadState;
@@ -461,7 +472,7 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   if (testing && !info.ai) {
     return { ...NO_REPLY(info), silent: false, reply: "還沒有設定 AI：請先到「AI 模型」填入 API Key 並儲存。" };
   }
-  if (info.rateLimited) return { ...NO_REPLY(info), silent: false, reply: "訊息傳得太快了，請稍等一下再試 🙏" };
+  if (info.rateLimited) return { ...NO_REPLY(info), silent: false, reply: limitText(info.limitReason, info.guard) };
   // 設定「只在專人服務時間以外回覆」：服務時間內交給專人（測試聊天不受限）
   if (!testing && info.replyWhen === "offHours" && info.inHours === true) return NO_REPLY(info);
   if (info.paused && !reset && !testing) return NO_REPLY(info, true);

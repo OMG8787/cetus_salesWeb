@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { config } from "./config.js";
 import { gas, type WidgetConfig } from "./gas.js";
+import { clientIp, DEFAULT_GUARD, requestLimited } from "./guard.js";
 
 // 網站客服視窗與後台「測試聊天」的公開 API 共用工具。這些端點不需要登入（任何訪客都能呼叫），所以：
 //   ・只回傳視窗外觀等公開設定，不含任何金鑰、知識庫內容
@@ -36,6 +37,14 @@ export function visitorUserId(visitorId: string): string {
   return "V" + createHash("sha256").update("aoi-visitor:" + visitorId).digest("hex").slice(0, 32);
 }
 
+/** 視窗請求的 IP 頻率檢查（查看新訊息、關閉、留資料等會打到管理系統的請求）：超過直接擋，不去打管理系統。 */
+export function enforceRequestLimit(request: Request, widget: WidgetConfig): string {
+  const cfg = widget.guard ?? DEFAULT_GUARD;
+  const ip = clientIp(request);
+  if (requestLimited(ip, cfg)) throw new WidgetError(cfg.overText, 429);
+  return ip;
+}
+
 /** 載入視窗設定並檢查：已啟用 */
 export async function loadWidget(): Promise<WidgetConfig> {
   const widget = await widgetConfig();
@@ -51,12 +60,20 @@ export function allowedOrigins(widget: WidgetConfig): string[] {
     .filter(Boolean);
 }
 
-/** 檢查來源網站。沒有 Origin 標頭（同網站請求、伺服器對伺服器）不擋；回傳要放在 Access-Control-Allow-Origin 的值 */
+/**
+ * 檢查來源網站；回傳要放在 Access-Control-Allow-Origin 的值。
+ * 沒有 Origin 標頭：瀏覽器的同網站請求（Sec-Fetch-Site 是 same-origin / none）放行；其他（腳本、curl）在「防濫用 → 沒帶來源的請求一律拒絕」開著時擋下。
+ * 注意：Origin 是客戶端自己填的，偽造得了，所以這只是擋掉最陽春的腳本，真正的流量限制是 guard.ts 與管理系統的計數。
+ */
 export function checkOrigin(request: Request, widget: WidgetConfig): string {
   const allowed = allowedOrigins(widget);
   const origin = request.headers.get("origin");
   if (allowed.length === 0) return "*";
-  if (!origin) return allowed[0];
+  if (!origin) {
+    const site = request.headers.get("sec-fetch-site");
+    if (widget.guard?.requireOrigin !== false && site !== "same-origin" && site !== "none") throw new WidgetError("這個網站未獲授權使用客服視窗", 403);
+    return allowed[0];
+  }
   // 機器人自己的網址（測試頁）一律放行
   if (origin === new URL(request.url).origin) return origin;
   if (!allowed.includes(origin.toLowerCase())) throw new WidgetError("這個網站未獲授權使用客服視窗", 403);

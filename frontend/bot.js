@@ -158,6 +158,17 @@ function fillCs(cs) {
   setVal('cs-contact-after', cs.contactAfter === undefined ? 3 : cs.contactAfter);
   $('cs-send-images').checked = cs.sendImages !== false;
   $('cs-no-thinking').checked = cs.noThinking !== false;
+  const gd = cs.guard || {};
+  setVal('g-visitor', gd.visitorPerMin ?? 12);
+  setVal('g-ip-min', gd.ipPerMin ?? 20);
+  setVal('g-ip-hour', gd.ipPerHour ?? 120);
+  setVal('g-global-hour', gd.globalPerHour ?? 600);
+  setVal('g-global-day', gd.globalPerDay ?? 3000);
+  setVal('g-req-min', gd.reqPerMin ?? 120);
+  setVal('g-lead-hour', gd.leadPerHour ?? 10);
+  setVal('g-over-text', gd.overText || '');
+  $('g-require-origin').checked = gd.requireOrigin !== false;
+  $('g-alert').checked = gd.alert !== false;
   const calc = cs.calc || {};
   $('cs-calc-brief').checked = calc.brief !== false;
   setVal('cs-calc-cameras', calc.cameras || 1);
@@ -222,6 +233,18 @@ function readCs() {
     contactAfter: val('cs-contact-after'),
     sendImages: $('cs-send-images').checked,
     noThinking: $('cs-no-thinking').checked,
+    guard: {
+      visitorPerMin: val('g-visitor'),
+      ipPerMin: val('g-ip-min'),
+      ipPerHour: val('g-ip-hour'),
+      globalPerHour: val('g-global-hour'),
+      globalPerDay: val('g-global-day'),
+      reqPerMin: val('g-req-min'),
+      leadPerHour: val('g-lead-hour'),
+      overText: val('g-over-text'),
+      requireOrigin: $('g-require-origin').checked,
+      alert: $('g-alert').checked,
+    },
     calc: { brief: $('cs-calc-brief').checked, cameras: val('cs-calc-cameras'), lenses: val('cs-calc-lenses'), base: val('cs-calc-base') },
     style: { tone: val('cs-tone'), address: val('cs-address'), emoji: val('cs-emoji'), maxLines: val('cs-max-lines') },
     buttons: val('cs-buttons'),
@@ -237,7 +260,7 @@ async function saveCs() {
   const r = await callApi('botSaveSettings', { cs });
   if (!r.success) return alert(r.message);
   await loadAll(true);
-  ['cs-save-msg', 'web-save-msg'].forEach((id) => {
+  ['cs-save-msg', 'web-save-msg', 'guard-save-msg'].forEach((id) => {
     $(id).textContent = '✓ 已儲存（最多 5 分鐘後套用到機器人）';
     setTimeout(() => ($(id).textContent = ''), 4000);
   });

@@ -1,5 +1,5 @@
 import { gas } from "../../src/gas.js";
-import { checkOrigin, corsHeaders, errorResponse, loadWidget, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
+import { checkOrigin, corsHeaders, enforceRequestLimit, errorResponse, loadWidget, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
 
 /**
  * 視窗用：GET /api/widget/messages?visitorId=…&after=…
@@ -19,6 +19,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const widget = await loadWidget();
     cors = corsHeaders(checkOrigin(request, widget));
+    enforceRequestLimit(request, widget);
     const url = new URL(request.url);
     const visitorId = url.searchParams.get("visitorId") ?? "";
     if (!VISITOR_ID.test(visitorId)) throw new WidgetError("訪客編號不正確", 400);

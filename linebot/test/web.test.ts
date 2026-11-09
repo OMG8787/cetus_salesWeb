@@ -44,11 +44,11 @@ beforeEach(() => {
 });
 
 const VID = "visitor-1234567890abcd";
-const req = (url: string, init: RequestInit & { origin?: string } = {}) => new Request(url, { ...init, headers: { ...(init.origin ? { origin: init.origin } : {}), "content-type": "application/json" } });
+const req = (url: string, init: RequestInit & { origin?: string; site?: string } = {}) => new Request(url, { ...init, headers: { ...(init.origin ? { origin: init.origin } : {}), ...(init.site ? { "sec-fetch-site": init.site } : {}), "content-type": "application/json" } });
 const post = (text: unknown, visitorId: unknown = VID, origin = "https://www.cetus.tw") =>
   chat.POST(req("https://bot.example/api/widget/chat", { method: "POST", origin, body: JSON.stringify({ visitorId, text }) }));
 
-test("視窗設定：公開資訊、不含金鑰；未啟用 → 403；沒帶來源網站不擋", async () => {
+test("視窗設定：公開資訊、不含金鑰；未啟用 → 403；同網站請求不擋、腳本（沒帶來源）擋下", async () => {
   const r = await widgetConfig.GET(req("https://bot.example/api/widget/config", { origin: "https://www.cetus.tw" }));
   assert.equal(r.status, 200);
   const j = (await r.json()) as Record<string, unknown>;
@@ -56,10 +56,11 @@ test("視窗設定：公開資訊、不含金鑰；未啟用 → 403；沒帶來
   assert.deepEqual(j.welcome, { text: "您好", choices: ["產品介紹"] });
   assert.equal("allowedOrigins" in j, false);
   assert.equal(r.headers.get("access-control-allow-origin"), "https://www.cetus.tw");
-  assert.equal((await widgetConfig.GET(req("https://bot.example/api/widget/config"))).status, 200);
+  assert.equal((await widgetConfig.GET(req("https://bot.example/api/widget/config", { site: "same-origin" }))).status, 200);
+  assert.equal((await widgetConfig.GET(req("https://bot.example/api/widget/config"))).status, 403, "腳本沒帶來源 → 擋下");
   widgetOn = false;
   resetWidgetCache();
-  assert.equal((await widgetConfig.GET(req("https://bot.example/api/widget/config"))).status, 403);
+  assert.equal((await widgetConfig.GET(req("https://bot.example/api/widget/config", { site: "same-origin" }))).status, 403);
 });
 
 test("來源網站白名單：不在名單 → 403；名單為空 → 任何網站；預檢請求", async () => {
@@ -91,7 +92,7 @@ test("還原對話 / 輪詢：回傳角色對應（user / human / assistant）�
   const j = (await r.json()) as { messages: { id: number; role: string }[]; paused: boolean };
   assert.deepEqual(j.messages.map((m) => m.role), ["human", "assistant", "user"]);
   assert.equal(j.paused, true);
-  assert.equal((await messages.GET(req("https://bot.example/api/widget/messages?visitorId=bad"))).status, 400);
+  assert.equal((await messages.GET(req("https://bot.example/api/widget/messages?visitorId=bad", { site: "same-origin" }))).status, 400);
 });
 
 test("後台測試聊天：權杖正確才能用；重新開始；測試不通知同仁", async () => {
@@ -115,6 +116,6 @@ test("關閉聊天室：通知管理系統這一段對話結束；訪客編號�
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ended: true });
   assert.ok(gasOps.includes("csEnd"));
-  assert.equal((await closeApi.POST(req("https://bot.example/api/widget/close", { method: "POST", body: JSON.stringify({ visitorId: "bad" }) }))).status, 400);
+  assert.equal((await closeApi.POST(req("https://bot.example/api/widget/close", { method: "POST", site: "same-origin", body: JSON.stringify({ visitorId: "bad" }) }))).status, 400);
   assert.equal((await closeApi.POST(req("https://bot.example/api/widget/close", { method: "POST", origin: "https://evil.example", body: JSON.stringify({ visitorId: VID }) }))).status, 403);
 });

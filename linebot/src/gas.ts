@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import type { GuardCfg } from "./guard.js";
 
 // 呼叫管理系統（Google Apps Script）：{ action: "bot", secret, op, lineUserId, ... }
 //   lineUserId：U 開頭 = LINE 使用者；V 開頭 = 網站訪客（客服視窗）；T 開頭 = 後台測試聊天
@@ -74,8 +75,11 @@ export interface CsInfo {
   known?: boolean;
   /** 小編接手中（轉真人後暫停機器人） */
   paused?: boolean;
-  /** 網站訪客傳太快 */
+  /** 網站訪客傳太快 / 同一個 IP 太多 / 全站用完 */
   rateLimited?: boolean;
+  limitReason?: "" | "visitor" | "ip" | "global";
+  /** 防濫用流量上限（BOT 設定可調） */
+  guard?: GuardCfg;
   /** always 一律先回 / offHours 只在小編服務時間以外回 */
   replyWhen?: "always" | "offHours";
   /** 現在是不是小編服務時間（沒設定服務時間 = null） */
@@ -145,6 +149,8 @@ export interface WidgetConfig {
   resetOnReload?: boolean;
   /** 允許嵌入的網站（一行一個；空白 = 不限制） */
   allowedOrigins: string;
+  /** 防濫用流量上限（沒帶 = 用預設值） */
+  guard?: GuardCfg;
   welcome: string;
   buttons: string[];
   replyDelay: number;
@@ -262,14 +268,15 @@ async function post<T>(body: Record<string, unknown>, retry = true): Promise<T> 
 }
 
 export const gas = {
-  csStart(lineUserId: string): Promise<CsInfo> {
-    return post<CsInfo>({ op: "csStart", lineUserId, botUrl: config.botUrl });
+  /** ip = 網站訪客的來源 IP（管理系統用來做跨執行個體的流量上限） */
+  csStart(lineUserId: string, ip = ""): Promise<CsInfo> {
+    return post<CsInfo>({ op: "csStart", lineUserId, botUrl: config.botUrl, ...(ip ? { ip } : {}) });
   },
   csRemember(lineUserId: string, turns: { u: boolean; t: string }[], displayName = "", topic = "", extra: { askedContact?: boolean; images?: { url: string; caption: string }[] } = {}): Promise<number> {
     return post<number>({ op: "csRemember", lineUserId, turns, displayName, topic, ...extra });
   },
   /** 客人留下聯繫資料（網站表單或 AI 聽到客人主動留） */
-  csLead(lineUserId: string, lead: { name?: string; company?: string; phone?: string; email?: string; note?: string; source?: "form" | "ai" }): Promise<boolean> {
+  csLead(lineUserId: string, lead: { name?: string; company?: string; phone?: string; email?: string; note?: string; source?: "form" | "ai"; ip?: string }): Promise<boolean> {
     return post<boolean>({ op: "csLead", lineUserId, ...lead });
   },
   csForget(lineUserId: string): Promise<boolean> {

@@ -1,5 +1,6 @@
 import { gas } from "../../src/gas.js";
-import { checkOrigin, corsHeaders, errorResponse, loadWidget, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
+import { DEFAULT_GUARD, leadLimited } from "../../src/guard.js";
+import { checkOrigin, corsHeaders, enforceRequestLimit, errorResponse, loadWidget, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
 
 /** 網站客服視窗的「留下聯繫資料」表單：POST /api/widget/lead { visitorId, name, company, phone, email, note } */
 export async function OPTIONS(request: Request): Promise<Response> {
@@ -17,6 +18,9 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const widget = await loadWidget();
     cors = corsHeaders(checkOrigin(request, widget));
+    const ip = enforceRequestLimit(request, widget);
+    // 換訪客編號也繞不過：同一個 IP 每小時最多留幾次（管理系統那邊另有一份跨執行個體的計數）
+    if (leadLimited(ip, widget.guard ?? DEFAULT_GUARD)) throw new WidgetError("送出太頻繁了，請稍後再試", 429);
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
     const visitorId = typeof body?.visitorId === "string" ? body.visitorId : "";
     if (!VISITOR_ID.test(visitorId)) throw new WidgetError("訪客編號不正確", 400);
@@ -28,6 +32,7 @@ export async function POST(request: Request): Promise<Response> {
         email: field(body?.email, 80),
         note: field(body?.note, 300),
         source: "form",
+        ip,
       });
     } catch (error) {
       // 資料不完整（沒填電話 / Email 等）是客人可以自己修正的，訊息直接給他看

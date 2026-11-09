@@ -1,7 +1,7 @@
 import { waitUntil } from "@vercel/functions";
 import { csConverse } from "../../src/cs.js";
 import { humanPause } from "../../src/human.js";
-import { checkOrigin, corsHeaders, errorResponse, loadWidget, MAX_TEXT, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
+import { checkOrigin, corsHeaders, enforceRequestLimit, errorResponse, loadWidget, MAX_TEXT, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
 
 /** 網站客服視窗送出一則訊息：POST /api/widget/chat { visitorId, text } */
 export async function OPTIONS(request: Request): Promise<Response> {
@@ -18,6 +18,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const widget = await loadWidget();
     cors = corsHeaders(checkOrigin(request, widget));
+    const ip = enforceRequestLimit(request, widget);
 
     const body = (await request.json().catch(() => null)) as { visitorId?: unknown; text?: unknown; human?: unknown } | null;
     const human = body?.human === true; // 客人按了回覆下方的「轉真人」按鈕
@@ -27,7 +28,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!text && !human) throw new WidgetError("請輸入訊息", 400);
     if (text.length > MAX_TEXT) throw new WidgetError(`訊息太長了（上限 ${MAX_TEXT} 字）`, 400);
 
-    const result = await csConverse(visitorUserId(visitorId), text, { channel: "web", displayName: async () => "網站訪客", human, defer: waitUntil });
+    const result = await csConverse(visitorUserId(visitorId), text, { channel: "web", displayName: async () => "網站訪客", human, defer: waitUntil, ip });
     // 像真人一樣不要秒回
     if (!result.silent) await humanPause(receivedAt, result.info.replyDelay);
     return Response.json(

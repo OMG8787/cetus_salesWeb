@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<script src="theme.js?v=20261108c"></script>
+<script src="theme.js?v=20261109a"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>BOT 設定 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261108c" />
-<link rel="stylesheet" href="dark.css?v=20261108c" />
+<link rel="stylesheet" href="style.css?v=20261109a" />
+<link rel="stylesheet" href="dark.css?v=20261109a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -308,6 +308,26 @@
       <label>允許嵌入的網站（一行一個，例如 https://www.cetus.tw；留空 = 任何網站都能嵌入，不建議）</label>
       <textarea id="web-origins" rows="3" placeholder="https://www.cetus.tw&#10;https://cetus.tw"></textarea>
       <div id="cs-save-bar2"><button type="button" onclick="saveCs()">💾 儲存</button> <span id="web-save-msg" class="calc-hint"></span></div>
+    </div>
+    <div class="panel">
+      <h3 class="bot-h">🛡️ 防濫用與流量上限</h3>
+      <div class="calc-hint">網站客服視窗是公開的，任何人都能呼叫。有人用腳本大量灌訊息，會白白消耗 AI 費用，也會占用管理系統（同一份 Apps Script）的額度、拖慢業務同仁。超過上限的訊息直接擋下，<b>不會呼叫 AI</b>，客人會看到下面設定的那句話。欄位填 <b>0 = 不限制</b>。</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;">
+        <label>同一個訪客每分鐘最多 <input type="number" id="g-visitor" min="1" max="120" style="width:80px;display:inline-block;" /> 則</label>
+        <label>同一個 IP 每分鐘最多 <input type="number" id="g-ip-min" min="0" max="600" style="width:80px;display:inline-block;" /> 則</label>
+        <label>同一個 IP 每小時最多 <input type="number" id="g-ip-hour" min="0" max="10000" style="width:90px;display:inline-block;" /> 則</label>
+        <label>全站（所有訪客合計）每小時最多 <input type="number" id="g-global-hour" min="0" max="100000" style="width:90px;display:inline-block;" /> 則</label>
+        <label>全站每天最多 <input type="number" id="g-global-day" min="0" max="1000000" style="width:100px;display:inline-block;" /> 則</label>
+        <label>同一個 IP 每分鐘最多 <input type="number" id="g-req-min" min="0" max="1000" style="width:80px;display:inline-block;" /> 次視窗請求（含查看新訊息、關閉、留資料）</label>
+        <label>同一個 IP 每小時最多留 <input type="number" id="g-lead-hour" min="0" max="1000" style="width:80px;display:inline-block;" /> 次聯繫資料</label>
+      </div>
+      <div class="calc-hint">「同一個 IP」的上限就是為了擋「每則換一個新訪客編號」的灌法。學校、公司、手機行動網路常常很多人共用同一個 IP，數字不要設太小（預設 每分鐘 20 則、每小時 120 則）。「全站」上限是最後一道保險；每天 3,000 則 ≈ 預估最多花掉的 AI 次數，可以依你的 AI 預算換算。</div>
+      <label>超過 IP / 全站上限時，回給客人的話</label>
+      <textarea id="g-over-text" rows="2"></textarea>
+      <label class="bot-check"><input type="checkbox" id="g-require-origin" /> 已設定「允許嵌入的網站」時，<b>沒帶來源網站的請求一律拒絕</b>（擋掉最陽春的腳本；來源是客戶端自己填的，偽造得了，所以這不是唯一的防線）</label>
+      <label class="bot-check"><input type="checkbox" id="g-alert" /> 全站上限被用完時，寄信通知管理員（每小時最多一封；通知對象跟「忘記密碼通知」同一份設定，在「使用者管理」）</label>
+      <div class="calc-hint">⚠️ 上面的「允許嵌入的網站」如果<b>留空，任何網站都能嵌入</b>，不建議。儲存後最多 5 分鐘套用到機器人。</div>
+      <div><button type="button" onclick="saveCs()">💾 儲存</button> <span id="guard-save-msg" class="calc-hint"></span></div>
     </div>
     <div class="panel">
       <h3 style="margin-top:0;">嵌入碼</h3>
@@ -625,12 +645,12 @@
   </div>
 </div>
 
-<script src="config.js?v=20261108c"></script>
-<script src="demo.js?v=20261108c"></script>
-<script src="common.js?v=20261108c"></script>
-<script src="assistant.js?v=20261108c"></script>
-<script src="alerts.js?v=20261108c"></script>
-<script src="bot.js?v=20261108c"></script>
-<script src="botstaff.js?v=20261108c"></script>
+<script src="config.js?v=20261109a"></script>
+<script src="demo.js?v=20261109a"></script>
+<script src="common.js?v=20261109a"></script>
+<script src="assistant.js?v=20261109a"></script>
+<script src="alerts.js?v=20261109a"></script>
+<script src="bot.js?v=20261109a"></script>
+<script src="botstaff.js?v=20261109a"></script>
 </body>
 </html>

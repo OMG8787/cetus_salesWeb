@@ -309,7 +309,8 @@ TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID', 'CreatedAt'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
 TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime', 'CompanyPhone', 'TaxId']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
 TEXT_COLUMNS[SHEET_CUSTOMER_CONTACTS] = ['Phone'];
-TEXT_COLUMNS[SHEET_USERS] = ['Username', 'PasswordHash', 'Phone', 'Birthday', 'ResetHash'];
+TEXT_COLUMNS['BotLeads'] =['UserId', 'Name', 'Company', 'Phone', 'Email', 'Note']; // 客人填的內容：存成純文字，開頭是 = + - @ 也不會被當成公式執行
+TEXT_COLUMNS[SHEET_USERS] =['Username', 'PasswordHash', 'Phone', 'Birthday', 'ResetHash'];
 TEXT_COLUMNS[SHEET_LOGIN_LOGS] = ['LoginTime', 'Username', 'DeviceId', 'LastActive', 'EndTime'];
 TEXT_COLUMNS[SHEET_DEVICES] = ['DeviceId', 'Username', 'TokenHash', 'LoginTime', 'LastSeenTime'];
 TEXT_COLUMNS[SHEET_PRICE_HISTORY] = ['ProductInternalModel', 'CaseID'];
@@ -6913,6 +6914,93 @@ function botClip_(v, n) {
   return t.length > n ? t.slice(0, n) : t;
 }
 
+// ---- 防濫用（網站客服視窗是公開的，任何人都能呼叫：限制流量，避免被灌訊息消耗 AI 費用與 Apps Script 額度） ----
+var BOT_GUARD_TEXT = '目前諮詢的人比較多，暫時無法即時回覆。請稍後再試，或按「轉真人」、留下聯絡方式，由專人與您聯繫 🙏';
+
+/** 流量上限設定（BOT 設定 → 客服設定 → 防濫用）。0 = 不限制該項（訪客每分鐘至少 1）。 */
+function botGuardCfg_(g) {
+  g = g || {};
+  return {
+    visitorPerMin: botInt_(g.visitorPerMin, 1, 120, 12), // 同一個訪客編號每分鐘最多幾則
+    ipPerMin: botInt_(g.ipPerMin, 0, 600, 20), // 同一個 IP 每分鐘最多幾則（換訪客編號也繞不過）
+    ipPerHour: botInt_(g.ipPerHour, 0, 10000, 120), // 同一個 IP 每小時最多幾則
+    reqPerMin: botInt_(g.reqPerMin, 0, 1000, 120), // 同一個 IP 每分鐘最多幾次視窗請求（含查看新訊息、關閉、留資料）
+    globalPerHour: botInt_(g.globalPerHour, 0, 100000, 600), // 全站（所有訪客合計）每小時最多幾則
+    globalPerDay: botInt_(g.globalPerDay, 0, 1000000, 3000), // 全站每天最多幾則
+    leadPerHour: botInt_(g.leadPerHour, 0, 1000, 10), // 同一個 IP 每小時最多留幾次聯繫資料
+    requireOrigin: g.requireOrigin !== false, // 有設定「允許嵌入的網站」時，沒帶來源的請求（腳本）一律拒絕
+    alert: g.alert !== false, // 全站上限被用完時寄信通知管理員（每小時最多一封）
+    overText: botClip_(g.overText, 200) || BOT_GUARD_TEXT, // 超過 IP / 全站上限時回給客人的話
+  };
+}
+
+/** 固定時間窗的計數器（快取）：key 已含時間窗編號，回傳加 1 之後的次數。 */
+function botGuardBump_(key, seconds) {
+  var n = Number(botCache_().get(key) || 0) + 1;
+  botCachePut_(key, n, seconds);
+  return n;
+}
+
+/** 全站每日計數（快取最久只能存 6 小時，所以放在指令碼屬性；沒有鎖，高併發時會略少算，可接受）。 */
+function botGuardDayBump_() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var today = botNow_().slice(0, 10);
+    var raw = String(props.getProperty('CS_GUARD_DAY') || '').split('|');
+    var n = (raw[0] === today ? Number(raw[1]) || 0 : 0) + 1;
+    props.setProperty('CS_GUARD_DAY', today + '|' + n);
+    return n;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/** 檢查這則網站訊息有沒有超過上限。回傳 '' = 通過；'visitor' 訪客傳太快；'ip' 同一個 IP 太多；'global' 全站用完。 */
+function botGuardCheck_(id, ip, cfg) {
+  var now = Date.now();
+  var m = Math.floor(now / 60000);
+  var h = Math.floor(now / 3600000);
+  var reason = '';
+  if (botGuardBump_('csg:v:' + id + ':' + m, 120) > cfg.visitorPerMin) reason = 'visitor';
+  if (ip) {
+    var perMin = botGuardBump_('csg:im:' + ip + ':' + m, 120);
+    var perHour = botGuardBump_('csg:ih:' + ip + ':' + h, 7200);
+    if (!reason && cfg.ipPerMin && perMin > cfg.ipPerMin) reason = 'ip';
+    if (!reason && cfg.ipPerHour && perHour > cfg.ipPerHour) reason = 'ip';
+  }
+  // 全站計數只算沒被擋下的訊息：單一來源狂灌不會把全站額度吃光
+  if (!reason && cfg.globalPerHour && botGuardBump_('csg:gh:' + h, 7200) > cfg.globalPerHour) reason = 'global';
+  if (!reason && cfg.globalPerDay && botGuardDayBump_() > cfg.globalPerDay) reason = 'global';
+  if (reason === 'global') botGuardAlert_(cfg, h);
+  return reason;
+}
+
+/** 全站上限被用完：寄信給管理員（通知對象跟忘記密碼通知同一份設定），每小時最多一封。 */
+function botGuardAlert_(cfg, hourBucket) {
+  if (!cfg.alert) return;
+  var flag = 'csg:alert:' + hourBucket;
+  if (botCache_().get(flag)) return;
+  botCachePut_(flag, 1, 3600);
+  try {
+    var text = '網站客服視窗的流量達到全站上限，超過的訊息已被擋下（客人會看到請稍後再試或轉真人）。\n\n' +
+      '目前上限：每小時 ' + (cfg.globalPerHour || '不限') + ' 則、每天 ' + (cfg.globalPerDay || '不限') + ' 則。\n' +
+      '時間：' + botNow_() + '\n\n' +
+      '如果是正常的詢問量增加，可以到「BOT 設定 → 客服設定 → 防濫用」調高上限；如果流量不尋常，請到「對話紀錄」查看是否有人在灌訊息。';
+    resetNotifyAdmins_().forEach(function (u) {
+      var email = String(u['Email'] || '').trim();
+      if (validEmail_(email)) sendResetMail_(email, '【AOI】客服機器人流量已達上限', text);
+    });
+  } catch (e) {
+    // 寄信失敗（沒有 Email、額度用完）不影響擋下流量
+  }
+}
+
+/** 只收長得像 IP 位址的字串（Vercel 帶過來的來源 IP）。 */
+function botGuardIp_(v) {
+  var s = String(v || '').trim();
+  return /^[0-9a-fA-F:.]{3,45}$/.test(s) ? s : '';
+}
+
 /** 知識庫版本號：知識、向量、客服來源設定、搜尋與 AI 設定有變就換一個新的；機器人每則訊息都會帶回來比對，變了就馬上重讀（不用等 5 分鐘快取）。 */
 function botKbVer_() {
   try {
@@ -7087,6 +7175,7 @@ function botCsConfig_(cs) {
     sendImages: cs.sendImages !== false, // 問到有附圖的知識時，可以直接給圖片
     noThinking: cs.noThinking !== false, // 回覆時關閉 Gemini 2.5 Flash 的思考（較快較省；關掉這個開關 = 讓模型先推理再回答）
     groundCheck: cs.groundCheck === true, // AI 回覆前先檢查有沒有知識庫根據（預設關閉；會多花一次 AI）
+    guard: botGuardCfg_(cs.guard), // 防濫用：網站視窗的流量上限（每訪客 / 每 IP / 全站）
     style: {
       tone: BOT_TONES.indexOf(st.tone) >= 0 ? st.tone : 'friendly',
       address: String(st.address || '').trim() || '您',
@@ -7614,13 +7703,10 @@ function csStart_(id, req) {
 
   var ais = botAiList_('cs');
   var enabled = channel === 'line' ? cs.enabled : channel === 'web' ? cs.enabled && cs.web.enabled : true;
-  var rateLimited = false;
-  if (channel === 'web') {
-    var rk = 'csrate:' + id;
-    var n = Number(botCache_().get(rk) || 0) + 1;
-    botCachePut_(rk, n, 60);
-    rateLimited = n > 12; // 每個訪客每分鐘最多 12 則
-  }
+  var guard = botGuardCfg_(cs.guard);
+  var limitReason = '';
+  if (channel === 'web') limitReason = botGuardCheck_(id, botGuardIp_(req && req.ip), guard); // 訪客 / IP / 全站流量上限
+  var rateLimited = limitReason !== '';
   return {
     enabled: enabled,
     channel: channel,
@@ -7648,6 +7734,8 @@ function csStart_(id, req) {
     known: !!botCache_().get('csname:' + id),
     paused: !!botCache_().get('cspause:' + id),
     rateLimited: rateLimited,
+    limitReason: limitReason,
+    guard: guard,
     replyWhen: cs.replyWhen,
     inHours: cs.hours.enabled ? csInHours_(cs.hours) : null,
     hoursText: cs.hours.enabled ? csHoursText_(cs.hours) : '',
@@ -7852,6 +7940,10 @@ function csLead_(id, req) {
   var sent = Number(botCacheGet_('cslc:' + id) || 0); // 同一位客人一小時最多留 5 次，避免被灌名單
   if (sent >= 5) throw new Error('送出太頻繁了，請稍後再試');
   botCachePut_('cslc:' + id, sent + 1, 3600);
+  // 換訪客編號也繞不過：同一個 IP 每小時最多留幾次（設定在 BOT 設定 → 防濫用）
+  var leadIp = botGuardIp_(req.ip);
+  var leadCap = botSettings_().guard.leadPerHour;
+  if (channel === 'web' && leadIp && leadCap && botGuardBump_('csg:ld:' + leadIp + ':' + Math.floor(Date.now() / 3600000), 7200) > leadCap) throw new Error('送出太頻繁了，請稍後再試');
   withLock_(function () {
     var max = 0;
     sheetToObjects(SHEET_BOT_LEADS).rows.forEach(function (r) { max = Math.max(max, Number(r['ID']) || 0); });
@@ -8141,6 +8233,7 @@ function csWidgetConfig_() {
     autoOpen: cs.web.autoOpen,
     resetOnReload: cs.web.resetOnReload,
     allowedOrigins: cs.web.allowedOrigins,
+    guard: cs.guard,
     welcome: cs.welcome || '👋 您好，我是' + csBrand_() + '的線上客服，有任何問題都可以直接問我；需要專人協助請輸入「' + (botWords_(cs.handoffWords)[0] || '真人') + '」。',
     buttons: botButtons_(cs.buttons),
     replyDelay: botGeneral_().replyDelay,
