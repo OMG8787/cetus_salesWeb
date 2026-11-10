@@ -856,3 +856,139 @@ header, .tabs { position: relative; z-index: 300; }
 .pc-table td { white-space: normal; font-size: 13px; }
 .pc-old { color: #c0392b; text-decoration: line-through; }
 .pc-new { color: #1e8449; font-weight: 600; }
+/* ===== 開發名單庫 UI ===== */
+.ps-page, #ps-import-modal, #ps-edit-modal, #ps-enrich-modal {
+  --ps-bg: #f6f8fb; --ps-card: #ffffff; --ps-line: #e3e8ef; --ps-line2: #eef1f5; --ps-text: #1f2937; --ps-muted: #6b7280;
+  --ps-accent: #2c5aa0; --ps-accent-soft: #e8effa; --ps-hover: #f7f9fc; --ps-danger: #c0392b; --ps-shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.05);
+}
+.ps-page { color: var(--ps-text); }
+.ps-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+.ps-head h2 { margin: 0 0 4px; font-size: 24px; letter-spacing: .5px; }
+.ps-sub { color: var(--ps-muted); font-size: 13px; max-width: 760px; }
+.ps-admin { display: flex; gap: 12px; align-items: center; font-size: 13px; }
+.ps-admin a { color: var(--ps-muted); text-decoration: none; }
+.ps-admin a:hover { color: var(--ps-accent); }
+.tab-content button.ps-link-danger { background: none; color: var(--ps-danger); padding: 0; margin: 0; font-size: 13px; }
+.tab-content button.ps-link-danger:hover { text-decoration: underline; }
+
+.ps-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 16px 0 12px; }
+.ps-kpi { background: var(--ps-card); border: 1px solid var(--ps-line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--ps-shadow); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ps-kpi span { font-size: 12px; color: var(--ps-muted); }
+.ps-kpi b { font-size: 24px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.ps-kpi b.ps-kpi-sm { font-size: 15px; }
+.ps-kpi small { font-size: 12px; color: var(--ps-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ps-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.tab-content button.ps-btn, .modal-box button.ps-btn { margin: 0; padding: 8px 14px; border-radius: 8px; font-size: 14px; background: var(--ps-card); color: var(--ps-text); border: 1px solid var(--ps-line); box-shadow: var(--ps-shadow); transition: background .15s, border-color .15s; }
+.tab-content button.ps-btn:hover, .modal-box button.ps-btn:hover { border-color: var(--ps-accent); color: var(--ps-accent); }
+.tab-content button.ps-btn-primary, .modal-box button.ps-btn-primary { background: var(--ps-accent); border-color: var(--ps-accent); color: #fff; }
+.tab-content button.ps-btn-primary:hover, .modal-box button.ps-btn-primary:hover { filter: brightness(1.08); color: #fff; }
+
+/* 篩選欄 */
+.ps-page .ps-filters { background: var(--ps-card); border: 1px solid var(--ps-line); border-radius: 10px; box-shadow: var(--ps-shadow); padding: 6px 12px 12px; }
+.ps-page .ps-facet { border-bottom: 1px solid var(--ps-line2); padding: 8px 0; }
+.ps-page .ps-facet summary { font-size: 13px; color: var(--ps-text); list-style: none; display: flex; align-items: center; gap: 6px; }
+.ps-page .ps-facet summary::before { content: '▸'; color: var(--ps-muted); transition: transform .15s; }
+.ps-page .ps-facet[open] summary::before { transform: rotate(90deg); }
+.ps-page .ps-facet summary::-webkit-details-marker { display: none; }
+.ps-page .ps-opt { padding: 3px 4px; border-radius: 6px; }
+.ps-page .ps-opt:hover { background: var(--ps-hover); }
+.ps-page .ps-n { background: var(--ps-line2); color: var(--ps-muted); border-radius: 10px; padding: 0 7px; font-size: 11px; }
+.ps-page .ps-groups .btn-mini { background: var(--ps-accent-soft); color: var(--ps-accent); border-radius: 12px; }
+
+/* 搜尋列 */
+.ps-page .ps-bar { background: var(--ps-card); border: 1px solid var(--ps-line); border-radius: 10px; padding: 8px; box-shadow: var(--ps-shadow); }
+.ps-page .ps-bar input, .ps-page .ps-bar select { border: 1px solid var(--ps-line); border-radius: 8px; padding: 7px 10px; background: var(--ps-card); color: var(--ps-text); }
+.ps-page .ps-bar input:focus, .ps-page .ps-bar select:focus { outline: none; border-color: var(--ps-accent); box-shadow: 0 0 0 3px var(--ps-accent-soft); }
+.ps-page .ps-bar .btn-mini { border-radius: 8px; padding: 7px 10px; }
+
+/* 表格 */
+.ps-page .nc-scroll { border: 1px solid var(--ps-line); border-radius: 10px; background: var(--ps-card); box-shadow: var(--ps-shadow); }
+.ps-page .ps-table th { background: var(--ps-bg); color: var(--ps-muted); font-size: 12px; font-weight: 600; text-transform: none; border-bottom: 1px solid var(--ps-line); padding: 9px 10px; }
+.ps-page .ps-table td { border-bottom: 1px solid var(--ps-line2); padding: 10px; }
+.ps-page .ps-table tbody tr:hover td { background: var(--ps-hover); }
+.ps-page .ps-table tbody tr:hover td.nc-act { background: var(--ps-hover); }
+.ps-page .ps-table .ps-name b { font-size: 14px; }
+.ps-page .ps-table .ps-src { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.ps-page .ps-table .ps-contact div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; line-height: 1.7; }
+.ps-page .ps-table .ps-contact a { text-decoration: none; }
+.ps-page .ps-table .ps-contact a:hover { text-decoration: underline; }
+.ps-page .ps-tag { background: var(--ps-accent-soft); color: var(--ps-accent); border-radius: 12px; padding: 1px 8px; }
+.ps-page .ps-meta { font-size: 12px; color: var(--ps-muted); margin-top: 3px; white-space: nowrap; }
+.ps-page .ps-stage-cell { min-width: 120px; }
+.ps-page select.ps-stage { border-radius: 14px; padding: 3px 8px; font-size: 12px; font-weight: 600; border: 1px solid transparent; background: var(--ps-line2); color: var(--ps-text); cursor: pointer; }
+.ps-page select.ps-stage[data-stage="開發中"] { background: #fff4e0; color: #9a5b00; }
+.ps-page select.ps-stage[data-stage="已聯絡"] { background: #e8effa; color: #1f4c8f; }
+.ps-page select.ps-stage[data-stage="有興趣"] { background: #e6f6ec; color: #1e7a3e; }
+.ps-page select.ps-stage[data-stage="無意願"], .ps-page select.ps-stage[data-stage="無效"] { background: #f3f4f6; color: #6b7280; }
+.ps-page select.ps-stage[data-stage="已轉客戶"] { background: #ede7fb; color: #5b34a8; }
+.ps-page .nc-act .btn-mini { border-radius: 8px; padding: 6px 10px; background: var(--ps-accent); }
+.ps-page .ps-chip { border-radius: 14px; }
+.ps-page .ps-bulk { border-radius: 10px; }
+.ps-page .ps-pager .btn-mini { border-radius: 8px; }
+
+/* 彈出視窗 */
+#ps-import-modal .modal-box, #ps-edit-modal .modal-box, #ps-enrich-modal .modal-box { border-radius: 12px; padding: 22px 24px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+#ps-import-modal .modal-header h3, #ps-edit-modal .modal-header h3, #ps-enrich-modal .modal-header h3 { font-size: 18px; }
+.ps-drop { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px dashed var(--ps-line); border-radius: 12px; padding: 22px 12px; margin: 12px 0 6px; cursor: pointer; text-align: center; background: var(--ps-bg); transition: border-color .15s, background .15s; }
+.ps-drop:hover, .ps-drop.over { border-color: var(--ps-accent); background: var(--ps-accent-soft); }
+.ps-drop input[type=file] { display: none; }
+.ps-drop-icon { font-size: 28px; }
+.ps-drop-main { font-weight: 600; color: var(--ps-text); }
+.ps-drop-sub { font-size: 12px; color: var(--ps-muted); }
+.ps-or { display: flex; align-items: center; gap: 10px; color: var(--ps-muted); font-size: 12px; margin: 14px 0 8px; }
+.ps-or::before, .ps-or::after { content: ''; flex: 1; border-top: 1px solid var(--ps-line); }
+.ps-label { font-size: 13px; color: var(--ps-muted); margin-bottom: 4px; }
+.ps-textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--ps-line); border-radius: 8px; padding: 8px 10px; margin: 0 0 10px; font-family: inherit; resize: vertical; }
+#ps-import-modal .ps-btn-primary { margin-top: 0; }
+
+/* 聯繫與開發紀錄視窗 */
+#ps-edit-modal .modal-box { color: var(--ps-text); background: var(--ps-card); }
+#ps-edit-modal .ps-edit-title { font-size: 17px; font-weight: 700; }
+#ps-edit-modal .ps-quick { margin: 10px 0 6px; }
+#ps-edit-modal a.ps-qbtn { border-radius: 16px; padding: 5px 12px; text-decoration: none; background: var(--ps-accent-soft); color: var(--ps-accent) !important; border: 1px solid transparent; }
+#ps-edit-modal .modal-box > * { flex-shrink: 0; }
+#ps-edit-modal a.ps-qbtn:hover { border-color: var(--ps-accent); }
+#ps-edit-modal .ps-note-box { width: 100%; white-space: pre-wrap; font-size: 13px; color: var(--ps-muted); background: var(--ps-bg); border-radius: 8px; padding: 8px 10px; margin-top: 4px; }
+#ps-edit-modal .ps-logbox { border: 1px solid var(--ps-line); border-radius: 10px; padding: 12px 14px; background: var(--ps-bg); margin-top: 10px; }
+#ps-edit-modal .ps-logbox-title, #ps-edit-modal .ps-section-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+#ps-edit-modal .ps-section-title { margin: 16px 0 8px; }
+#ps-edit-modal .ps-log-row { gap: 8px; margin: 8px 0; }
+#ps-edit-modal select, #ps-edit-modal input:not([type=checkbox]), #ps-edit-modal textarea { border: 1px solid var(--ps-line); border-radius: 8px; padding: 7px 10px; background: var(--ps-card); color: var(--ps-text); font-family: inherit; font-size: 14px; }
+#ps-edit-modal .ps-log-row select, #ps-edit-modal .ps-log-row input { width: auto; margin: 0; }
+#ps-edit-modal select:focus, #ps-edit-modal input:focus, #ps-edit-modal textarea:focus { outline: none; border-color: var(--ps-accent); box-shadow: 0 0 0 3px var(--ps-accent-soft); }
+#ps-edit-modal .ps-logbox textarea { margin: 0; }
+#ps-edit-modal button.ps-pill { margin: 0; padding: 4px 11px; border-radius: 14px; font-size: 12px; background: var(--ps-card); color: var(--ps-text); border: 1px solid var(--ps-line); }
+#ps-edit-modal button.ps-pill:hover { border-color: var(--ps-accent); color: var(--ps-accent); }
+#ps-edit-modal #psl-quick { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+#ps-edit-modal .ps-logs { border: 1px solid var(--ps-line); border-radius: 10px; padding: 4px 12px; max-height: 260px; }
+#ps-edit-modal .ps-log { border-left: 0; background: none; padding: 8px 0 8px 14px; margin: 0; position: relative; border-bottom: 1px solid var(--ps-line2); }
+#ps-edit-modal .ps-log:last-child { border-bottom: 0; }
+#ps-edit-modal .ps-log::before { content: ''; position: absolute; left: 0; top: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--ps-accent); }
+#ps-edit-modal .ps-log-head { color: var(--ps-muted); }
+#ps-edit-modal .ps-log-head b { color: var(--ps-text); }
+#ps-edit-modal .ps-log-body { color: var(--ps-text); margin-top: 3px; }
+#ps-edit-modal details.ps-company { margin-top: 14px; border: 1px solid var(--ps-line); border-radius: 10px; padding: 10px 14px; }
+#ps-edit-modal details.ps-company summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+#ps-edit-modal details.ps-company label { display: block; font-size: 13px; color: var(--ps-muted); margin: 10px 0 4px; }
+#ps-edit-modal details.ps-company input:not([type=checkbox]), #ps-edit-modal details.ps-company select, #ps-edit-modal details.ps-company textarea { width: 100%; box-sizing: border-box; margin: 0; }
+#ps-edit-modal .modal-header button { border-radius: 8px; }
+html[data-theme="dark"] #ps-edit-modal .ps-cold { background: rgba(160,100,220,.2); color: #d4b5f2; }
+html[data-theme="dark"] #ps-edit-modal .ps-iscust { background: rgba(79,134,214,.2); color: #9fc2f5; }
+
+.ps-page .ps-table.ps-noaddr th:nth-child(4), .ps-page .ps-table.ps-noaddr td:nth-child(4) { display: none; }
+
+/* 深色模式 */
+@media screen {
+html[data-theme="dark"] .ps-page select.ps-stage { background: #2a323d; color: #e5e7eb; border-color: #3a4452; }
+html[data-theme="dark"] .ps-page select.ps-stage[data-stage="無意願"], html[data-theme="dark"] .ps-page select.ps-stage[data-stage="無效"] { background: #252c36; color: #9aa5b4; }
+html[data-theme="dark"] .ps-page, html[data-theme="dark"] #ps-import-modal, html[data-theme="dark"] #ps-edit-modal, html[data-theme="dark"] #ps-enrich-modal {
+  --ps-bg: #161b22; --ps-card: #1d232b; --ps-line: #323b48; --ps-line2: #2a323d; --ps-text: #e5e7eb; --ps-muted: #9aa5b4;
+  --ps-accent: #4f86d6; --ps-accent-soft: rgba(79,134,214,.16); --ps-hover: #232a34; --ps-danger: #ff8a80; --ps-shadow: none;
+}
+html[data-theme="dark"] .ps-page select.ps-stage[data-stage="開發中"] { background: rgba(240,170,60,.18); color: #f4c27a; }
+html[data-theme="dark"] .ps-page select.ps-stage[data-stage="已聯絡"] { background: rgba(79,134,214,.2); color: #9fc2f5; }
+html[data-theme="dark"] .ps-page select.ps-stage[data-stage="有興趣"] { background: rgba(60,180,100,.18); color: #8fdcab; }
+html[data-theme="dark"] .ps-page select.ps-stage[data-stage="已轉客戶"] { background: rgba(150,110,230,.2); color: #c7b3f4; }
+html[data-theme="dark"] .ps-textarea { background: #161b22; color: #e5e7eb; }
+}

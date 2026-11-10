@@ -70,11 +70,20 @@ function render() {
 }
 
 function renderStats() {
-  const parts = [`名單庫共 <b>${data.all.toLocaleString()}</b> 筆`];
-  if (data.all) parts.push(`符合條件 <b>${data.total.toLocaleString()}</b> 筆`);
   const st = window.__psStatus;
-  if (st && st.last && st.last.time) parts.push(`最後匯入：${e(st.last.time)}（${e(st.last.source || '')}）`);
-  document.getElementById('ps-stats').innerHTML = parts.join('　｜　');
+  const stageN = (s) => ((data.facets && data.facets.stage) || []).filter((x) => x.v === s).reduce((n, x) => n + x.n, 0);
+  const cards = [
+    ['名單庫', data.all.toLocaleString(), '家公司'],
+    ['符合目前條件', (data.total || 0).toLocaleString(), '家'],
+    ['開發中 / 已聯絡', (stageN('開發中') + stageN('已聯絡') + stageN('有興趣')).toLocaleString(), '家（目前條件內）'],
+  ];
+  const last = st && st.last && st.last.time ? `<div class="ps-kpi ps-kpi-wide"><span>最後匯入</span><b class="ps-kpi-sm">${e(st.last.time)}</b><small title="${e(st.last.source || '')}">${e(shortSource(st.last.source || ''))}</small></div>` : '';
+  document.getElementById('ps-stats').innerHTML = cards.map((c) => `<div class="ps-kpi"><span>${c[0]}</span><b>${c[1]}</b><small>${c[2]}</small></div>`).join('') + last;
+}
+
+/** 來源名稱太長（例如用檔名當來源）時，只顯示重點：拿掉「開發名單_」前綴與結尾的日期。 */
+function shortSource(s) {
+  return String(s || '').replace(/^開發名單[_＿]/, '').replace(/[_＿]?\d{8}(?:[_＿].*)?$/, '').replace(/\.csv$/i, '') || String(s || '');
 }
 
 async function loadStatus() {
@@ -283,15 +292,17 @@ function renderRows() {
       const src = (r.Source || '').split('、').join('、');
       return `<tr data-i="${i}" class="${r.Optout ? 'ps-optout' : ''}">
         <td><input type="checkbox" data-key="${e(r.Key)}" ${selected.has(r.Key) || selectAllMatching ? 'checked' : ''} ${selectAllMatching ? 'disabled' : ''} /></td>
-        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}${r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源">📂 ${e(src)}</div></td>
+        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}${r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源：${e(src)}">📂 ${e(src.split('、').map(shortSource).join('、'))}</div></td>
         <td class="ps-cat">${catHtml(r)}<div class="ps-prod" title="${e(r.Products || '')}">${e((r.Products || '').slice(0, 70))}</div></td>
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
-        <td><select class="ps-stage" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${followHtml(r)}${r.AssignedTo ? `<div class="calc-hint">負責：${e(r.AssignedTo)}</div>` : ''}${r.Notes ? `<div class="calc-hint" title="${e(r.Notes)}">📝 ${e(r.Notes.slice(0, 18))}</div>` : ''}</td>
+        <td class="ps-stage-cell"><select class="ps-stage" data-stage="${e(r.Stage)}" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${followHtml(r)}${r.AssignedTo ? `<div class="ps-meta">👤 ${e(r.AssignedTo)}</div>` : ''}</td>
         <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button></td>
       </tr>`;
     })
     .join('');
+  // 這一頁都沒有地址 / 負責人（例如展覽名單）就把那欄收起來
+  document.querySelector('.ps-table').classList.toggle('ps-noaddr', !data.rows.some((r) => r.Address || r.Owner || r.City));
   const all = data.rows.length > 0 && data.rows.every((r) => selected.has(r.Key));
   const pageCheck = document.getElementById('ps-check-page');
   pageCheck.checked = selectAllMatching || all;
@@ -513,6 +524,18 @@ async function onFilePicked(file) {
   document.getElementById('ps-step-map').style.display = '';
   msg.textContent = '';
 }
+
+// 匯入：把檔案拖進虛線框
+document.addEventListener('DOMContentLoaded', () => {
+  const drop = document.getElementById('ps-drop');
+  if (!drop) return;
+  ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (x) => { x.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (x) => { x.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', (x) => {
+    const f = x.dataTransfer && x.dataTransfer.files && x.dataTransfer.files[0];
+    if (f) onFilePicked(f);
+  });
+});
 
 function usePastedNames() {
   const lines = document.getElementById('ps-paste').value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -945,7 +968,7 @@ function openLogPanel(r) {
   const url = psSafeUrl(r.Website);
   if (url) q.push(`<a class="btn-mini ps-qbtn" href="${e(url)}" target="_blank" rel="noopener noreferrer">🌐 官網</a>`);
   if (r.ExtraContacts) q.push(`<span class="calc-hint">其他：${e(r.ExtraContacts)}</span>`);
-  if (r.Notes) q.push(`<div class="calc-hint" style="width:100%;white-space:pre-wrap;">📝 ${e(r.Notes)}</div>`);
+  if (r.Notes) q.push(`<div class="ps-note-box">📝 ${e(r.Notes)}</div>`);
   document.getElementById('pse-quick').innerHTML = q.join(' ');
   document.getElementById('psl-method').innerHTML = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'].map((m) => `<option>${m}</option>`).join('');
   document.getElementById('psl-stage').innerHTML = '<option value="">開發狀態：不變</option>' + stages.map((s) => `<option value="${e(s)}">${e(s)}</option>`).join('');
@@ -953,8 +976,8 @@ function openLogPanel(r) {
   document.getElementById('psl-next').value = r.NextFollowUp || ''; // 帶入目前排定的追蹤日，要取消請按「不排」
   document.getElementById('psl-msg').textContent = '';
   document.getElementById('psl-quick').innerHTML = [['明天', 1], ['3 天後', 3], ['1 週後', 7], ['2 週後', 14], ['1 個月後', 30]]
-    .map(([t, n]) => `<button type="button" class="btn-mini" onclick="document.getElementById('psl-next').value='${localDate(n)}'">${t}</button>`)
-    .join(' ') + ' <button type="button" class="btn-mini" onclick="document.getElementById(\'psl-next\').value=\'\'">不排</button>';
+    .map(([t, n]) => `<button type="button" class="ps-pill" onclick="document.getElementById('psl-next').value='${localDate(n)}'">${t}</button>`)
+    .join(' ') + ' <button type="button" class="ps-pill" onclick="document.getElementById(\'psl-next\').value=\'\'">不排</button>';
   loadLogs(r.Key);
 }
 
