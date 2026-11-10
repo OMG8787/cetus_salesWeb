@@ -276,3 +276,8 @@ html[data-theme="dark"] .ps-table tr.ps-optout td { background: #3a2220; }
 html[data-theme="dark"] .ps-table .ps-src, html[data-theme="dark"] .ps-table .ps-prod { color: #9aa4b2; }
 html[data-theme="dark"] .ps-progress { background: #323b48; }
 html[data-theme="dark"] .ps-more { color: #8db8f5 !important; }
+
+html[data-theme="dark"] .ps-logbox { background: #1d232b; border-color: #323b48; }
+html[data-theme="dark"] .ps-log { background: #222a34; }
+html[data-theme="dark"] .ps-log-head { color: #9aa4b2; }
+html[data-theme="dark"] .ps-due { color: #ff8a80; }

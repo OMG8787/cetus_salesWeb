@@ -5,8 +5,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>開發名單庫 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261109c" />
-<link rel="stylesheet" href="dark.css?v=20261109c" />
+<link rel="stylesheet" href="style.css?v=20261110a" />
+<link rel="stylesheet" href="dark.css?v=20261110a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -74,6 +74,7 @@
   <div class="ps-top">
     <div id="ps-stats" class="ps-stats">讀取中…</div>
     <div class="ps-top-btns">
+      <button type="button" onclick="showMyDue()">📞 今天要聯繫</button>
       <button type="button" class="ps-write" onclick="openImport()">📥 匯入名單</button>
       <button type="button" class="ps-write" id="ps-enrich-btn" onclick="openEnrich()">🔎 找官網與聯絡方式</button>
       <button type="button" id="ps-export-btn" onclick="exportResult()">📤 匯出目前結果（CSV）</button>
@@ -102,6 +103,12 @@
           <option value="">負責業務：全部</option>
           <option value="me">我負責的</option>
           <option value="none">尚未指派</option>
+        </select>
+        <select id="ps-follow" onchange="onFollowChange()">
+          <option value="">追蹤：全部</option>
+          <option value="due">今天以前要聯繫</option>
+          <option value="planned">已排定（之後）</option>
+          <option value="none">還沒排追蹤日</option>
         </select>
         <select id="ps-site" onchange="onSiteChange()">
           <option value="">官網查詢：全部</option>
@@ -191,10 +198,28 @@
 
 <div id="ps-edit-modal" class="modal-overlay" style="display:none;">
   <div class="modal-box" style="max-width:600px;">
-    <div class="modal-header"><h3 style="margin:0;">開發紀錄</h3><button type="button" onclick="closeModal('ps-edit-modal')">關閉</button></div>
+    <div class="modal-header"><h3 style="margin:0;">聯繫與開發紀錄</h3><button type="button" onclick="closeModal('ps-edit-modal')">關閉</button></div>
     <div id="pse-title" style="font-weight:600;"></div>
     <div id="pse-sub" class="calc-hint"></div>
+    <div id="pse-quick" class="ps-quick"></div>
+    <div class="ps-logbox ps-write-block">
+      <div style="font-weight:600;margin-bottom:4px;">＋ 記錄這次聯繫</div>
+      <div class="ps-log-row">
+        <select id="psl-method"></select>
+        <select id="psl-stage"><option value="">開發狀態：不變</option></select>
+      </div>
+      <textarea id="psl-content" rows="3" maxlength="1000" placeholder="這次聯繫的內容：跟誰談、對方需求、下一步…"></textarea>
+      <div class="ps-log-row">
+        <span>下次追蹤：</span><input id="psl-next" type="date" style="width:auto;margin:0;" />
+        <span id="psl-quick"></span>
+      </div>
+      <button type="button" onclick="addLog()">新增紀錄</button> <span id="psl-msg" class="calc-hint"></span>
+    </div>
+    <div style="font-weight:600;margin:10px 0 4px;">聯繫紀錄</div>
+    <div id="pse-logs" class="ps-logs"><span class="calc-hint">讀取中…</span></div>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:600;">公司資料（狀態、負責業務、聯絡方式、備註）</summary>
     <label>開發狀態：</label><select id="pse-stage"></select>
+    <label>下次追蹤日：</label><input id="pse-next" type="date" />
     <label>負責業務（帳號）：</label>
     <div style="display:flex;gap:6px;"><input id="pse-assigned" maxlength="40" style="margin:0;" /><button type="button" class="btn-mini" onclick="assignMe()">指派給我</button></div>
     <label>聯絡人：</label><input id="pse-contact" maxlength="80" />
@@ -204,7 +229,8 @@
     <div id="pse-enrich" class="calc-hint" style="margin-top:6px;"></div>
     <label>備註：</label><textarea id="pse-notes" rows="4" maxlength="500"></textarea>
     <label style="display:block;margin-top:6px;"><input type="checkbox" id="pse-optout" style="width:auto;" /> 拒絕聯絡（對方要求不要再聯絡；之後寄信一定會排除）</label>
-    <div style="margin-top:10px;"><button type="button" onclick="saveEdit()">儲存</button> <span id="pse-msg" class="calc-hint"></span></div>
+    <div style="margin-top:10px;"><button type="button" onclick="saveEdit()">儲存公司資料</button> <span id="pse-msg" class="calc-hint"></span></div>
+    </details>
   </div>
 </div>
 
@@ -213,7 +239,7 @@
 <script src="common.js?v=20261109b"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261109b"></script>
-<script src="prospects-lib.js?v=20261109c"></script>
-<script src="prospects.js?v=20261109c"></script>
+<script src="prospects-lib.js?v=20261110a"></script>
+<script src="prospects.js?v=20261110a"></script>
 </body>
 </html>

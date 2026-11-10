@@ -5,7 +5,7 @@
  */
 
 const IMPORT_CHUNK = 2000;
-const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', site: '', page: 1, size: 30 };
+const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', site: '', follow: '', page: 1, size: 30 };
 let data = null; // 最近一次查詢結果
 let selected = new Set(); // 勾選的 Key
 let selectAllMatching = false; // 是否已選「符合條件的全部」
@@ -31,6 +31,7 @@ function filterBody() {
     has: [...state.has].join(''),
     assigned: state.assigned,
     site: state.site,
+    follow: state.follow,
   };
 }
 
@@ -155,6 +156,9 @@ document.addEventListener('click', (ev) => {
     if (k === 'q') {
       state.q = '';
       document.getElementById('ps-q').value = '';
+    } else if (k === 'follow') {
+      state.follow = '';
+      document.getElementById('ps-follow').value = '';
     } else if (k === 'site') {
       state.site = '';
       document.getElementById('ps-site').value = '';
@@ -185,6 +189,25 @@ function onAssignedChange() {
   filtersChanged();
 }
 
+function onFollowChange() {
+  state.follow = document.getElementById('ps-follow').value;
+  filtersChanged();
+}
+
+/** 一鍵：我負責、今天以前要聯繫的（依追蹤日排序，最早的在前）。 */
+function showMyDue() {
+  ['sources', 'cities', 'cats', 'stages', 'has'].forEach((k) => state[k].clear());
+  state.q = '';
+  state.site = '';
+  state.assigned = 'me';
+  state.follow = 'due';
+  document.getElementById('ps-q').value = '';
+  document.getElementById('ps-site').value = '';
+  document.getElementById('ps-assigned').value = 'me';
+  document.getElementById('ps-follow').value = 'due';
+  filtersChanged();
+}
+
 function onSiteChange() {
   state.site = document.getElementById('ps-site').value;
   filtersChanged();
@@ -200,6 +223,8 @@ function resetFilters() {
   state.q = '';
   state.assigned = '';
   state.site = '';
+  state.follow = '';
+  document.getElementById('ps-follow').value = '';
   document.getElementById('ps-q').value = '';
   document.getElementById('ps-assigned').value = '';
   document.getElementById('ps-site').value = '';
@@ -218,6 +243,7 @@ function renderChips() {
   state.has.forEach((v) => chips.push(['has', v, hasLabel[v]]));
   if (state.assigned) chips.push(['assigned', state.assigned, state.assigned === 'me' ? '我負責的' : '尚未指派']);
   if (state.site) chips.push(['site', state.site, state.site === 'checked' ? '官網已查過' : '官網還沒查']);
+  if (state.follow) chips.push(['follow', state.follow, { due: '今天以前要聯繫', planned: '已排定追蹤', none: '還沒排追蹤日' }[state.follow]]);
   document.getElementById('ps-chips').innerHTML = chips.map((c) => `<span class="ps-chip">${e(c[2])} <button type="button" data-chip="${e(JSON.stringify([c[0], c[1]]))}" title="移除這個條件">×</button></span>`).join('');
 }
 
@@ -261,8 +287,8 @@ function renderRows() {
         <td class="ps-cat">${catHtml(r)}<div class="ps-prod" title="${e(r.Products || '')}">${e((r.Products || '').slice(0, 70))}</div></td>
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
-        <td><select class="ps-stage" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${r.AssignedTo ? `<div class="calc-hint">負責：${e(r.AssignedTo)}</div>` : ''}${r.Notes ? `<div class="calc-hint" title="${e(r.Notes)}">📝 ${e(r.Notes.slice(0, 18))}</div>` : ''}</td>
-        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看' : '編輯'}</button></td>
+        <td><select class="ps-stage" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${followHtml(r)}${r.AssignedTo ? `<div class="calc-hint">負責：${e(r.AssignedTo)}</div>` : ''}${r.Notes ? `<div class="calc-hint" title="${e(r.Notes)}">📝 ${e(r.Notes.slice(0, 18))}</div>` : ''}</td>
+        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button></td>
       </tr>`;
     })
     .join('');
@@ -412,9 +438,11 @@ function openEdit(i) {
   set('pse-website', r.Website);
   set('pse-notes', r.Notes);
   document.getElementById('pse-optout').checked = !!r.Optout;
+  document.getElementById('pse-next').value = r.NextFollowUp || '';
+  openLogPanel(r);
   document.getElementById('pse-enrich').innerHTML = (r.ExtraContacts ? `其他聯絡方式：${e(r.ExtraContacts)}<br>` : '') + (r.Enriched ? `官網查詢（${e(r.EnrichedAt || '')}）：${e(ENRICH_LABEL[r.Enriched] || r.Enriched)}　${e(r.EnrichNote || '')}` : '');
   document.getElementById('pse-msg').textContent = ro ? '你只有查看權限' : '';
-  ['pse-stage', 'pse-assigned', 'pse-contact', 'pse-phone', 'pse-email', 'pse-website', 'pse-notes', 'pse-optout'].forEach((id) => (document.getElementById(id).disabled = ro));
+  ['pse-stage', 'pse-next', 'pse-assigned', 'pse-contact', 'pse-phone', 'pse-email', 'pse-website', 'pse-notes', 'pse-optout'].forEach((id) => (document.getElementById(id).disabled = ro));
   document.getElementById('ps-edit-modal').style.display = 'flex';
 }
 
@@ -424,7 +452,7 @@ function assignMe() {
 
 async function saveEdit() {
   const v = (id) => document.getElementById(id).value.trim();
-  const fields = { Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked };
+  const fields = { Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked, NextFollowUp: v('pse-next') };
   const r = await callApi('prospectUpdate', { key: editRow.Key, row: editRow.RowIndex, fields });
   if (!r || !r.success) {
     document.getElementById('pse-msg').textContent = (r && r.message) || '儲存失敗';
@@ -744,6 +772,100 @@ async function startEnrich() {
   document.getElementById('pen-tally').textContent = `找到聯絡方式 ${tally.ok}　有官網沒聯絡方式 ${tally.nocontact}　找不到官網 ${tally.nosite}　不允許讀取 ${tally.blocked}　失敗 ${tally.error}`;
   loadStatus();
   load();
+}
+
+// ---------- 聯繫紀錄 ----------
+function localDate(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + (offset || 0));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** 表格「開發狀態」欄下面的追蹤資訊：下次追蹤日（今天以前標紅）、最後聯繫。 */
+function followHtml(r) {
+  const out = [];
+  if (r.NextFollowUp) {
+    const due = r.NextFollowUp <= localDate(0);
+    out.push(`<div class="${due ? 'ps-due' : 'calc-hint'}">⏰ 下次 ${e(r.NextFollowUp.slice(5))}${due ? (r.NextFollowUp < localDate(0) ? '（逾期）' : '（今天）') : ''}</div>`);
+  }
+  if (r.LastContactAt) out.push(`<div class="calc-hint">最後聯繫 ${e(String(r.LastContactAt).slice(5, 10))}</div>`);
+  return out.join('');
+}
+
+function telHref(p) {
+  return 'tel:' + String(p || '').replace(/[^\d+]/g, '');
+}
+
+function openLogPanel(r) {
+  const ro = readOnly();
+  document.querySelectorAll('#ps-edit-modal .ps-write-block').forEach((el) => (el.style.display = ro ? 'none' : ''));
+  // 快速聯繫：直接撥號 / 寄信 / 開官網
+  const q = [];
+  if (r.Phone) q.push(`<a class="btn-mini ps-qbtn" href="${e(telHref(r.Phone))}">📞 ${e(r.Phone)}</a>`);
+  if (r.Email) q.push(`<a class="btn-mini ps-qbtn" href="mailto:${e(r.Email)}">✉️ ${e(r.Email)}</a>`);
+  const url = psSafeUrl(r.Website);
+  if (url) q.push(`<a class="btn-mini ps-qbtn" href="${e(url)}" target="_blank" rel="noopener noreferrer">🌐 官網</a>`);
+  if (r.ExtraContacts) q.push(`<span class="calc-hint">其他：${e(r.ExtraContacts)}</span>`);
+  if (r.Notes) q.push(`<div class="calc-hint" style="width:100%;white-space:pre-wrap;">📝 ${e(r.Notes)}</div>`);
+  document.getElementById('pse-quick').innerHTML = q.join(' ');
+  document.getElementById('psl-method').innerHTML = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'].map((m) => `<option>${m}</option>`).join('');
+  document.getElementById('psl-stage').innerHTML = '<option value="">開發狀態：不變</option>' + stages.map((s) => `<option value="${e(s)}">${e(s)}</option>`).join('');
+  document.getElementById('psl-content').value = '';
+  document.getElementById('psl-next').value = r.NextFollowUp || ''; // 帶入目前排定的追蹤日，要取消請按「不排」
+  document.getElementById('psl-msg').textContent = '';
+  document.getElementById('psl-quick').innerHTML = [['明天', 1], ['3 天後', 3], ['1 週後', 7], ['2 週後', 14], ['1 個月後', 30]]
+    .map(([t, n]) => `<button type="button" class="btn-mini" onclick="document.getElementById('psl-next').value='${localDate(n)}'">${t}</button>`)
+    .join(' ') + ' <button type="button" class="btn-mini" onclick="document.getElementById(\'psl-next\').value=\'\'">不排</button>';
+  loadLogs(r.Key);
+}
+
+async function loadLogs(key) {
+  const box = document.getElementById('pse-logs');
+  box.innerHTML = '<span class="calc-hint">讀取中…</span>';
+  const r = await callApi('prospectLogs', { key }, { silent: true });
+  if (!editRow || editRow.Key !== key) return; // 視窗已經換成別家
+  if (!r || !r.success) {
+    box.innerHTML = `<span class="calc-hint">${e((r && r.message) || '讀取失敗')}</span>`;
+    return;
+  }
+  box.innerHTML = r.logs.length
+    ? r.logs
+        .map((l) => `<div class="ps-log"><div class="ps-log-head"><b>${e(l.Method)}</b>　${e(l.Time)}　${e(l.User)}${l.Stage ? `　→ ${e(l.Stage)}` : ''}${l.NextFollowUp ? `　⏰ 下次 ${e(l.NextFollowUp)}` : ''}</div><div class="ps-log-body">${e(l.Content)}</div></div>`)
+        .join('')
+    : '<span class="calc-hint">還沒有聯繫紀錄。</span>';
+}
+
+async function addLog() {
+  const content = document.getElementById('psl-content').value.trim();
+  const msg = document.getElementById('psl-msg');
+  if (!content) {
+    msg.textContent = '請先填寫這次聯繫的內容';
+    return;
+  }
+  const r = await callApi('prospectLogAdd', {
+    key: editRow.Key,
+    row: editRow.RowIndex,
+    method: document.getElementById('psl-method').value,
+    content,
+    stage: document.getElementById('psl-stage').value,
+    nextFollowUp: document.getElementById('psl-next').value,
+  });
+  if (!r || !r.success) {
+    msg.textContent = (r && r.message) || '新增失敗';
+    return;
+  }
+  editRow = r.row;
+  const i = data.rows.findIndex((x) => x.Key === r.row.Key);
+  if (i > -1) data.rows[i] = r.row;
+  document.getElementById('pse-stage').value = r.row.Stage;
+  document.getElementById('pse-next').value = r.row.NextFollowUp || '';
+  document.getElementById('pse-assigned').value = r.row.AssignedTo || '';
+  document.getElementById('psl-content').value = '';
+  document.getElementById('psl-next').value = r.row.NextFollowUp || '';
+  document.getElementById('psl-stage').value = '';
+  msg.textContent = '✓ 已記錄' + (r.row.NextFollowUp ? `，下次追蹤 ${r.row.NextFollowUp}` : '');
+  loadLogs(r.row.Key);
+  renderRows();
 }
 
 window.refreshPageData = () => load();

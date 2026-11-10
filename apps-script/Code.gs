@@ -11369,7 +11369,10 @@ function handleCopyGenerate(body) {
 // ============================================================
 var PS_SHEET = 'Prospects';
 // 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
-var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts'];
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt'];
+var PS_LOG_SHEET = 'ProspectLogs';
+var PS_LOG_COLS = ['ID', 'Key', 'Time', 'User', 'Method', 'Content', 'Stage', 'NextFollowUp'];
+var PS_LOG_METHODS = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'];
 var PS_STAGES = ['未處理', '開發中', '已聯絡', '有興趣', '無意願', '已轉客戶', '無效'];
 var PS_MERGE_FIELDS = ['Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact'];
 var PS_IMPORT_MAX = 3000;
@@ -11389,6 +11392,7 @@ function prospectPerms_() {
     prospectStatus: ['customers', 'r'], prospectQuery: ['customers', 'r'], prospectExport: ['customers', 'r'],
     prospectUpdate: ['customers', 'w'], prospectBulk: ['customers', 'w'], prospectImport: ['customers', 'w'],
     prospectEnrichPlan: ['customers', 'w'], prospectEnrich: ['customers', 'w'],
+    prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'],
     prospectClear: ['admin', 'd'],
   };
 }
@@ -11403,6 +11407,8 @@ function prospectRoutes_() {
     prospectImport: { auth: true, fn: handleProspectImport },
     prospectEnrichPlan: { auth: true, fn: handleProspectEnrichPlan },
     prospectEnrich: { auth: true, fn: handleProspectEnrich },
+    prospectLogs: { auth: true, fn: handleProspectLogs },
+    prospectLogAdd: { auth: true, fn: handleProspectLogAdd },
     prospectClear: { auth: true, fn: handleProspectClear },
   };
 }
@@ -11741,7 +11747,8 @@ function psFilter_(b) {
   var has = String(b.has || '').replace(/[^PEW]/g, '');
   var assigned = b.assigned === 'me' || b.assigned === 'none' ? b.assigned : '';
   var site = b.site === 'unchecked' || b.site === 'checked' ? b.site : '';
-  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site };
+  var follow = b.follow === 'due' || b.follow === 'planned' || b.follow === 'none' ? b.follow : '';
+  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site, follow: follow };
 }
 
 function psSet_(arr) {
@@ -11756,7 +11763,7 @@ function psSet_(arr) {
  * 所以選了某個產業後，來源與縣市的數字會跟著變，但產業清單仍看得到其他產業有幾筆可選。
  * 一個迴圈、每列算 6 個條件：全過 → 計入所有分面；只有 1 個沒過 → 只計入那個沒過的分面。
  */
-function psRun_(scan, search, asg, f, me) {
+function psRun_(scan, search, asg, f, me, fol, today) {
   var sSet = psSet_(f.sources), cSet = psSet_(f.cities), kSet = psSet_(f.cats), tSet = psSet_(f.stages);
   var fac = { source: {}, city: {}, cat: {}, stage: {}, has: {} };
   var hits = [];
@@ -11783,6 +11790,10 @@ function psRun_(scan, search, asg, f, me) {
     if (f.assigned && fl[5]) {
       var who = String(asg[i]);
       fl[5] = f.assigned === 'me' ? who === me : !who;
+    }
+    if (f.follow && fl[5]) {
+      var nd = String(fol[i] || '');
+      fl[5] = f.follow === 'due' ? !!nd && nd <= today : f.follow === 'planned' ? nd > today : !nd;
     }
     var miss = 0, which = -1;
     for (var k = 0; k < 6; k++) if (!fl[k]) { miss++; which = k; }
@@ -11813,7 +11824,11 @@ function psMatch_(sh, body) {
   var search = f.q.length ? psColVals_(sh, psCol_('Search'), n) : null;
   var me = String((body._user && body._user.username) || '');
   var asg = f.assigned ? psColVals_(sh, psCol_('AssignedTo'), n) : null;
-  var res = psRun_(scan, search, asg, f, me);
+  var fol = f.follow ? psColVals_(sh, psCol_('NextFollowUp'), n) : null;
+  var today = todayStr();
+  var res = psRun_(scan, search, asg, f, me, fol, today);
+  // 看「待追蹤 / 已排定」時，依追蹤日期排序（最早要聯繫的在最前面）
+  if (fol && f.follow !== 'none') res.hits.sort(function (a, b) { return fol[a] < fol[b] ? -1 : fol[a] > fol[b] ? 1 : a - b; });
   res.f = f;
   res.n = n;
   return res;
@@ -11887,7 +11902,7 @@ function psAssignee_(v, body) {
   return s === '@me' ? String((body._user && body._user.username) || '') : s;
 }
 
-var PS_EDITABLE = { Stage: 1, Notes: 1, Website: 1, Phone: 1, Email: 1, Contact: 1, Optout: 1, AssignedTo: 1 };
+var PS_EDITABLE = { Stage: 1, Notes: 1, Website: 1, Phone: 1, Email: 1, Contact: 1, Optout: 1, AssignedTo: 1, NextFollowUp: 1 };
 
 function psCheckStage_(v) {
   var s = psClean_(v, 20);
@@ -11926,6 +11941,7 @@ function handleProspectUpdate(body) {
           if (em && !o.Email) throw new Error('Email 格式不正確');
         } else if (k === 'Optout') o.Optout = v ? 'Y' : '';
         else if (k === 'AssignedTo') o.AssignedTo = psAssignee_(v, body);
+        else if (k === 'NextFollowUp') o.NextFollowUp = psDate_(v);
         else o[k] = psClean_(v, k === 'Phone' ? 60 : 80);
       });
     } catch (e) {
@@ -12488,4 +12504,109 @@ function handleProspectEnrich(body) {
   }
   var q2 = psEnrichQuota_();
   return { success: true, results: results, remaining: items.slice(i), source: src, quota: { limit: q2.limit, used: q2.used } };
+}
+
+// ------------------------------------------------------------
+// 開發名單：聯繫紀錄（每次打電話 / 寄信 / 拜訪記一筆）與下次追蹤日
+// 紀錄存在同一份名單試算表的「ProspectLogs」分頁；名單本身記「最後聯繫時間」「下次追蹤日」方便篩選與排序。
+// ------------------------------------------------------------
+/** 日期欄位：只收 yyyy-MM-dd，空字串 = 清除；格式不對丟錯誤。 */
+function psDate_(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (!isDateStr(s)) throw new Error('日期格式要是 yyyy-MM-dd');
+  return s;
+}
+
+function psLogSheet_(create) {
+  var ss = psSs_(create);
+  if (!ss) return null;
+  var sh = ss.getSheetByName(PS_LOG_SHEET);
+  if (sh || !create) return sh;
+  sh = ss.insertSheet(PS_LOG_SHEET);
+  sh.getRange(1, 1, 1, PS_LOG_COLS.length).setValues([PS_LOG_COLS]).setFontWeight('bold').setBackground('#eef2f7');
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, sh.getMaxRows(), PS_LOG_COLS.length).setNumberFormat('@');
+  return sh;
+}
+
+/** 找名單列：先用前端給的列號，Key 對不上再整欄找。回傳 { row, obj } 或 null。 */
+function psFindRow_(sh, key, row) {
+  row = Math.floor(Number(row)) || 0;
+  var arr = row >= 2 ? psReadRows_(sh, [row])[row] : null;
+  if (!arr || String(arr[0]) !== String(key)) {
+    var n = Math.max(0, sh.getLastRow() - 1);
+    var idx = psColVals_(sh, 1, n).indexOf(String(key));
+    if (idx < 0) return null;
+    row = idx + 2;
+    arr = psReadRows_(sh, [row])[row];
+  }
+  return { row: row, obj: psObj_(arr) };
+}
+
+/** 一家公司的聯繫紀錄，新的在前。 */
+function handleProspectLogs(body) {
+  var key = String(body.key || '');
+  if (!key) return { success: false, message: '缺少名單編號' };
+  var sh = psLogSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return { success: true, logs: [], methods: PS_LOG_METHODS };
+  var n = sh.getLastRow() - 1;
+  var keys = psColVals_(sh, 2, n);
+  var rows = [];
+  keys.forEach(function (k, i) { if (k === key) rows.push(i + 2); });
+  var logs = rows.map(function (r) {
+    var v = sh.getRange(r, 1, 1, PS_LOG_COLS.length).getValues()[0];
+    var o = {};
+    PS_LOG_COLS.forEach(function (c, j) { o[c] = v[j] == null ? '' : String(v[j]); });
+    return o;
+  });
+  logs.sort(function (a, b) { return a.Time < b.Time ? 1 : a.Time > b.Time ? -1 : Number(b.ID) - Number(a.ID); });
+  return { success: true, logs: logs, methods: PS_LOG_METHODS };
+}
+
+/**
+ * 新增一筆聯繫紀錄：同時更新名單的最後聯繫時間、下次追蹤日、開發狀態（有給才改）；
+ * 這家還沒有負責業務的話，記錄的人自動成為負責人。
+ */
+function handleProspectLogAdd(body) {
+  var key = String(body.key || '');
+  if (!key) return { success: false, message: '缺少名單編號' };
+  var method = String(body.method || '').trim();
+  if (PS_LOG_METHODS.indexOf(method) < 0) return { success: false, message: '聯繫方式只能是：' + PS_LOG_METHODS.join('、') };
+  var content = psClean_(body.content, 1000, true);
+  if (!content) return { success: false, message: '請填寫這次聯繫的內容' };
+  var next, stage;
+  try {
+    next = psDate_(body.nextFollowUp);
+    stage = body.stage === undefined || body.stage === null || body.stage === '' ? null : psCheckStage_(body.stage);
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  var me = String((body._user && body._user.username) || '');
+  return withLock_(function () {
+    var sh = psSheet_(false);
+    if (!sh) return { success: false, message: '名單庫還是空的' };
+    var found = psFindRow_(sh, key, body.row);
+    if (!found) return { success: false, message: '找不到這筆名單（可能已被刪除），請重新整理' };
+    var o = found.obj;
+    var now = nowStr();
+    var lsh = psLogSheet_(true);
+    var last = lsh.getLastRow();
+    var maxId = 0;
+    if (last >= 2) psColVals_(lsh, 1, last - 1).forEach(function (v) { maxId = Math.max(maxId, Number(v) || 0); });
+    var log = { ID: String(maxId + 1), Key: key, Time: now, User: me, Method: method, Content: content, Stage: stage === null ? '' : stage || PS_STAGES[0], NextFollowUp: next };
+    ensureRows_(lsh, last + 1);
+    var r = lsh.getRange(last + 1, 1, 1, PS_LOG_COLS.length);
+    r.setNumberFormat('@');
+    r.setValues([PS_LOG_COLS.map(function (c) { return log[c]; })]);
+    o.LastContactAt = now;
+    o.NextFollowUp = next;
+    if (stage !== null) o.Stage = stage;
+    else if (!o.Stage) o.Stage = '已聯絡'; // 第一次聯繫：從「未處理」自動變「已聯絡」
+    if (!o.AssignedTo) o.AssignedTo = me;
+    o.UpdatedAt = now;
+    psDerive_(o);
+    sh.getRange(found.row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+    return { success: true, log: log, row: psOut_(psArr_(o), found.row) };
+  });
 }
