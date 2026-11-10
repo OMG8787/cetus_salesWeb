@@ -199,7 +199,7 @@ function renderSchedule() {
   tbody1.innerHTML = '';
   noCase.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CompanyName)}</td><td>${esc(c.Contact)}</td><td>${c.Phone ? `<a href="tel:${esc(String(c.Phone).replace(/[^\d+#,]/g, ''))}">${esc(c.Phone)}</a>` : ''}</td><td>${followCell(c)}</td>
+    tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CompanyName)}${siteLinkHtml(customerSite(c))}</td><td>${esc(c.Contact)}</td><td>${c.Phone ? `<a href="tel:${esc(String(c.Phone).replace(/[^\d+#,]/g, ''))}">${esc(c.Phone)}</a>` : ''}</td><td>${followCell(c)}</td>
       <td>${discussCell(c)}</td>
       <td class="sch-notes-dot" ${c.Notes ? `data-full="${esc(c.Notes)}" title="${esc(c.Notes)}"` : ''}>${c.Notes ? '…' : ''}</td>
       <td>
@@ -216,7 +216,7 @@ function renderSchedule() {
   tbody2.innerHTML = '';
   openCases.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CaseID)}</td><td>${esc(c.CustomerName)}</td><td>${esc(c.Status)}</td><td>${followCell(c)}</td>
+    tr.innerHTML = `<td>${urgencyBadge(c.Urgency)}</td><td>${esc(c.CaseID)}</td><td>${esc(c.CustomerName)}${siteLinkHtml(customerSite(Object.assign({ CompanyName: c.CustomerName }, c._cust || {})))}</td><td>${esc(c.Status)}</td><td>${followCell(c)}</td>
       <td>${discussCell(Object.assign({}, c._cust || {}, { CompanyName: c.CustomerName, NextFollowUpNote: (c._cust || {}).NextFollowUpNote }))}</td>
       <td>${esc(c.Salesperson)}${c.FAE ? '<br><small class="calc-hint">FAE：' + esc(c.FAE) + '</small>' : ''}</td>
       <td>
@@ -227,6 +227,7 @@ function renderSchedule() {
     tbody2.appendChild(tr);
   });
   document.getElementById('sch-case-empty').style.display = openCases.length ? 'none' : '';
+  renderAgenda();
 }
 
 function schDone(companyName, caseId) {
@@ -259,14 +260,25 @@ function schChangeDate(companyName) {
 // ④ 今日已完成的工作（工作日報）：這天的客戶聯繫紀錄，整理成可以直接複製貼到日報的文字
 let repLogs = [];
 
+let repPLogs = []; // 這天的開發名單聯繫紀錄
+let repDoneTodos = []; // 這天完成的工作
+let repMe = '';
+
 async function loadDailyReport() {
   const date = document.getElementById('rep-date').value || localTodayStr();
-  const r = await callApi('getContactLogs', { date }, { silent: true });
+  const [r, p, t] = await Promise.all([
+    callApi('getContactLogs', { date }, { silent: true }),
+    callApi('workAgenda', { logsOnly: true, reportDate: date }, { silent: true }),
+    callApi('todoGet', { scope: 'all', status: 'done' }, { silent: true }),
+  ]);
   if (!r.success) {
     document.getElementById('rep-text').value = r.message || '讀取失敗';
     return;
   }
   repLogs = r.logs || [];
+  repPLogs = p && p.success ? p.prospectLogs || [] : [];
+  repMe = p && p.success ? p.me : '';
+  repDoneTodos = t && t.success ? (t.todos || []).filter((x) => String(x.doneAt || '').slice(0, 10) === date) : [];
   renderDailyReport();
 }
 
@@ -293,8 +305,23 @@ function renderDailyReport() {
     const cust = schCustomers.find((x) => x.CompanyName === l.CompanyName);
     if (cust && normalizeDateStr(cust.NextFollowUpDate)) lines.push(`   下次追蹤：${followWhenText(cust.NextFollowUpDate, cust.NextFollowUpTime)}${cust.NextFollowUpNote ? '　' + String(cust.NextFollowUpNote).replace(/\n+/g, ' ') : ''}`);
   });
+  const plogs = repPLogs.filter((l) => !mineOnly || !repMe || l.User === repMe);
+  if (plogs.length) {
+    lines.push('', '【開發名單聯繫】');
+    plogs.forEach((l, i) => {
+      lines.push(`${i + 1}. ${l.Company || l.Key}（${l.Method}）${l.Stage ? '→ ' + l.Stage : ''}`);
+      lines.push(`   內容：${String(l.Content || '').replace(/\n+/g, '\n         ')}`);
+      if (l.NextFollowUp) lines.push(`   下次追蹤：${l.NextFollowUp}`);
+    });
+  }
+  const todosDone = repDoneTodos.filter((x) => !mineOnly || x.isMine);
+  if (todosDone.length) {
+    lines.push('', '【完成的工作】');
+    todosDone.forEach((x) => lines.push(`- ${x.title}`));
+  }
+  if (!logs.length && (plogs.length || todosDone.length)) lines.splice(1, 1); // 有其他內容時，不顯示「還沒有記錄」的提示
   document.getElementById('rep-text').value = lines.join('\n');
-  document.getElementById('rep-count').textContent = `共 ${logs.length} 筆`;
+  document.getElementById('rep-count').textContent = `共 ${logs.length + plogs.length + todosDone.length} 筆`;
 }
 
 async function copyDailyReport() {
@@ -401,7 +428,7 @@ function renderEvents() {
       const when = ev.endDate && ev.endDate !== ev.startDate ? `${ev.startDate.slice(5)} → ${ev.endDate.slice(5)}` : ev.startDate.slice(5);
       return `<div class="ws-evrow">
         <span class="ws-evdate">${esc(when)}</span><span class="ws-evtime">${esc(evTimeText(ev))}</span>
-        <span class="ws-evmain">${esc(ev.title)}${ev.location ? ` <span class="calc-hint">@${esc(ev.location)}</span>` : ''}${evBadges(ev)}${ev.notes ? `<div class="calc-hint">${esc(ev.notes).replace(/\n/g, '<br>')}</div>` : ''}</span>
+        <span class="ws-evmain">${esc(ev.title)}${siteLinkFor(ev.title + ' ' + (ev.location || '') + ' ' + (ev.notes || ''))}${ev.location ? ` <span class="calc-hint">@${esc(ev.location)}</span>` : ''}${evBadges(ev)}${ev.notes ? `<div class="calc-hint">${esc(ev.notes).replace(/\n/g, '<br>')}</div>` : ''}</span>
         <span class="ws-evact"><button type="button" class="btn-secondary" onclick="openEventModal(${ev.id})">${ev.canEdit && ev.source !== 'followup' ? '編輯' : '查看'}</button></span>
       </div>`;
     })
@@ -507,7 +534,19 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('rep-date').value = localTodayStr();
   document.getElementById('rep-date').addEventListener('change', loadDailyReport);
   document.getElementById('rep-mine').addEventListener('change', renderDailyReport);
-  ['sch-urgency', 'sch-range', 'sch-sort'].forEach((id) => document.getElementById(id).addEventListener('change', renderSchedule));
+  ['sch-urgency', 'sch-sort'].forEach((id) => document.getElementById(id).addEventListener('change', renderSchedule));
+  document.getElementById('sch-range').addEventListener('change', () => {
+    renderSchedule();
+    loadAgenda();
+  });
+  document.querySelectorAll('#ag-types button').forEach((b) =>
+    b.addEventListener('click', () => {
+      agType = b.dataset.ag;
+      document.querySelectorAll('#ag-types button').forEach((x) => x.classList.toggle('on', x === b));
+      renderAgenda();
+    })
+  );
+  loadAgenda();
   document.getElementById('sch-keyword').addEventListener('input', renderSchedule);
   loadScheduleEvents();
   loadScheduleData();
@@ -516,4 +555,179 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 // 導覽列「↻ 重撈資料」
-window.refreshPageData = () => Promise.all([loadScheduleData(), loadScheduleEvents(), loadScheduleLogs(), loadDailyReport()]);
+window.refreshPageData = () => Promise.all([loadScheduleData(), loadScheduleEvents(), loadScheduleLogs(), loadDailyReport(), loadAgenda(), typeof loadTodos === 'function' ? loadTodos() : null]);
+
+
+// ------------------------------------------------------------
+// ⓪ 今天要做的事：行程、客戶追蹤、開發名單追蹤、工作清單合成一份清單；每項都可以開官網、撥電話
+// ------------------------------------------------------------
+let agType = 'all';
+let agProspects = [];
+let agTodos = [];
+let agEvents = [];
+let agSites = {}; // 公司名稱 → 官網（客戶資料 + 開發名單）
+let agSiteIdx = []; // 比對用：依核心名稱長度排序（長的先比，避免「台積」比到「台積電」以外的公司）
+let agLoaded = false;
+
+function safeSite(u) {
+  const s = String(u || '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^[a-z][a-z0-9+.\-]*:/i.test(s)) return ''; // javascript: 之類的不給連
+  return 'http://' + s;
+}
+
+/** 公司名稱去掉「股份有限公司、工廠」等，剩下用來比對標題文字的核心名稱。 */
+function agCoreName(n) {
+  let s = String(n || '').replace(/[（(][^）)]*[）)]/g, '').replace(/[一二三四五六七八九十\d]+廠$/, '');
+  s = s.replace(/股份有限公司|有限責任|有限公司|無限公司|股份|企業社|工業社|實業社|商行|工廠|公司/g, '').trim();
+  return s.length >= 2 ? s : String(n || '').trim();
+}
+
+function buildSiteIndex() {
+  agSiteIdx = Object.keys(agSites)
+    .map((n) => ({ n, core: agCoreName(n), url: agSites[n] }))
+    .filter((x) => x.core.length >= 2)
+    .sort((a, b) => b.core.length - a.core.length);
+}
+
+/** 一段文字（行程標題、工作內容）裡提到哪家公司 → 那家的官網。 */
+function siteFor(text) {
+  const t = String(text || '');
+  if (!t) return '';
+  for (const x of agSiteIdx) if (t.indexOf(x.core) > -1) return x.url;
+  return '';
+}
+
+function siteLinkHtml(url) {
+  const u = safeSite(url);
+  return u ? ` <a class="ag-site" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="${esc(u)}">🌐 官網</a>` : '';
+}
+
+function siteLinkFor(text) {
+  return siteLinkHtml(siteFor(text));
+}
+
+function customerSite(c) {
+  return safeSite(c.Website) || agSites[c.CompanyName] || siteFor(c.CompanyName);
+}
+
+async function loadAgenda() {
+  const v = document.getElementById('sch-range').value;
+  const today = localTodayStr();
+  const to = addDaysStr2(today, v === 'all' ? 90 : Number(v));
+  const [a, t, ev] = await Promise.all([
+    callApi('workAgenda', { days: v === 'all' ? 'all' : Number(v) }, { silent: true }),
+    callApi('todoGet', { scope: 'all', status: 'open' }, { silent: true }),
+    callApi('calGetEvents', { from: today, to, scope: 'all' }, { silent: true }),
+  ]);
+  agProspects = a && a.success ? a.prospects || [] : [];
+  agSites = a && a.success ? a.sites || {} : {};
+  agTodos = t && t.success ? t.todos || [] : [];
+  agEvents = ev && ev.success ? ev.events || [] : [];
+  agLoaded = true;
+  buildSiteIndex();
+  renderSchedule(); // 客戶 / 案件表的官網連結也要用新的對照表（裡面會呼叫 renderAgenda）
+  renderEvents();
+  if (typeof renderTodos === 'function' && typeof tdTodos !== 'undefined') renderTodos();
+}
+
+/** 工作清單有變動（新增 / 完成 / 刪除）時，只更新「今天要做的事」裡的工作。 */
+async function onTodosChanged() {
+  if (!agLoaded) return;
+  const t = await callApi('todoGet', { scope: 'all', status: 'open' }, { silent: true });
+  if (t && t.success) agTodos = t.todos || [];
+  renderAgenda();
+}
+
+async function agTodoDone(id) {
+  const r = await callApi('todoSetStatus', { id, status: 'done' }, { silent: true });
+  if (!r.success) return alert(r.message);
+  if (typeof loadTodos === 'function') loadTodos();
+  else onTodosChanged();
+  loadDailyReport();
+}
+
+const AG_LABEL = { event: ['行程', '#2c5aa0'], customer: ['客戶追蹤', '#d35400'], prospect: ['開發名單', '#8e44ad'], todo: ['工作', '#27ae60'] };
+
+function agContactLinks(it) {
+  const out = [];
+  if (it.phone) out.push(`<a class="ag-site" href="tel:${esc(String(it.phone).replace(/[^\d+#,]/g, ''))}">📞 ${esc(it.phone)}</a>`);
+  if (it.email) out.push(`<a class="ag-site" href="mailto:${esc(it.email)}">✉️</a>`);
+  return out.join(' ');
+}
+
+function renderAgenda() {
+  const box = document.getElementById('ag-list');
+  if (!box) return;
+  if (!agLoaded) return;
+  const lim = rangeLimit();
+  const today = localTodayStr();
+  const items = [];
+  agEvents
+    .filter((ev) => ev.source !== 'followup') // 客戶追蹤自動產生的行程，下面「客戶追蹤」已經有了
+    .forEach((ev) =>
+      items.push({
+        type: 'event', date: ev.startDate, time: ev.allDay ? '全天' : ev.startTime, title: ev.title,
+        sub: [ev.location ? '@' + ev.location : '', ev.isMine ? '' : ev.ownerName + ' 分享'].filter(Boolean).join('　'),
+        site: siteFor(ev.title + ' ' + (ev.location || '') + ' ' + (ev.notes || '')),
+        act: `<button type="button" class="btn-mini" onclick="openEventModal(${ev.id})">${ev.canEdit ? '編輯' : '查看'}</button>`,
+      })
+    );
+  schCustomers.forEach((c) => {
+    const d = daysUntil(c.NextFollowUpDate);
+    if (d == null || d > lim) return;
+    const name = argAttr(c.CompanyName);
+    items.push({
+      type: 'customer', date: normalizeDateStr(c.NextFollowUpDate), time: c.NextFollowUpTime || '', title: c.CompanyName,
+      sub: [c.Contact, c.NextFollowUpNote].filter(Boolean).join('｜'), phone: c.Phone || c.CompanyPhone, email: c.Email, site: customerSite(c),
+      act: `<button type="button" class="btn-mini" style="background:#27ae60;" onclick="schDone(decodeURIComponent('${name}'), '')">追蹤完畢</button> <button type="button" class="btn-mini" onclick="schChangeDate(decodeURIComponent('${name}'))">改日</button>`,
+    });
+  });
+  agProspects.forEach((p) =>
+    items.push({
+      type: 'prospect', date: p.NextFollowUp, time: '', title: p.Name,
+      sub: [p.Stage, p.Contact, p.City].filter(Boolean).join('｜'), phone: p.Phone, email: p.Email, site: safeSite(p.Website),
+      act: `<a class="btn-mini ag-btn" href="prospects.html?q=${encodeURIComponent(p.Name)}&open=1" target="_blank" rel="noopener">📞 記錄</a>`,
+    })
+  );
+  agTodos.forEach((t) => {
+    if (!t.dueDate) return;
+    const d = daysUntil(t.dueDate);
+    if (d == null || d > lim) return;
+    items.push({
+      type: 'todo', date: t.dueDate, time: '', title: t.title, sub: [t.priority ? '優先度 ' + t.priority : '', t.isMine ? '' : t.ownerName + ' 分享', t.notes].filter(Boolean).join('｜'),
+      site: siteFor(t.title + ' ' + (t.notes || '')),
+      act: t.canEdit ? `<button type="button" class="btn-mini" style="background:#27ae60;" onclick="agTodoDone(${t.id})">✓ 完成</button> <button type="button" class="btn-mini" onclick="openTodoModal(${t.id})">編輯</button>` : '',
+    });
+  });
+  const counts = { all: items.length, event: 0, customer: 0, prospect: 0, todo: 0 };
+  items.forEach((it) => counts[it.type]++);
+  document.querySelectorAll('#ag-types button').forEach((b) => {
+    const k = b.dataset.ag;
+    b.textContent = (k === 'all' ? '全部' : AG_LABEL[k][0]) + ' ' + counts[k];
+  });
+  const list = items
+    .filter((it) => agType === 'all' || it.type === agType)
+    .filter((it) => matchKeyword([it.title, it.sub]))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.time).localeCompare(String(b.time)));
+  const noDue = agTodos.filter((t) => !t.dueDate).length;
+  document.getElementById('ag-count').textContent = noDue ? `另有 ${noDue} 項沒有期限的工作在下方「⑤ 工作清單」` : '';
+  if (!list.length) {
+    box.innerHTML = '<div class="calc-hint" style="padding:6px 0;">這個範圍內沒有要做的事 🎉</div>';
+    return;
+  }
+  let lastGroup = '';
+  box.innerHTML = list
+    .map((it) => {
+      const group = it.date < today ? '已逾期' : it.date === today ? '今天' : it.date;
+      const head = group !== lastGroup ? `<div class="ag-group${group === '已逾期' ? ' late' : ''}">${esc(group === it.date ? it.date.slice(5) + '（' + '日一二三四五六'.charAt(new Date(it.date + 'T00:00:00').getDay()) + '）' : group)}</div>` : '';
+      lastGroup = group;
+      const [label, color] = AG_LABEL[it.type];
+      const when = group === '已逾期' ? it.date.slice(5) + (it.time ? ' ' + it.time : '') : it.time;
+      return `${head}<div class="ag-row"><span class="ag-type" style="background:${color};">${label}</span><span class="ag-time">${esc(when || '')}</span>
+        <span class="ag-main"><b>${esc(it.title)}</b>${siteLinkHtml(it.site)} ${agContactLinks(it)}${it.sub ? `<div class="calc-hint">${esc(String(it.sub).slice(0, 140))}</div>` : ''}</span>
+        <span class="ag-act">${it.act}</span></div>`;
+    })
+    .join('');
+}

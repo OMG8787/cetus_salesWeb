@@ -5,8 +5,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>業務行事曆 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261109b" />
-<link rel="stylesheet" href="dark.css?v=20261109b" />
+<link rel="stylesheet" href="style.css?v=20261110a" />
+<link rel="stylesheet" href="dark.css?v=20261110a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -39,7 +39,6 @@
       <button class="tab-btn" data-block="customers" onclick="location.href='namecards.html'">名片客戶專區</button>
       <button class="tab-btn" data-block="customers" onclick="location.href='prospects.html'">開發名單庫</button>
       <button class="tab-btn active" data-block="cases customers" onclick="location.href='schedule.html'">業務行事曆</button>
-      <button class="tab-btn" onclick="location.href='todos.html'">工作清單</button>
     </div>
   </div>
   <div class="nav-group">
@@ -70,7 +69,7 @@
 <section class="tab-content">
   <div class="calc-toolbar">
     <h2 style="margin:0;">業務行事曆</h2>
-    <span class="calc-hint">上班照著這頁做：先看行程，再依緊急程度處理要追蹤的客戶與進行中的案件；追蹤完按「追蹤完畢」就會記下結果並排好下次追蹤日。</span>
+    <span class="calc-hint">上班照著這頁做：先看「今天要做的事」（行程、客戶追蹤、開發名單、工作清單都在這裡），再處理進行中的案件；追蹤完按「追蹤完畢」或「記錄」就會記下結果並排好下次追蹤日。</span>
   </div>
 
   <div class="panel sch-filter">
@@ -97,6 +96,19 @@
     <input id="sch-keyword" placeholder="搜尋公司 / 聯絡人 / 案件 / 業務" />
   </div>
   <div id="sch-summary" class="sch-summary"></div>
+  <div class="panel">
+    <h3 style="margin-top:0;">⓪ 今天要做的事
+      <span class="calc-hint" style="font-weight:normal;">行程、客戶追蹤、開發名單追蹤、工作清單合在一起，依日期排列；範圍跟上面的「追蹤範圍」一樣。每項都可以直接開官網、撥電話。</span>
+    </h3>
+    <div class="ws-bar">
+      <div class="ws-seg" id="ag-types">
+        <button type="button" class="on" data-ag="all">全部</button><button type="button" data-ag="event">行程</button><button type="button" data-ag="customer">客戶追蹤</button><button type="button" data-ag="prospect">開發名單</button><button type="button" data-ag="todo">工作</button>
+      </div>
+      <span id="ag-count" class="calc-hint"></span>
+      <a href="prospects.html" class="btn-secondary ag-link">開發名單庫 →</a>
+    </div>
+    <div id="ag-list"><span class="calc-hint">讀取中…</span></div>
+  </div>
 
   <div class="panel">
     <h3 style="margin-top:0;">① 我的行事曆
@@ -156,6 +168,36 @@
     <div class="calc-hint">整理這天按過「追蹤完畢」記下的內容（客戶、聯絡人、方式、案件、結果、下次追蹤日），可以直接複製貼到工作日報；也能在文字框裡先修改再複製。</div>
     <textarea id="rep-text" rows="12" style="width:100%;margin-top:8px;font-family:inherit;"></textarea>
   </div>
+  <h3 id="todos" style="margin:18px 0 0;">⑤ 工作清單
+    <span class="calc-hint" style="font-weight:normal;">每個帳號各自的工作清單；勾選就是完成，可以分享給指定的人 / 群組 / 全部同事（被分享的人只能查看）。有期限的工作也會出現在上面的「今天要做的事」。</span>
+  </h3>
+  <div class="panel">
+    <h3 style="margin-top:0;">新增工作</h3>
+    <div class="ws-grid3">
+      <div><label>工作內容</label><input id="td-title" maxlength="200" placeholder="例如：寄樣品給甲公司" /></div>
+      <div><label>期限（選填）</label><input type="date" id="td-due" /></div>
+      <div><label>優先度</label><select id="td-pri"><option value="高">高</option><option value="中" selected>中</option><option value="低">低</option></select></div>
+    </div>
+    <label>備註（選填）</label>
+    <input id="td-notes" maxlength="2000" />
+    <label>誰看得到</label>
+    <div id="td-share"></div>
+    <div class="toolbar" style="margin-top:8px;"><button type="button" onclick="addTodo()">新增</button></div>
+  </div>
+
+  <div class="panel">
+    <div class="ws-bar">
+      <div class="ws-seg"><button type="button" id="td-s-open" class="on" onclick="tdSetStatus('open')">未完成</button><button type="button" id="td-s-done" onclick="tdSetStatus('done')">已完成</button><button type="button" id="td-s-all" onclick="tdSetStatus('all')">全部</button></div>
+      <select id="td-scope" onchange="loadTodos()">
+        <option value="all">我的 + 別人分享給我的</option>
+        <option value="mine">只看我的</option>
+        <option value="shared">只看別人分享給我的</option>
+      </select>
+      <span id="td-count" class="calc-hint"></span>
+    </div>
+    <div id="td-list"></div>
+  </div>
+
 </section>
 
 <div id="event-modal" class="modal-overlay" style="display:none;">
@@ -187,12 +229,35 @@
   </div>
 </div>
 
+<div id="todo-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:520px;">
+    <div class="modal-header"><h3 style="margin:0;" id="tdm-heading">編輯工作</h3><button type="button" class="btn-secondary" onclick="closeTodoModal()">關閉</button></div>
+    <input type="hidden" id="tdm-id" />
+    <label>工作內容</label>
+    <input id="tdm-title" maxlength="200" />
+    <div class="ws-grid2">
+      <div><label>期限</label><input type="date" id="tdm-due" /></div>
+      <div><label>優先度</label><select id="tdm-pri"><option value="高">高</option><option value="中">中</option><option value="低">低</option></select></div>
+    </div>
+    <label>備註</label>
+    <textarea id="tdm-notes" rows="3" maxlength="2000"></textarea>
+    <label>誰看得到</label>
+    <div id="tdm-share"></div>
+    <div id="tdm-readonly" class="calc-hint" style="display:none;"></div>
+    <div class="toolbar" style="margin-top:10px;">
+      <button type="button" id="tdm-save" onclick="saveTodoEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+
 <script src="config.js?v=20261109b"></script>
 <script src="demo.js?v=20261109b"></script>
 <script src="common.js?v=20261109b"></script>
 <script src="share.js?v=20261109b"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261109b"></script>
-<script src="schedule.js?v=20261109b"></script>
+<script src="todos.js?v=20261110a"></script>
+<script src="schedule.js?v=20261110a"></script>
 </body>
 </html>

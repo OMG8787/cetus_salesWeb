@@ -25,6 +25,7 @@ async function loadTodos() {
   tdTodos = r.todos || [];
   tdToday = r.today || localTodayStr();
   renderTodos();
+  if (typeof onTodosChanged === 'function') onTodosChanged(); // 業務行事曆的「今天要做的事」跟著更新
 }
 
 function renderTodos() {
@@ -44,7 +45,7 @@ function renderTodos() {
       else if (t.shareMode !== 'self') meta.push(`<span class="ws-badge shared">已分享：${esc(t.shareLabel)}</span>`);
       if (done && t.doneAt) meta.push(`完成於 ${esc(String(t.doneAt).slice(0, 10))}`);
       return `<div class="todo-row${done ? ' done' : ''}"><input type="checkbox" ${done ? 'checked' : ''} ${t.canEdit ? '' : 'disabled'} onchange="tdToggle(${t.id}, this.checked)" />
-        <div class="todo-main"><div class="todo-title">${esc(t.title)} <span class="todo-pri p-${esc(t.priority)}">${esc(t.priority)}</span></div>
+        <div class="todo-main"><div class="todo-title">${esc(t.title)}${typeof siteLinkFor === 'function' ? siteLinkFor(t.title + ' ' + (t.notes || '')) : ''} <span class="todo-pri p-${esc(t.priority)}">${esc(t.priority)}</span></div>
         ${t.notes ? `<div class="calc-hint">${esc(t.notes)}</div>` : ''}
         ${meta.length ? `<div class="todo-meta">${meta.join('')}</div>` : ''}</div>
         <div class="todo-act"><button type="button" class="btn-secondary" onclick="openTodoModal(${t.id})">${t.canEdit ? '編輯' : '查看'}</button>${t.canEdit ? `<button type="button" class="btn-secondary" onclick="tdDelete(${t.id})">刪除</button>` : ''}</div></div>`;
@@ -136,5 +137,5 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadTodos();
 });
 
-// 導覽列「↻ 重撈資料」
-window.refreshPageData = () => loadTodos();
+// 導覽列「↻ 重撈資料」（在業務行事曆裡由 schedule.js 統一處理）
+if (!window.refreshPageData) window.refreshPageData = () => loadTodos();

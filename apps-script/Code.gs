@@ -11392,7 +11392,7 @@ function prospectPerms_() {
     prospectStatus: ['customers', 'r'], prospectQuery: ['customers', 'r'], prospectExport: ['customers', 'r'],
     prospectUpdate: ['customers', 'w'], prospectBulk: ['customers', 'w'], prospectImport: ['customers', 'w'],
     prospectEnrichPlan: ['customers', 'w'], prospectEnrich: ['customers', 'w'],
-    prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'],
+    prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'], workAgenda: ['customers', 'r'],
     prospectClear: ['admin', 'd'],
   };
 }
@@ -11408,6 +11408,7 @@ function prospectRoutes_() {
     prospectEnrichPlan: { auth: true, fn: handleProspectEnrichPlan },
     prospectEnrich: { auth: true, fn: handleProspectEnrich },
     prospectLogs: { auth: true, fn: handleProspectLogs },
+    workAgenda: { auth: true, fn: handleWorkAgenda },
     prospectLogAdd: { auth: true, fn: handleProspectLogAdd },
     prospectClear: { auth: true, fn: handleProspectClear },
   };
@@ -11748,7 +11749,8 @@ function psFilter_(b) {
   var assigned = b.assigned === 'me' || b.assigned === 'none' ? b.assigned : '';
   var site = b.site === 'unchecked' || b.site === 'checked' ? b.site : '';
   var follow = b.follow === 'due' || b.follow === 'planned' || b.follow === 'none' ? b.follow : '';
-  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site, follow: follow };
+  var dueBy = isDateStr(b.dueBy) ? String(b.dueBy) : '';
+  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site, follow: follow, dueBy: dueBy };
 }
 
 function psSet_(arr) {
@@ -11825,7 +11827,7 @@ function psMatch_(sh, body) {
   var me = String((body._user && body._user.username) || '');
   var asg = f.assigned ? psColVals_(sh, psCol_('AssignedTo'), n) : null;
   var fol = f.follow ? psColVals_(sh, psCol_('NextFollowUp'), n) : null;
-  var today = todayStr();
+  var today = f.dueBy || todayStr();
   var res = psRun_(scan, search, asg, f, me, fol, today);
   // 看「待追蹤 / 已排定」時，依追蹤日期排序（最早要聯繫的在最前面）
   if (fol && f.follow !== 'none') res.hits.sort(function (a, b) { return fol[a] < fol[b] ? -1 : fol[a] > fol[b] ? 1 : a - b; });
@@ -12609,4 +12611,86 @@ function handleProspectLogAdd(body) {
     sh.getRange(found.row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
     return { success: true, log: log, row: psOut_(psArr_(o), found.row) };
   });
+}
+
+// ------------------------------------------------------------
+// 業務工作台（業務行事曆頁）：把「開發名單追蹤」「公司官網對照」「某天的開發名單聯繫紀錄」一次給前端，
+// 跟行程、客戶追蹤、工作清單合併成「今天要做的事」。
+// ------------------------------------------------------------
+var WORK_SITE_MAX = 5000;
+
+/** 公司名稱 → 官網：客戶資料的官網優先，其次開發名單裡有官網的公司。 */
+function workSites_() {
+  var sites = {};
+  try {
+    sheetToObjects(SHEET_CUSTOMERS).rows.forEach(function (c) {
+      var w = psSafeSite_(c['Website']);
+      if (w && c['CompanyName']) sites[String(c['CompanyName'])] = w;
+    });
+  } catch (e) {
+    // 沒有客戶表就略過
+  }
+  var sh = psSheet_(false);
+  if (sh && sh.getLastRow() >= 2) {
+    var n = sh.getLastRow() - 1;
+    var names = psColVals_(sh, psCol_('Name'), n);
+    var webs = psColVals_(sh, psCol_('Website'), n);
+    var count = 0;
+    for (var i = 0; i < n && count < WORK_SITE_MAX; i++) {
+      var w = psSafeSite_(webs[i]);
+      if (w && names[i] && !sites[names[i]]) {
+        sites[names[i]] = w;
+        count++;
+      }
+    }
+  }
+  return sites;
+}
+
+/** 可以點的官網網址：只允許 http(s)；沒寫協定的補 http://；其他回空字串。 */
+function psSafeSite_(v) {
+  var s = String(v || '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^[a-z][a-z0-9+.\-]*:/i.test(s)) return '';
+  return 'http://' + s;
+}
+
+/**
+ * body.days：看今天起幾天內要追蹤的（0 = 今天與逾期；預設 0；all = 不限）。
+ * body.reportDate：工作日報要哪一天的開發名單聯繫紀錄（預設今天）。
+ */
+function handleWorkAgenda(body) {
+  var me = String(body._user.username);
+  var today = todayStr();
+  var dueBy = body.days === 'all' ? '9999-12-31' : addDaysStr(today, Math.max(0, Math.min(366, Math.floor(Number(body.days)) || 0)));
+  var prospects = [];
+  var sh = psSheet_(false);
+  if (sh && sh.getLastRow() >= 2 && !body.logsOnly) {
+    var res = psMatch_(sh, { _user: body._user, follow: 'due', assigned: 'me', dueBy: dueBy });
+    var rowNums = res.hits.slice(0, 300).map(function (i) { return i + 2; });
+    var read = psReadRows_(sh, rowNums);
+    prospects = rowNums.map(function (r) { return psOut_(read[r], r); });
+  }
+  var reportDate = isDateStr(body.reportDate) ? String(body.reportDate) : today;
+  var plogs = [];
+  var lsh = psLogSheet_(false);
+  if (lsh && lsh.getLastRow() >= 2) {
+    var vals = lsh.getRange(2, 1, lsh.getLastRow() - 1, PS_LOG_COLS.length).getValues();
+    var keyName = {};
+    vals.forEach(function (v) {
+      var o = {};
+      PS_LOG_COLS.forEach(function (c, j) { o[c] = v[j] == null ? '' : String(v[j]); });
+      if (String(o.Time).slice(0, 10) === reportDate) plogs.push(o);
+    });
+    if (plogs.length && sh) {
+      var n2 = sh.getLastRow() - 1;
+      var keys = psColVals_(sh, 1, n2);
+      var names = psColVals_(sh, psCol_('Name'), n2);
+      keys.forEach(function (k, i) { keyName[k] = names[i]; });
+      plogs.forEach(function (l) { l.Company = keyName[l.Key] || ''; });
+    }
+    plogs.sort(function (a, b) { return a.Time < b.Time ? -1 : a.Time > b.Time ? 1 : Number(a.ID) - Number(b.ID); });
+  }
+  return { success: true, today: today, dueBy: dueBy, me: me, prospects: prospects, prospectLogs: plogs, sites: body.logsOnly ? {} : workSites_() };
 }

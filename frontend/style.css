@@ -834,3 +834,17 @@ header, .tabs { position: relative; z-index: 300; }
 .ps-log { border-left: 3px solid #2c5aa0; padding: 4px 8px; margin-bottom: 6px; background: #fff; }
 .ps-log-head { font-size: 12px; color: #556; }
 .ps-log-body { white-space: pre-wrap; font-size: 13px; margin-top: 2px; }
+
+/* 業務行事曆：今天要做的事 */
+.ag-group { font-weight: 700; font-size: 13px; color: #2c3e50; margin: 10px 0 4px; padding-bottom: 2px; border-bottom: 1px solid #e3e8ef; }
+.ag-group.late { color: #c0392b; }
+.ag-row { display: grid; grid-template-columns: 74px 64px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 6px 0; border-bottom: 1px dashed #eef0f4; }
+.ag-type { color: #fff; border-radius: 10px; font-size: 12px; text-align: center; padding: 1px 6px; }
+.ag-time { font-size: 12px; color: #556; padding-top: 1px; }
+.ag-main { min-width: 0; }
+.ag-act { white-space: nowrap; }
+.ag-act .btn-mini, .ag-btn { margin: 0 0 2px; }
+.ag-site { font-size: 12px; text-decoration: none; margin-left: 4px; white-space: nowrap; }
+.ag-btn { display: inline-block; text-decoration: none; color: #fff !important; background: #8e44ad; border-radius: 4px; padding: 4px 8px; font-size: 12px; }
+.ag-link { margin-left: auto; text-decoration: none; font-size: 13px; }
+@media (max-width: 700px) { .ag-row { grid-template-columns: 64px minmax(0, 1fr); } .ag-time { display: none; } .ag-act { grid-column: 1 / -1; white-space: normal; } }

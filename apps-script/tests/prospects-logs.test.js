@@ -86,6 +86,22 @@ ok(call('handleProspectUpdate', { key: f.Key, row: f.RowIndex, fields: { NextFol
 // ---- 權限 ----
 ok(ctx.permFor_('prospectLogs')[1] === 'r' && ctx.permFor_('prospectLogAdd')[1] === 'w' && ctx.getRoute_('prospectLogAdd').auth === true, '權限與路由');
 
+// ---- 業務工作台：今天要做的事 + 官網對照 + 當天開發名單聯繫紀錄 ----
+ctx.appendObjectRow('Customers', { CompanyName: '老客戶股份有限公司', Website: 'www.oldcustomer.com.tw', NextFollowUpDate: today });
+ctx.appendObjectRow('Customers', { CompanyName: '危險網址公司', Website: 'javascript:alert(1)' });
+let w = call('handleWorkAgenda', {});
+ok(w.success && w.today === today && w.dueBy === today, '工作台：預設看今天與逾期');
+ok(w.prospects.length === 1 && w.prospects[0].Name.indexOf('均豪') === 0, '開發名單：只列「我負責、今天以前要追蹤」的（福泰益改到 2 天後了）');
+w = call('handleWorkAgenda', { days: 3 });
+ok(w.dueBy === plus(3) && w.prospects.length === 2 && w.prospects[0].Name.indexOf('均豪') === 0 && w.prospects[1].Name.indexOf('福泰益') === 0, '3 天內：多了 2 天後的福泰益，依追蹤日排序');
+ok(call('handleWorkAgenda', { days: 'all' }, ben).prospects.length === 1, 'ben 看到自己負責的（鑫野）');
+ok(w.sites['老客戶股份有限公司'] === 'http://www.oldcustomer.com.tw', '官網對照：客戶資料的官網（沒寫協定補 http://）');
+ok(w.sites['均豪精密工業股份有限公司'] === 'https://www.gpmcorp.com.tw' && w.sites['福泰益自動化設備股份有限公司'], '官網對照：開發名單的官網');
+ok(!w.sites['危險網址公司'], '官網對照：javascript: 這類網址不給');
+ok(w.prospectLogs.length >= 5 && w.prospectLogs.every((l) => l.Time.slice(0, 10) === today) && w.prospectLogs[0].Company.indexOf('均豪') === 0, '當天的開發名單聯繫紀錄（附公司名稱），依時間排序');
+ok(call('handleWorkAgenda', { reportDate: plus(-30) }).prospectLogs.length === 0, '指定別天：沒有紀錄');
+ok(ctx.permFor_('workAgenda')[0] === 'customers' && ctx.getRoute_('workAgenda').auth, '權限與路由');
+
 // ---- 舊版名單分頁（沒有新欄位）自動補欄，資料不動 ----
 const ss = extraSs[props.PROSPECT_SSID];
 const sh = ss.getSheetByName('Prospects');

@@ -876,5 +876,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   applyAdminOnlyVisibility();
   if (readOnly()) document.querySelectorAll('.ps-write').forEach((b) => (b.style.display = 'none'));
   loadStatus();
+  // 從業務行事曆點「📞 記錄」：?q=公司名稱&open=1 → 搜尋並直接打開那家的聯繫視窗
+  const params = new URLSearchParams(location.search);
+  if (params.get('q')) {
+    state.q = params.get('q');
+    document.getElementById('ps-q').value = state.q;
+  }
   await load();
+  if (params.get('open') === '1' && data && data.rows && data.rows.length) {
+    const i = Math.max(0, data.rows.findIndex((r) => r.Name === state.q));
+    openEdit(i);
+  }
 });
