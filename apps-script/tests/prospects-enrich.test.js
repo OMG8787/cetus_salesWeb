@@ -60,6 +60,7 @@ ok(emails.indexOf('sales@fac1.com.tw') > -1, 'Email：[at] 寫法');
 ok(emails.indexOf('service@fac1.com.tw') > -1, 'Email：Cloudflare 電子郵件保護解碼');
 ok(emails.indexOf('boss@gmail.com') > -1, 'Email：一般信箱');
 ok(!emails.some((e) => /your@domain|2x\.png/.test(e)), 'Email：範例網域與圖片檔名（@2x.png）不算');
+ok(ctx.psExtractEmails_('<a href="mailto:usr%40file.tongtai.com@file.tongtai.com">x</a>').length === 0, 'Email：網址編碼殘留的亂碼信箱不收（實測東台精機）');
 ok(ctx.psExtractEmails_('<a href="mailto:Info@A.com?subject=hi">x</a> ＠ 全形：b＠c.com.tw').join() === 'info@a.com,b@c.com.tw', 'Email：mailto（去掉參數）、全形 ＠');
 const phones = ctx.psExtractPhones_(SITES['https://www.fac1.com.tw/contact.html']);
 ok(phones.indexOf('06-2331234') > -1 && phones.indexOf('0912-345-678') > -1 && phones.indexOf('0800-123-456') > -1, '電話：市話、tel: 手機、免付費');
@@ -74,6 +75,11 @@ ok(ctx.psRobotsAllows_('User-agent: *\nDisallow: /', '/') === false && ctx.psRob
 ok(ctx.psRobotsAllows_('User-agent: Googlebot\nDisallow: /', '/') === true && ctx.psRobotsAllows_('User-agent: *\nDisallow: /a\nAllow: /a/pub', '/a/pub/x') === true, 'robots.txt：只針對別的爬蟲不管；Allow 較長者優先');
 ok(ctx.psRobotsAllows_('', '/') === true, 'robots.txt：沒有檔案 = 允許');
 
+ok(ctx.psBaseDomain_('www.gpmcorp.com.tw') === 'gpmcorp.com.tw' && ctx.psBaseDomain_('file.tongtai.com.tw') === 'tongtai.com.tw' && ctx.psBaseDomain_('www.honprec.com') === 'honprec.com' && ctx.psBaseDomain_('a.b.co.jp') === 'b.co.jp', '主網域判斷（.com.tw / .co.jp 取三段）');
+ok(ctx.PS_EMAIL_AVOID_RE.test('invset@mirle.com.tw') && ctx.PS_EMAIL_AVOID_RE.test('invest@gptc.com.tw'), 'Email：投資人信箱排最後（實測盟立 invset@、弘塑 invest@）');
+SITES['https://www.agent.com.tw/'] = '<body>代理測試工業社 sales@agent.com.tw 經銷商：sales@dealer-a.com、info@dealer-b.co.jp 老闆 boss@gmail.com</body>';
+SITES['https://www.sister.com.tw/'] = '<body>姊妹網域工業社 聯絡 inquiry@sister-3d.com</body>';
+
 // ---- 準備名單 ----
 const rec = (name, o) => Object.assign({ Name: name, Address: '臺南市永康區中山路1號', Category: '25金屬製品製造業', Status: '生產中' }, o || {});
 call('handleProspectImport', { source: '測試', rows: [
@@ -84,6 +90,8 @@ call('handleProspectImport', { source: '測試', rows: [
   rec('部分允許工業社', { RegNo: 'A5', TaxId: '10000005', Website: 'www.partial.com.tw' }),
   rec('手填工業社', { RegNo: 'A6', TaxId: '10000006', Website: 'www.manual.com.tw', Email: 'mine@manual.com.tw', Phone: '0911-000-111' }),
   rec('拒絕聯絡有限公司', { RegNo: 'A7', TaxId: '10000007' }),
+  rec('代理測試工業社', { RegNo: 'A8', TaxId: '10000008', Website: 'https://www.agent.com.tw' }),
+  rec('姊妹網域工業社', { RegNo: 'A9', TaxId: '10000009', Website: 'https://www.sister.com.tw' }),
 ] });
 const q0 = call('handleProspectQuery', { q: '拒絕聯絡' });
 call('handleProspectUpdate', { key: q0.rows[0].Key, row: q0.rows[0].RowIndex, fields: { Optout: true } });
@@ -117,7 +125,7 @@ plan = call('handleProspectEnrichPlan', { filter: { q: '琮允五金行' } });
 ok(plan.items.length === 0, '預設只查還沒查過的：剛查過的不會再出現');
 plan = call('handleProspectEnrichPlan', { filter: { q: '琮允五金行' }, onlyNew: false });
 ok(plan.items.length === 1, '取消「只查沒查過」→ 可以重查');
-ok(call('handleProspectQuery', { site: 'checked' }).total === 2 && call('handleProspectQuery', { site: 'unchecked' }).total === 5, '篩選：已查過 2 家、還沒查 5 家');
+ok(call('handleProspectQuery', { site: 'checked' }).total === 2 && call('handleProspectQuery', { site: 'unchecked' }).total === 7, '篩選：已查過 2 家、還沒查 7 家');
 
 // ---- 找到的網站不是這家公司 ----
 geminiReply = '{"website":"https://www.nofit.com.tw","reason":"猜的"}';
@@ -154,6 +162,12 @@ row = call('handleProspectQuery', { q: '手填工業社' }).rows[0];
 ok(row.Email === 'mine@manual.com.tw' && row.Phone === '0911-000-111', '人工填的 Email / 電話不被覆蓋');
 ok(/sales@manual\.com\.tw/.test(row.ExtraContacts) && /02-22223333/.test(row.ExtraContacts), '新抓到的放「其他聯絡方式」');
 ok(row.Website === 'www.manual.com.tw', '人工填的官網保留');
+
+// ---- 代理商信箱 ----
+x = call('handleProspectEnrich', { items: call('handleProspectEnrichPlan', { filter: { q: '代理測試' } }).items }).results[0];
+ok(x.email === 'sales@agent.com.tw' && /boss@gmail\.com/.test(x.extra) && !/dealer/.test(x.extra || ''), '有本公司網域信箱時，代理商 / 經銷商的信箱不收（免費信箱保留）');
+x = call('handleProspectEnrich', { items: call('handleProspectEnrichPlan', { filter: { q: '姊妹網域' } }).items }).results[0];
+ok(x.email === 'inquiry@sister-3d.com', '完全沒有本公司網域信箱時，其他網域的照樣保留（實測所羅門用 solomon-3d.com）');
 
 // ---- 拒絕聯絡的不查 ----
 plan = call('handleProspectEnrichPlan', { filter: { q: '拒絕聯絡' } });

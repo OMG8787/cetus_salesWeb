@@ -12009,13 +12009,24 @@ var PS_SITE_BLOCKLIST = ['facebook.com', 'instagram.com', 'linkedin.com', 'youtu
 var PS_EMAIL_JUNK_DOMAINS = ['example.com', 'example.org', 'domain.com', 'email.com', 'yourdomain.com', 'yoursite.com', 'sentry.io', 'wixpress.com', 'schema.org', 'w3.org', 'googleusercontent.com', 'gstatic.com'];
 var PS_EMAIL_ROLE_RE = /^(sales|info|service|contact|support|marketing|business|order|cs|inquiry|enquiry|hello|office|rfq|quote)/i;
 // 不適合寄業務開發信的信箱：人資、福委會、投資人關係、個資、系統信 → 排到最後
-var PS_EMAIL_AVOID_RE = /(^|[._\-])(hr|job|jobs|recruit|career|careers|welfare|ir|investor|stock|privacy|dpo|abuse|noreply|no-reply|donotreply|webmaster|postmaster)([._\-]|@|$)/i;
+var PS_EMAIL_AVOID_RE = /(^|[._\-])(hr|job|jobs|recruit|career|careers|welfare|ir|invest|investor|invset|stock|privacy|dpo|abuse|noreply|no-reply|donotreply|webmaster|postmaster)([._\-]|@|$)/i;
 
 /** 公司名稱去掉「股份有限公司、工廠、一廠」之類，剩下用來比對網頁內容的核心字。太短就用原名。 */
 function psCoreName_(name) {
   var s = String(name || '').replace(/[（(][^）)]*[）)]/g, '').replace(/[一二三四五六七八九十\d]+廠$/, '');
   s = s.replace(/股份有限公司|有限責任|有限公司|無限公司|股份|企業社|工業社|實業社|商行|工廠|公司/g, '').replace(/[廠行社]$/, '').trim();
   return s.length >= 2 ? s : String(name || '').trim();
+}
+
+var PS_FREEMAIL = ['gmail.com', 'yahoo.com', 'yahoo.com.tw', 'hotmail.com', 'outlook.com', 'msn.com', 'hinet.net', 'seed.net.tw', 'icloud.com'];
+
+/** 主網域：a.b.example.com.tw → example.com.tw；a.example.com → example.com（台灣與常見國碼的 .com.tw / .co.jp 這類取三段）。 */
+function psBaseDomain_(host) {
+  var parts = String(host || '').toLowerCase().replace(/^www\./, '').split('.');
+  if (parts.length <= 2) return parts.join('.');
+  var sld = parts[parts.length - 2];
+  var take = parts[parts.length - 1].length === 2 && /^(com|org|net|edu|gov|co|ac|or|ne|idv)$/.test(sld) ? 3 : 2;
+  return parts.slice(-take).join('.');
 }
 
 function psHost_(url) {
@@ -12066,7 +12077,8 @@ function psEmailOk_(e) {
   if (/\.(png|jpe?g|gif|svg|webp|css|js|ico|woff2?|ttf)$/i.test(domain)) return false;
   if (PS_EMAIL_JUNK_DOMAINS.some(function (d) { return domain === d || domain.slice(-d.length - 1) === '.' + d; })) return false;
   if (/^(your|name|user|email|username|example|test|xxx+|abc)$/i.test(local)) return false;
-  return /^[a-z0-9._%+\-]+$/.test(local) && /^[a-z0-9.\-]+\.[a-z]{2,}$/.test(domain);
+  // 名稱裡有 % 的多半是網址編碼殘留（實測東台精機的 usr%40file...），不收
+  return /^[a-z0-9._+\-]+$/.test(local) && /^[a-z0-9.\-]+\.[a-z]{2,}$/.test(domain);
 }
 
 /** 從網頁抓公開的 Email：mailto 連結、一般文字、[at] 寫法、Cloudflare 保護。回傳小寫、去重的陣列。 */
@@ -12363,6 +12375,13 @@ function psEnrichCompany_(rec) {
     // 電話：公司總機（市話）優先，其次免付費，手機最後（手機常是個人的）
     var phoneRank = function (t) { return /^09/.test(t) ? 2 : /^0800/.test(t) ? 1 : 0; };
     phones = phones.map(function (t, i) { return { t: t, i: i }; }).sort(function (a, b) { return phoneRank(a.t) - phoneRank(b.t) || a.i - b.i; }).map(function (x) { return x.t; });
+    // 有本公司網域（或免費信箱）的信箱時，其他公司網域的不要（實測：代理商 / 經銷商的信箱會混進來）
+    var base = psBaseDomain_(host);
+    var own = emails.filter(function (e) {
+      var d = e.split('@')[1];
+      return psBaseDomain_(d) === base || PS_FREEMAIL.some(function (f) { return d === f || d.slice(-f.length - 1) === '.' + f; });
+    });
+    if (own.length) emails = own;
     out.emails = emails.slice(0, 5);
     out.phones = phones.slice(0, 3);
     out.status = out.emails.length || out.phones.length ? 'ok' : 'nocontact';
