@@ -286,3 +286,8 @@ html[data-theme="dark"] .ag-group { color: #e5e7eb; border-color: #323b48; }
 html[data-theme="dark"] .ag-group.late { color: #ff8a80; }
 html[data-theme="dark"] .ag-row { border-color: #2a323d; }
 html[data-theme="dark"] .ag-time { color: #9aa4b2; }
+
+html[data-theme="dark"] .ps-cold { background: #3a2547; color: #d7b4f0; }
+html[data-theme="dark"] .ps-iscust { background: #25324a; color: #bcd0f5; }
+html[data-theme="dark"] .pc-old { color: #ff8a80; }
+html[data-theme="dark"] .pc-new { color: #7fd49a; }

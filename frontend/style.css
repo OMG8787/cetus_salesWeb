@@ -848,3 +848,11 @@ header, .tabs { position: relative; z-index: 300; }
 .ag-btn { display: inline-block; text-decoration: none; color: #fff !important; background: #8e44ad; border-radius: 4px; padding: 4px 8px; font-size: 12px; }
 .ag-link { margin-left: auto; text-decoration: none; font-size: 13px; }
 @media (max-width: 700px) { .ag-row { grid-template-columns: 64px minmax(0, 1fr); } .ag-time { display: none; } .ag-act { grid-column: 1 / -1; white-space: normal; } }
+
+/* 開發名單：陌生開發 / 已是客戶標記、匯入前檢查 */
+.ps-cold { background: #f3e8fb; color: #8e44ad; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; }
+.ps-iscust { background: #e8f0fb; color: #2c5aa0; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; }
+.pc-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.pc-table td { white-space: normal; font-size: 13px; }
+.pc-old { color: #c0392b; text-decoration: line-through; }
+.pc-new { color: #1e8449; font-weight: 600; }

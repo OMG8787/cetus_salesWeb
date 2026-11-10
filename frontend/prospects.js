@@ -283,7 +283,7 @@ function renderRows() {
       const src = (r.Source || '').split('、').join('、');
       return `<tr data-i="${i}" class="${r.Optout ? 'ps-optout' : ''}">
         <td><input type="checkbox" data-key="${e(r.Key)}" ${selected.has(r.Key) || selectAllMatching ? 'checked' : ''} ${selectAllMatching ? 'disabled' : ''} /></td>
-        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源">📂 ${e(src)}</div></td>
+        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}${r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源">📂 ${e(src)}</div></td>
         <td class="ps-cat">${catHtml(r)}<div class="ps-prod" title="${e(r.Products || '')}">${e((r.Products || '').slice(0, 70))}</div></td>
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
@@ -427,7 +427,7 @@ function openEdit(i) {
   const r = data.rows[i];
   editRow = r;
   const ro = readOnly();
-  document.getElementById('pse-title').textContent = r.Name;
+  document.getElementById('pse-title').innerHTML = e(r.Name) + (r.IsCustomer ? ` <span class="ps-iscust">已是客戶：${e(r.IsCustomer)}</span>` : ' <span class="ps-cold">陌生開發</span>');
   document.getElementById('pse-sub').textContent = [r.TaxId ? '統編 ' + r.TaxId : '', r.City, r.Source].filter(Boolean).join('｜');
   document.getElementById('pse-stage').innerHTML = stages.map((s) => `<option value="${e(s)}" ${s === r.Stage ? 'selected' : ''}>${e(s)}</option>`).join('');
   const set = (id, v) => (document.getElementById(id).value = v || '');
@@ -475,6 +475,8 @@ let importCancelled = false;
 function openImport() {
   if (readOnly()) return alert('你只有查看權限，不能匯入名單');
   importFile = null;
+  importFinal = null;
+  document.getElementById('ps-step-check').style.display = 'none';
   document.getElementById('ps-file').value = '';
   document.getElementById('ps-paste').value = '';
   document.getElementById('ps-file-msg').textContent = '';
@@ -555,17 +557,19 @@ async function startImport() {
   if (importMap.Name === undefined) return alert('一定要對應「公司名稱」欄位');
   const source = document.getElementById('ps-source').value.trim();
   if (!source) return alert('請填來源名稱');
-  const { records, skipped } = psBuildRecords(importFile.rows, importMap);
+  const built = importFinal ? { records: importFinal, skipped: 0 } : psBuildRecords(importFile.rows, importMap);
+  const { records, skipped } = built;
   if (!records.length) return alert('沒有可匯入的資料（公司名稱都是空白）');
   const update = document.getElementById('ps-update').checked;
   const startAt = Math.max(1, Math.floor(Number(document.getElementById('ps-start').value)) || 1);
   if (startAt > records.length) return alert('起始筆數超過資料總數');
   const todo = records.length - (startAt - 1);
-  if (!confirm(`要匯入 ${todo.toLocaleString()} 筆（來源：${source}）。${todo > 20000 ? '\n筆數很多，約需要 ' + Math.ceil(todo / IMPORT_CHUNK / 4) + ' 分鐘以上，過程中請不要關閉這個分頁。' : ''}\n確定開始嗎？`)) return;
+  if (!importFinal && !confirm(`要匯入 ${todo.toLocaleString()} 筆（來源：${source}）。${todo > 20000 ? '\n筆數很多，約需要 ' + Math.ceil(todo / IMPORT_CHUNK / 4) + ' 分鐘以上，過程中請不要關閉這個分頁。' : ''}\n確定開始嗎？`)) return;
 
   importing = true;
   importCancelled = false;
   document.getElementById('ps-step-map').style.display = 'none';
+  document.getElementById('ps-step-check').style.display = 'none';
   document.getElementById('ps-step-run').style.display = '';
   document.getElementById('ps-cancel').style.display = '';
   const bar = document.getElementById('ps-progress-bar');
@@ -630,6 +634,141 @@ function cancelImport() {
   importCancelled = true;
   document.getElementById('ps-cancel').style.display = 'none';
   document.getElementById('ps-progress-text').textContent = '正在停止（等這一批處理完）…';
+}
+
+// ---------- 匯入前檢查重複 ----------
+let importFinal = null; // 檢查後確定要送出的資料（null = 沒經過檢查）
+let checkRecords = [];
+let checkResults = [];
+let checkSkipped = 0;
+const diffChoice = {}; // 列索引 → 'update' / 'keep'
+const custChoice = {}; // 列索引 → true（仍加入名單）
+const CHECK_CHUNK = 2000;
+
+function backToMap() {
+  document.getElementById('ps-step-check').style.display = 'none';
+  document.getElementById('ps-step-map').style.display = '';
+}
+
+async function checkImport() {
+  if (importMap.Name === undefined) return alert('一定要對應「公司名稱」欄位');
+  if (!document.getElementById('ps-source').value.trim()) return alert('請填來源名稱');
+  const { records, skipped } = psBuildRecords(importFile.rows, importMap);
+  if (!records.length) return alert('沒有可匯入的資料（公司名稱都是空白）');
+  checkRecords = records;
+  checkSkipped = skipped;
+  checkResults = [];
+  Object.keys(diffChoice).forEach((k) => delete diffChoice[k]);
+  Object.keys(custChoice).forEach((k) => delete custChoice[k]);
+  document.getElementById('ps-step-map').style.display = 'none';
+  document.getElementById('ps-step-check').style.display = '';
+  ['pc-summary', 'pc-diff', 'pc-cust', 'pc-msg'].forEach((id) => (document.getElementById(id).innerHTML = ''));
+  document.getElementById('pc-go').disabled = true;
+  const prog = document.getElementById('pc-progress');
+  for (let off = 0; off < records.length; off += CHECK_CHUNK) {
+    prog.textContent = `比對系統中的資料… ${Math.min(off + CHECK_CHUNK, records.length).toLocaleString()} / ${records.length.toLocaleString()}`;
+    const chunk = records.slice(off, off + CHECK_CHUNK);
+    let r = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      r = await callApi('prospectImportCheck', { rows: chunk }, { silent: true });
+      if (r && r.success) break;
+      if (!(r && r.networkError) && !/忙碌/.test((r && r.message) || '')) break;
+      await sleep(3000 * (attempt + 1));
+    }
+    if (!r || !r.success) {
+      prog.textContent = '⚠️ 檢查失敗：' + ((r && r.message) || '連線失敗');
+      return;
+    }
+    r.results.forEach((x) => {
+      x.i += off;
+      if (x.of !== undefined) x.of += off;
+      checkResults.push(x);
+    });
+  }
+  // 跨批次的同名重複（每批只能看到自己那批）：用公司名稱再擋一次
+  const seen = {};
+  checkResults.forEach((x) => {
+    if (x.status !== 'new' && x.status !== 'customer') return;
+    const k = String(checkRecords[x.i].Name).replace(/\s/g, '');
+    if (seen[k] !== undefined) {
+      x.status = 'dup';
+      x.of = seen[k];
+    } else seen[k] = x.i;
+  });
+  prog.textContent = '';
+  document.getElementById('pc-go').disabled = false;
+  renderCheck();
+}
+
+function renderCheck() {
+  const by = (s) => checkResults.filter((x) => x.status === s);
+  const nNew = by('new').length, same = by('same'), diff = by('diff'), cust = by('customer'), dup = by('dup').length, invalid = by('invalid').length + checkSkipped;
+  const nUpd = diff.filter((x) => diffChoice[x.i] === 'update').length;
+  const nCust = cust.filter((x) => custChoice[x.i]).length;
+  document.getElementById('pc-summary').innerHTML = [
+    ['新的公司（會新增）', nNew, '#27ae60'],
+    ['已存在、資料相同（不新增）', same.length, '#7f8c8d'],
+    ['已存在、資料不同', diff.length, '#d35400'],
+    ['已經是客戶', cust.length, '#2c5aa0'],
+    ['同一份檔案裡重複', dup, '#95a5a6'],
+    ['沒有公司名稱（略過）', invalid, '#95a5a6'],
+  ]
+    .filter(([, n]) => n)
+    .map(([l, n, c]) => `<span class="sch-chip" style="border-color:${c};color:${c};"><b>${n.toLocaleString()}</b> ${l}</span>`)
+    .join('');
+  const SHOW = 300;
+  document.getElementById('pc-diff').innerHTML = diff.length
+    ? `<h4>已存在但資料不同（${diff.length.toLocaleString()} 家）：要更新成檔案裡的資料嗎？</h4>
+      <div class="calc-hint">「更新」= 有差異的欄位改成新的；「保留原本」= 這家完全不動。開發狀態、聯繫紀錄、負責業務不會被改。</div>
+      <div style="margin:6px 0;"><button type="button" class="btn-mini" onclick="setAllDiff('update')">全部更新</button> <button type="button" class="btn-mini" onclick="setAllDiff('keep')">全部保留原本</button> <span class="calc-hint">目前選「更新」${nUpd} 家</span></div>
+      <div class="nc-scroll" style="max-height:40vh;overflow:auto;"><table class="nc-table pc-table"><thead><tr><th>公司</th><th>差異（原本 → 檔案）</th><th>要怎麼處理</th></tr></thead><tbody>
+      ${diff
+        .slice(0, SHOW)
+        .map(
+          (x) => `<tr><td><b>${e(x.name)}</b><div class="calc-hint">${e(x.stage)}${x.customer ? '｜已是客戶' : ''}</div></td>
+          <td>${x.diffs.map((d) => `<div>${e(d.label)}：<span class="pc-old">${e(d.old || '（空白）')}</span> → <span class="pc-new">${e(d.now)}</span></div>`).join('')}</td>
+          <td style="white-space:nowrap;"><label><input type="radio" name="pcd${x.i}" ${diffChoice[x.i] === 'update' ? 'checked' : ''} onchange="diffChoice[${x.i}]='update';renderCheck()" style="width:auto;" /> 更新</label>
+          <label><input type="radio" name="pcd${x.i}" ${diffChoice[x.i] !== 'update' ? 'checked' : ''} onchange="diffChoice[${x.i}]='keep';renderCheck()" style="width:auto;" /> 保留原本</label></td></tr>`
+        )
+        .join('')}</tbody></table></div>${diff.length > SHOW ? `<div class="calc-hint">只列前 ${SHOW} 家；其餘依上面的「全部更新 / 全部保留原本」處理。</div>` : ''}`
+    : '';
+  document.getElementById('pc-cust').innerHTML = cust.length
+    ? `<h4>客戶管理裡已經有的公司（${cust.length.toLocaleString()} 家）：要加入開發名單嗎？</h4>
+      <div class="calc-hint">這些是既有客戶，不是陌生開發；預設不加入。勾選的會加入名單並標示「已是客戶」。</div>
+      <div style="margin:6px 0;"><button type="button" class="btn-mini" onclick="setAllCust(true)">全部加入</button> <button type="button" class="btn-mini" onclick="setAllCust(false)">全部略過</button> <span class="calc-hint">目前勾選 ${nCust} 家</span></div>
+      <div class="nc-scroll" style="max-height:30vh;overflow:auto;"><table class="nc-table pc-table"><thead><tr><th>加入</th><th>檔案裡的名稱</th><th>客戶管理裡的名稱</th></tr></thead><tbody>
+      ${cust
+        .slice(0, SHOW)
+        .map((x) => `<tr><td><input type="checkbox" ${custChoice[x.i] ? 'checked' : ''} onchange="custChoice[${x.i}]=this.checked;renderCheck()" style="width:auto;" /></td><td>${e(checkRecords[x.i].Name)}</td><td>${e(x.customer)}</td></tr>`)
+        .join('')}</tbody></table></div>`
+    : '';
+  const total = nNew + nUpd + nCust;
+  const btn = document.getElementById('pc-go');
+  btn.textContent = total ? `確認匯入（新增 ${(nNew + nCust).toLocaleString()} 家${nUpd ? '、更新 ' + nUpd.toLocaleString() + ' 家' : ''}）` : '沒有需要新增或更新的資料';
+  btn.disabled = !total;
+}
+
+function setAllDiff(v) {
+  checkResults.filter((x) => x.status === 'diff').forEach((x) => (diffChoice[x.i] = v));
+  renderCheck();
+}
+
+function setAllCust(v) {
+  checkResults.filter((x) => x.status === 'customer').forEach((x) => (custChoice[x.i] = v));
+  renderCheck();
+}
+
+function confirmImport() {
+  const final = [];
+  checkResults.forEach((x) => {
+    const rec = checkRecords[x.i];
+    if (x.status === 'new') final.push(rec);
+    else if (x.status === 'diff' && diffChoice[x.i] === 'update') final.push(Object.assign({ _update: true }, rec));
+    else if (x.status === 'customer' && custChoice[x.i]) final.push(rec);
+  });
+  if (!final.length) return;
+  importFinal = final;
+  startImport();
 }
 
 // ---------- 管理 ----------

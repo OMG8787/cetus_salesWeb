@@ -307,7 +307,7 @@ function renderDailyReport() {
   });
   const plogs = repPLogs.filter((l) => !mineOnly || !repMe || l.User === repMe);
   if (plogs.length) {
-    lines.push('', '【開發名單聯繫】');
+    lines.push('', '【陌生開發聯繫】');
     plogs.forEach((l, i) => {
       lines.push(`${i + 1}. ${l.Company || l.Key}（${l.Method}）${l.Stage ? '→ ' + l.Stage : ''}`);
       lines.push(`   內容：${String(l.Content || '').replace(/\n+/g, '\n         ')}`);
@@ -648,7 +648,7 @@ async function agTodoDone(id) {
   loadDailyReport();
 }
 
-const AG_LABEL = { event: ['行程', '#2c5aa0'], customer: ['客戶追蹤', '#d35400'], prospect: ['開發名單', '#8e44ad'], todo: ['工作', '#27ae60'] };
+const AG_LABEL = { event: ['行程', '#2c5aa0'], customer: ['客戶追蹤', '#d35400'], prospect: ['陌生開發', '#8e44ad'], todo: ['工作', '#27ae60'] };
 
 function agContactLinks(it) {
   const out = [];
@@ -687,7 +687,8 @@ function renderAgenda() {
   agProspects.forEach((p) =>
     items.push({
       type: 'prospect', date: p.NextFollowUp, time: '', title: p.Name,
-      sub: [p.Stage, p.Contact, p.City].filter(Boolean).join('｜'), phone: p.Phone, email: p.Email, site: safeSite(p.Website),
+      label: p.IsCustomer ? '開發名單' : '', color: '#8e44ad',
+      sub: [p.IsCustomer ? '⚠️ 已是客戶（' + p.IsCustomer + '），不是陌生開發' : '', p.Stage, p.Contact, p.City].filter(Boolean).join('｜'), phone: p.Phone, email: p.Email, site: safeSite(p.Website),
       act: `<a class="btn-mini ag-btn" href="prospects.html?q=${encodeURIComponent(p.Name)}&open=1" target="_blank" rel="noopener">📞 記錄</a>`,
     })
   );
@@ -723,7 +724,7 @@ function renderAgenda() {
       const group = it.date < today ? '已逾期' : it.date === today ? '今天' : it.date;
       const head = group !== lastGroup ? `<div class="ag-group${group === '已逾期' ? ' late' : ''}">${esc(group === it.date ? it.date.slice(5) + '（' + '日一二三四五六'.charAt(new Date(it.date + 'T00:00:00').getDay()) + '）' : group)}</div>` : '';
       lastGroup = group;
-      const [label, color] = AG_LABEL[it.type];
+      const [label, color] = it.label ? [it.label, it.color] : AG_LABEL[it.type];
       const when = group === '已逾期' ? it.date.slice(5) + (it.time ? ' ' + it.time : '') : it.time;
       return `${head}<div class="ag-row"><span class="ag-type" style="background:${color};">${label}</span><span class="ag-time">${esc(when || '')}</span>
         <span class="ag-main"><b>${esc(it.title)}</b>${siteLinkHtml(it.site)} ${agContactLinks(it)}${it.sub ? `<div class="calc-hint">${esc(String(it.sub).slice(0, 140))}</div>` : ''}</span>

@@ -5,8 +5,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>開發名單庫 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261110a" />
-<link rel="stylesheet" href="dark.css?v=20261110a" />
+<link rel="stylesheet" href="style.css?v=20261110b" />
+<link rel="stylesheet" href="dark.css?v=20261110b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -160,9 +160,16 @@
       <div id="ps-map" class="ps-map"></div>
       <div class="calc-hint" style="margin-top:8px;">預覽（前 3 筆）：</div>
       <div class="nc-scroll"><table class="nc-table" id="ps-preview"></table></div>
-      <label style="display:block;margin-top:10px;"><input type="checkbox" id="ps-update" style="width:auto;" /> 覆蓋更新：已存在的公司，有差異的欄位也更新（預設只補空白欄位，不動你已經修改的資料；開發狀態與備註永遠不會被覆蓋）</label>
-      <label style="display:block;margin-top:8px;">從第幾筆開始（上次中斷時接續用，一般維持 1）：<input id="ps-start" type="number" min="1" value="1" style="width:110px;display:inline-block;margin-left:6px;" /></label>
-      <div style="margin-top:12px;"><button type="button" id="ps-go" onclick="startImport()">開始匯入</button></div>
+      <input type="checkbox" id="ps-update" style="display:none;" /><input id="ps-start" type="hidden" value="1" />
+      <div class="calc-hint" style="margin-top:10px;">下一步會先跟系統比對：已經有的公司資料相同就不新增；資料不同的會列出差異讓你選「更新」或「保留原本」；客戶管理裡已經有的公司會讓你選要不要加入。</div>
+      <div style="margin-top:12px;"><button type="button" id="ps-go" onclick="checkImport()">下一步：檢查重複</button></div>
+    </div>
+    <div id="ps-step-check" style="display:none;">
+      <div id="pc-progress" class="calc-hint"></div>
+      <div id="pc-summary" class="pc-summary"></div>
+      <div id="pc-diff"></div>
+      <div id="pc-cust"></div>
+      <div style="margin-top:12px;"><button type="button" id="pc-go" onclick="confirmImport()">確認匯入</button> <button type="button" class="btn-secondary" onclick="backToMap()">上一步</button> <span id="pc-msg" class="calc-hint"></span></div>
     </div>
     <div id="ps-step-run" style="display:none;">
       <div class="ps-progress"><div id="ps-progress-bar"></div></div>
@@ -238,7 +245,7 @@
 <script src="common.js?v=20261109b"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261109b"></script>
-<script src="prospects-lib.js?v=20261110a"></script>
-<script src="prospects.js?v=20261110a"></script>
+<script src="prospects-lib.js?v=20261110b"></script>
+<script src="prospects.js?v=20261110b"></script>
 </body>
 </html>

@@ -11392,7 +11392,7 @@ function prospectPerms_() {
     prospectStatus: ['customers', 'r'], prospectQuery: ['customers', 'r'], prospectExport: ['customers', 'r'],
     prospectUpdate: ['customers', 'w'], prospectBulk: ['customers', 'w'], prospectImport: ['customers', 'w'],
     prospectEnrichPlan: ['customers', 'w'], prospectEnrich: ['customers', 'w'],
-    prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'], workAgenda: ['customers', 'r'],
+    prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'], workAgenda: ['customers', 'r'], prospectImportCheck: ['customers', 'w'],
     prospectClear: ['admin', 'd'],
   };
 }
@@ -11409,6 +11409,7 @@ function prospectRoutes_() {
     prospectEnrich: { auth: true, fn: handleProspectEnrich },
     prospectLogs: { auth: true, fn: handleProspectLogs },
     workAgenda: { auth: true, fn: handleWorkAgenda },
+    prospectImportCheck: { auth: true, fn: handleProspectImportCheck },
     prospectLogAdd: { auth: true, fn: handleProspectLogAdd },
     prospectClear: { auth: true, fn: handleProspectClear },
   };
@@ -11641,9 +11642,11 @@ function handleProspectImport(body) {
     var keyCol = psColVals_(sh, 1, n);
     var taxCol = psColVals_(sh, psCol_('TaxId'), n);
     var regCol = psColVals_(sh, psCol_('RegNo'), n);
+    var nameCol = psColVals_(sh, psCol_('Name'), n);
     var keyMap = {};
     var taxFirst = {};
     var taxNoReg = {};
+    var nameMap = {}; // 沒有統編的資料用公司名稱比對（跟匯入前檢查一致）
     for (var i = 0; i < n; i++) {
       keyMap[keyCol[i]] = i + 2;
       var t = taxCol[i];
@@ -11651,6 +11654,8 @@ function handleProspectImport(body) {
         if (!taxFirst[t]) taxFirst[t] = i + 2;
         if (!regCol[i] && !taxNoReg[t]) taxNoReg[t] = i + 2;
       }
+      var nk0 = psNameKey_(nameCol[i]);
+      if (nk0 && !nameMap[nk0]) nameMap[nk0] = i + 2;
     }
     var now = nowStr();
     var nextRow = last + 1;
@@ -11666,12 +11671,15 @@ function handleProspectImport(body) {
       psDerive_(rec);
       var target = keyMap[rec.Key];
       if (!target && rec.TaxId) target = rec.RegNo ? taxNoReg[rec.TaxId] : taxFirst[rec.TaxId];
+      if (!target && !rec.TaxId && !rec.RegNo) target = nameMap[psNameKey_(rec.Name)];
       if (target) {
-        steps.push({ row: target, rec: rec, isNew: false });
+        steps.push({ row: target, rec: rec, isNew: false, forceUpdate: !!(o && o._update) });
         return;
       }
       var row = nextRow++;
       keyMap[rec.Key] = row;
+      var nk1 = psNameKey_(rec.Name);
+      if (nk1 && !nameMap[nk1]) nameMap[nk1] = row;
       if (rec.TaxId) {
         if (!taxFirst[rec.TaxId]) taxFirst[rec.TaxId] = row;
         if (!rec.RegNo && !taxNoReg[rec.TaxId]) taxNoReg[rec.TaxId] = row;
@@ -11698,7 +11706,7 @@ function handleProspectImport(body) {
       }
       if (!objs[s.row]) objs[s.row] = psObj_(read[s.row]);
       var ex = objs[s.row];
-      var changed = psMergeInto_(ex, s.rec, update);
+      var changed = psMergeInto_(ex, s.rec, update || s.forceUpdate);
       if (changed) {
         ex.UpdatedAt = now;
         psDerive_(ex);
@@ -11876,7 +11884,7 @@ function handleProspectQuery(body) {
   var read = psReadRows_(sh, rowNums);
   return {
     success: true, ready: true, all: res.n, total: res.hits.length, page: page, pages: pages, size: size,
-    rows: rowNums.map(function (r) { return psOut_(read[r], r); }),
+    rows: psMarkCustomers_(rowNums.map(function (r) { return psOut_(read[r], r); })),
     facets: {
       source: psFacetList_(res.facets.source),
       city: psFacetList_(res.facets.city),
@@ -12670,7 +12678,7 @@ function handleWorkAgenda(body) {
     var res = psMatch_(sh, { _user: body._user, follow: 'due', assigned: 'me', dueBy: dueBy });
     var rowNums = res.hits.slice(0, 300).map(function (i) { return i + 2; });
     var read = psReadRows_(sh, rowNums);
-    prospects = rowNums.map(function (r) { return psOut_(read[r], r); });
+    prospects = psMarkCustomers_(rowNums.map(function (r) { return psOut_(read[r], r); }));
   }
   var reportDate = isDateStr(body.reportDate) ? String(body.reportDate) : today;
   var plogs = [];
@@ -12693,4 +12701,144 @@ function handleWorkAgenda(body) {
     plogs.sort(function (a, b) { return a.Time < b.Time ? -1 : a.Time > b.Time ? 1 : Number(a.ID) - Number(b.ID); });
   }
   return { success: true, today: today, dueBy: dueBy, me: me, prospects: prospects, prospectLogs: plogs, sites: body.logsOnly ? {} : workSites_() };
+}
+
+// ------------------------------------------------------------
+// 開發名單：跟客戶資料比對（已是客戶的不是陌生開發）、匯入前檢查重複
+// ------------------------------------------------------------
+var PS_DIFF_FIELDS = [['Name', '公司名稱'], ['TaxId', '統一編號'], ['Address', '地址'], ['Owner', '負責人'], ['Category', '產業分類'], ['Products', '主要產品'], ['Website', '官網'], ['Phone', '電話'], ['Email', 'Email'], ['Contact', '聯絡人'], ['Notes', '備註']];
+
+/** 公司名稱比對用：全形半形、台/臺、空白、括號裡的字都拿掉，再去掉「股份有限公司」等字尾。 */
+function psNameKey_(name) {
+  var s = String(name || '').replace(/[\s\u3000]/g, '').replace(/台/g, '臺').replace(/[（(]股[）)]/g, '股份').toLowerCase();
+  return psCoreName_(s);
+}
+
+/** 客戶資料索引：{ tax: {統編: 公司名}, name: {名稱鍵: 公司名} }。 */
+function psCustomerIndex_() {
+  var idx = { tax: {}, name: {} };
+  try {
+    sheetToObjects(SHEET_CUSTOMERS).rows.forEach(function (c) {
+      var n = String(c['CompanyName'] || '');
+      if (!n) return;
+      idx.name[psNameKey_(n)] = n;
+      var t = psTaxId_(c['TaxId']);
+      if (t) idx.tax[t] = n;
+    });
+  } catch (e) {
+    // 沒有客戶表就當作沒有客戶
+  }
+  return idx;
+}
+
+function psCustomerOf_(idx, rec) {
+  if (rec.TaxId && idx.tax[rec.TaxId]) return idx.tax[rec.TaxId];
+  return idx.name[psNameKey_(rec.Name)] || '';
+}
+
+/** 名單列加上 IsCustomer（已經是客戶的公司，不是陌生開發）。 */
+function psMarkCustomers_(rows) {
+  if (!rows.length) return rows;
+  var idx = psCustomerIndex_();
+  rows.forEach(function (r) {
+    var c = psCustomerOf_(idx, r);
+    r.IsCustomer = c ? c : '';
+  });
+  return rows;
+}
+
+function psSameVal_(a, b, field) {
+  var x = String(a == null ? '' : a).trim();
+  var y = String(b == null ? '' : b).trim();
+  if (field === 'Website') {
+    x = x.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, '').toLowerCase();
+    y = y.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, '').toLowerCase();
+  } else if (field === 'Phone') {
+    x = x.replace(/\D/g, '');
+    y = y.replace(/\D/g, '');
+  } else if (field === 'Email') {
+    x = x.toLowerCase();
+    y = y.toLowerCase();
+  } else {
+    x = x.replace(/[\s\u3000]+/g, ' ').replace(/台/g, '臺');
+    y = y.replace(/[\s\u3000]+/g, ' ').replace(/台/g, '臺');
+  }
+  return x === y;
+}
+
+/**
+ * 匯入前檢查：每一列回報 new（新的）/ same（已存在且資料相同）/ diff（已存在但有欄位不同，附差異）/
+ * customer（名單沒有，但客戶資料裡已經有這家）/ dup（跟同一批前面的列重複）/ invalid（沒有公司名稱）。
+ * 只讀不寫。比對方式跟實際匯入相同（工廠登記編號 → 統編 → 公司名稱），另外也用名稱比對名單裡沒有統編的公司。
+ */
+function handleProspectImportCheck(body) {
+  var rows = body.rows;
+  if (!Array.isArray(rows) || !rows.length) return { success: false, message: '沒有要檢查的資料' };
+  if (rows.length > PS_IMPORT_MAX) return { success: false, message: '一次最多檢查 ' + PS_IMPORT_MAX + ' 筆' };
+  var sh = psSheet_(false);
+  var n = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+  var keyMap = {}, taxFirst = {}, taxNoReg = {}, nameMap = {};
+  if (n) {
+    var keyCol = psColVals_(sh, 1, n);
+    var taxCol = psColVals_(sh, psCol_('TaxId'), n);
+    var regCol = psColVals_(sh, psCol_('RegNo'), n);
+    var nameCol = psColVals_(sh, psCol_('Name'), n);
+    for (var i = 0; i < n; i++) {
+      keyMap[keyCol[i]] = i + 2;
+      var t = taxCol[i];
+      if (t) {
+        if (!taxFirst[t]) taxFirst[t] = i + 2;
+        if (!regCol[i] && !taxNoReg[t]) taxNoReg[t] = i + 2;
+      }
+      var nk = psNameKey_(nameCol[i]);
+      if (nk && !nameMap[nk]) nameMap[nk] = i + 2;
+    }
+  }
+  var cust = psCustomerIndex_();
+  var seen = {};
+  var plan = [];
+  var need = [];
+  rows.forEach(function (o, idx) {
+    var rec = psIncoming_(o || {}, '-');
+    if (!rec) {
+      plan.push({ i: idx, status: 'invalid' });
+      return;
+    }
+    psDerive_(rec);
+    if (seen[rec.Key] !== undefined || seen['n:' + psNameKey_(rec.Name)] !== undefined) {
+      plan.push({ i: idx, status: 'dup', of: seen[rec.Key] !== undefined ? seen[rec.Key] : seen['n:' + psNameKey_(rec.Name)] });
+      return;
+    }
+    seen[rec.Key] = idx;
+    seen['n:' + psNameKey_(rec.Name)] = idx;
+    var target = keyMap[rec.Key];
+    if (!target && rec.TaxId) target = rec.RegNo ? taxNoReg[rec.TaxId] : taxFirst[rec.TaxId];
+    if (!target && !rec.TaxId && !rec.RegNo) target = nameMap[psNameKey_(rec.Name)];
+    if (target) {
+      plan.push({ i: idx, status: 'exist', row: target, rec: rec });
+      need.push(target);
+      return;
+    }
+    var c = psCustomerOf_(cust, rec);
+    plan.push(c ? { i: idx, status: 'customer', customer: c } : { i: idx, status: 'new' });
+  });
+  var read = n ? psReadRows_(sh, need) : {};
+  var out = plan.map(function (p) {
+    if (p.status !== 'exist') return p;
+    var ex = psObj_(read[p.row]);
+    var diffs = [];
+    PS_DIFF_FIELDS.forEach(function (f) {
+      var nv = p.rec[f[0]];
+      if (!nv) return; // 新資料沒有填的欄位不算差異
+      if (!psSameVal_(ex[f[0]], nv, f[0])) diffs.push({ field: f[0], label: f[1], old: String(ex[f[0]] || ''), now: String(nv) });
+    });
+    var c = psCustomerOf_(cust, ex);
+    var r = { i: p.i, status: diffs.length ? 'diff' : 'same', key: ex.Key, name: ex.Name, stage: ex.Stage || PS_STAGES[0] };
+    if (diffs.length) r.diffs = diffs;
+    if (c) r.customer = c;
+    return r;
+  });
+  var count = { new: 0, same: 0, diff: 0, customer: 0, dup: 0, invalid: 0 };
+  out.forEach(function (r) { count[r.status]++; });
+  return { success: true, results: out, count: count };
 }
