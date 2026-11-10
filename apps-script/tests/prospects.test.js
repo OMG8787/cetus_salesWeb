@@ -48,7 +48,7 @@ const ss = extraSs[props.PROSPECT_SSID];
 ok(ss.getSheetByName('Prospects') && !ss.getSheetByName('工作表1'), '預設的空白工作表改名成 Prospects');
 ok(ctx.getDb_ && ctx.getDb_(false).getSheetByName('Prospects') == null, '名單不會寫進主資料庫');
 const sh = ss.getSheetByName('Prospects');
-ok(sh.getRange(1, 1, 1, 25).getValues()[0].join() === ctx.PS_COLS.join(), '標題列正確');
+ok(sh.getRange(1, 1, 1, ctx.PS_COLS.length).getValues()[0].join() === ctx.PS_COLS.join(), '標題列正確');
 r = call('handleProspectImport', { source: SRC, rows: batch1 });
 ok(r.success && r.added === 0 && r.same === 4 && r.total === 4, '同一批再匯入一次：不重複、沒有變動');
 ok(sh.getLastRow() === 5, '試算表仍是 4 筆資料');

@@ -5,7 +5,7 @@
  */
 
 const IMPORT_CHUNK = 2000;
-const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', page: 1, size: 30 };
+const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', site: '', page: 1, size: 30 };
 let data = null; // 最近一次查詢結果
 let selected = new Set(); // 勾選的 Key
 let selectAllMatching = false; // 是否已選「符合條件的全部」
@@ -30,6 +30,7 @@ function filterBody() {
     stages: [...state.stages],
     has: [...state.has].join(''),
     assigned: state.assigned,
+    site: state.site,
   };
 }
 
@@ -154,6 +155,9 @@ document.addEventListener('click', (ev) => {
     if (k === 'q') {
       state.q = '';
       document.getElementById('ps-q').value = '';
+    } else if (k === 'site') {
+      state.site = '';
+      document.getElementById('ps-site').value = '';
     } else if (k === 'assigned') {
       state.assigned = '';
       document.getElementById('ps-assigned').value = '';
@@ -181,6 +185,11 @@ function onAssignedChange() {
   filtersChanged();
 }
 
+function onSiteChange() {
+  state.site = document.getElementById('ps-site').value;
+  filtersChanged();
+}
+
 function onSizeChange() {
   state.size = Number(document.getElementById('ps-size').value) || 30;
   filtersChanged();
@@ -190,8 +199,10 @@ function resetFilters() {
   ['sources', 'cities', 'cats', 'stages', 'has'].forEach((k) => state[k].clear());
   state.q = '';
   state.assigned = '';
+  state.site = '';
   document.getElementById('ps-q').value = '';
   document.getElementById('ps-assigned').value = '';
+  document.getElementById('ps-site').value = '';
   filtersChanged();
 }
 
@@ -206,6 +217,7 @@ function renderChips() {
   const hasLabel = { P: '有電話', E: '有 Email', W: '有網站' };
   state.has.forEach((v) => chips.push(['has', v, hasLabel[v]]));
   if (state.assigned) chips.push(['assigned', state.assigned, state.assigned === 'me' ? '我負責的' : '尚未指派']);
+  if (state.site) chips.push(['site', state.site, state.site === 'checked' ? '官網已查過' : '官網還沒查']);
   document.getElementById('ps-chips').innerHTML = chips.map((c) => `<span class="ps-chip">${e(c[2])} <button type="button" data-chip="${e(JSON.stringify([c[0], c[1]]))}" title="移除這個條件">×</button></span>`).join('');
 }
 
@@ -218,8 +230,12 @@ function contactHtml(r) {
   const url = psSafeUrl(r.Website);
   if (url) out.push(`<div>🌐 <a href="${e(url)}" target="_blank" rel="noopener noreferrer">${e(String(r.Website).replace(/^https?:\/\//i, '').slice(0, 32))}</a></div>`);
   else if (r.Website) out.push(`<div>🌐 ${e(r.Website)}</div>`);
+  if (r.ExtraContacts) out.push(`<div class="calc-hint" title="${e(r.ExtraContacts)}">＋ ${e(r.ExtraContacts.slice(0, 40))}</div>`);
+  if (r.Enriched && r.Enriched !== 'ok') out.push(`<div class="calc-hint" title="${e(r.EnrichNote || '')}">🔎 ${e(ENRICH_LABEL[r.Enriched] || r.Enriched)}</div>`);
   return out.join('') || '<span class="calc-hint">—</span>';
 }
+
+const ENRICH_LABEL = { ok: '找到聯絡方式', nocontact: '有官網、沒找到聯絡方式', nosite: '找不到官網', blocked: '網站不允許自動讀取', error: '查詢失敗' };
 
 function catHtml(r) {
   const names = psCatNames(r.CatCodes, industry);
@@ -396,6 +412,7 @@ function openEdit(i) {
   set('pse-website', r.Website);
   set('pse-notes', r.Notes);
   document.getElementById('pse-optout').checked = !!r.Optout;
+  document.getElementById('pse-enrich').innerHTML = (r.ExtraContacts ? `其他聯絡方式：${e(r.ExtraContacts)}<br>` : '') + (r.Enriched ? `官網查詢（${e(r.EnrichedAt || '')}）：${e(ENRICH_LABEL[r.Enriched] || r.Enriched)}　${e(r.EnrichNote || '')}` : '');
   document.getElementById('pse-msg').textContent = ro ? '你只有查看權限' : '';
   ['pse-stage', 'pse-assigned', 'pse-contact', 'pse-phone', 'pse-email', 'pse-website', 'pse-notes', 'pse-optout'].forEach((id) => (document.getElementById(id).disabled = ro));
   document.getElementById('ps-edit-modal').style.display = 'flex';
@@ -431,6 +448,7 @@ function openImport() {
   if (readOnly()) return alert('你只有查看權限，不能匯入名單');
   importFile = null;
   document.getElementById('ps-file').value = '';
+  document.getElementById('ps-paste').value = '';
   document.getElementById('ps-file-msg').textContent = '';
   document.getElementById('ps-step-file').style.display = '';
   document.getElementById('ps-step-map').style.display = 'none';
@@ -464,6 +482,23 @@ async function onFilePicked(file) {
   document.getElementById('ps-step-file').style.display = 'none';
   document.getElementById('ps-step-map').style.display = '';
   msg.textContent = '';
+}
+
+function usePastedNames() {
+  const lines = document.getElementById('ps-paste').value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return alert('請先貼上公司名稱，一行一家');
+  const rows = lines.map((l) => {
+    const m = l.match(/^(.*?)[,，\t]\s*(\d{7,8})\s*$/);
+    return m ? [m[1].trim(), m[2]] : [l, ''];
+  });
+  importFile = { headers: ['公司名稱', '統一編號'], rows, fileName: '貼上的名單' };
+  importMap = { Name: 0, TaxId: 1 };
+  document.getElementById('ps-file-info').textContent = `貼上的名單：共 ${rows.length.toLocaleString()} 家`;
+  document.getElementById('ps-source').value = '手動輸入';
+  document.getElementById('ps-start').value = 1;
+  renderMapping();
+  document.getElementById('ps-step-file').style.display = 'none';
+  document.getElementById('ps-step-map').style.display = '';
 }
 
 function renderMapping() {
@@ -578,6 +613,135 @@ async function clearAll() {
   if (!r || !r.success) return alert((r && r.message) || '清空失敗');
   clearSelection();
   alert(`已清空 ${r.removed.toLocaleString()} 筆`);
+  loadStatus();
+  load();
+}
+
+// ---------- 找官網與聯絡方式 ----------
+let enrichStop = false;
+let enrichRunning = false;
+const ENRICH_BATCH = 3;
+
+function enrichScope() {
+  if (selectAllMatching) return { filter: filterBody(), label: `符合目前條件的 ${data.total.toLocaleString()} 筆` };
+  if (selected.size) return { keys: [...selected], label: `已勾選的 ${selected.size.toLocaleString()} 筆` };
+  return { filter: filterBody(), label: `符合目前條件的 ${data ? data.total.toLocaleString() : 0} 筆（沒有勾選時就用目前的篩選結果）` };
+}
+
+function openEnrich() {
+  if (readOnly()) return alert('你只有查看權限');
+  if (!data || !data.total) return alert('目前沒有名單可以查。先匯入名單，或放寬篩選條件。');
+  const st = (window.__psStatus && window.__psStatus.enrich) || { source: 'none' };
+  const srcText = {
+    places: '搜尋方式：<b>Google Places</b>（比對公司名稱與地址，同時提供電話；依 Google 計費）',
+    gemini: '搜尋方式：<b>Gemini + Google 搜尋</b>（用「BOT 設定 → AI 模型」裡的 Gemini 金鑰；搜到的網址會再打開確認是不是這家公司）',
+    none: '⚠️ <b>還沒有搜尋方式</b>：請到「BOT 設定 → AI 模型」設定 Gemini，或請管理員在 Apps Script 指令碼屬性加上 GOOGLE_PLACES_API_KEY。已經有官網的公司仍可以直接抓聯絡方式。',
+  }[st.source] || '';
+  const quota = st.limit ? `今天已查 ${Number(st.used || 0).toLocaleString()} / 上限 ${Number(st.limit).toLocaleString()} 家（管理員可在指令碼屬性 PS_ENRICH_DAILY 調整）` : '每日上限：不限';
+  document.getElementById('pen-source').innerHTML = `${srcText}<div class="calc-hint">${e(quota)}</div>`;
+  document.getElementById('pen-scope').textContent = '範圍：' + enrichScope().label;
+  document.getElementById('pen-msg').textContent = '';
+  document.getElementById('pen-setup').style.display = '';
+  document.getElementById('pen-run').style.display = 'none';
+  document.getElementById('pen-go').disabled = false;
+  document.getElementById('ps-enrich-modal').style.display = 'flex';
+}
+
+function closeEnrich() {
+  if (enrichRunning && !confirm('正在查詢中，確定要關閉嗎？（已經查完的會保留）')) return;
+  enrichStop = true;
+  closeModal('ps-enrich-modal');
+  load();
+  loadStatus();
+}
+
+function stopEnrich() {
+  enrichStop = true;
+  document.getElementById('pen-stop').style.display = 'none';
+  document.getElementById('pen-text').textContent = '正在停止（等這一批查完）…';
+}
+
+function enrichRowHtml(x) {
+  const url = psSafeUrl(x.website);
+  const cls = x.status === 'ok' ? 'nc-badge ok' : 'nc-badge';
+  return `<tr><td>${e(x.name || '')}</td><td><span class="${cls}">${e(ENRICH_LABEL[x.status] || x.status)}</span></td><td>${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">${e(String(x.website).replace(/^https?:\/\//i, ''))}</a>` : ''}</td><td>${e(x.email || '')}</td><td>${e(x.phone || '')}</td><td class="calc-hint" style="white-space:normal;max-width:260px;">${e(x.note || '')}${x.extra ? '<br>＋ ' + e(x.extra) : ''}</td></tr>`;
+}
+
+async function startEnrich() {
+  const limit = Math.min(500, Math.max(1, Math.floor(Number(document.getElementById('pen-limit').value)) || 50));
+  const scope = enrichScope();
+  document.getElementById('pen-go').disabled = true;
+  document.getElementById('pen-msg').textContent = '整理要查的名單…';
+  const plan = await callApi('prospectEnrichPlan', Object.assign({ onlyNew: document.getElementById('pen-onlynew').checked, limit }, scope.keys ? { keys: scope.keys } : { filter: scope.filter }));
+  if (!plan || !plan.success) {
+    document.getElementById('pen-go').disabled = false;
+    document.getElementById('pen-msg').textContent = (plan && plan.message) || '規劃失敗';
+    return;
+  }
+  if (!plan.items.length) {
+    document.getElementById('pen-go').disabled = false;
+    document.getElementById('pen-msg').textContent = '沒有需要查的公司（可能都查過了，取消「只查還沒查過的」可以重查）。';
+    return;
+  }
+  document.getElementById('pen-setup').style.display = 'none';
+  document.getElementById('pen-run').style.display = '';
+  document.getElementById('pen-stop').style.display = '';
+  document.getElementById('pen-body').innerHTML = '';
+  enrichStop = false;
+  enrichRunning = true;
+  const warn = (ev) => {
+    ev.preventDefault();
+    ev.returnValue = '';
+  };
+  window.addEventListener('beforeunload', warn);
+  const total = plan.items.length;
+  let queue = plan.items.slice();
+  let done = 0;
+  const tally = { ok: 0, nocontact: 0, nosite: 0, blocked: 0, error: 0 };
+  let stopMsg = '';
+  const text = document.getElementById('pen-text');
+  const t0 = Date.now();
+  while (queue.length && !enrichStop) {
+    const batch = queue.slice(0, ENRICH_BATCH);
+    let r = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      r = await callApi('prospectEnrich', { items: batch }, { silent: true });
+      if (r && r.success) break;
+      if (!(r && r.networkError) && !/忙碌/.test((r && r.message) || '')) break;
+      await new Promise((res) => setTimeout(res, 3000 * (attempt + 1)));
+    }
+    if (!r || !r.success) {
+      stopMsg = '⚠️ 中斷：' + ((r && r.message) || '查詢失敗');
+      break;
+    }
+    r.results.forEach((x) => {
+      tally[x.status] = (tally[x.status] || 0) + 1;
+      document.getElementById('pen-body').insertAdjacentHTML('beforeend', enrichRowHtml(x));
+    });
+    done += r.results.length;
+    const handled = new Set(r.results.map((x) => x.key));
+    const rest = r.remaining && r.remaining.length ? r.remaining : batch.filter((b) => !handled.has(b.key));
+    queue = rest.concat(queue.slice(batch.length)).filter((b) => !handled.has(b.key));
+    if (r.quotaReached) {
+      stopMsg = `已達今天的查詢上限（${Number(r.quota.limit).toLocaleString()} 家），明天會自動恢復。`;
+      break;
+    }
+    if (!r.results.length && r.remaining && r.remaining.length) {
+      stopMsg = '⚠️ 伺服器沒有處理任何一筆，先停止。';
+      break;
+    }
+    const pct = Math.round((done / total) * 100);
+    document.getElementById('pen-bar').style.width = pct + '%';
+    const rate = done / ((Date.now() - t0) / 1000);
+    text.textContent = `已查 ${done} / ${total} 家（${pct}%）${queue.length && rate > 0 ? `，預估還要約 ${Math.ceil(queue.length / rate / 60)} 分鐘` : ''}`;
+    document.getElementById('pen-tally').textContent = `找到聯絡方式 ${tally.ok}　有官網沒聯絡方式 ${tally.nocontact}　找不到官網 ${tally.nosite}　不允許讀取 ${tally.blocked}　失敗 ${tally.error}`;
+  }
+  window.removeEventListener('beforeunload', warn);
+  enrichRunning = false;
+  document.getElementById('pen-stop').style.display = 'none';
+  document.getElementById('pen-bar').style.width = Math.round((done / total) * 100) + '%';
+  text.textContent = stopMsg || (enrichStop ? `已停止：查了 ${done} 家` : `✅ 完成：查了 ${done} 家，找到聯絡方式 ${tally.ok} 家`);
+  document.getElementById('pen-tally').textContent = `找到聯絡方式 ${tally.ok}　有官網沒聯絡方式 ${tally.nocontact}　找不到官網 ${tally.nosite}　不允許讀取 ${tally.blocked}　失敗 ${tally.error}`;
   loadStatus();
   load();
 }

@@ -75,6 +75,7 @@
     <div id="ps-stats" class="ps-stats">讀取中…</div>
     <div class="ps-top-btns">
       <button type="button" class="ps-write" onclick="openImport()">📥 匯入名單</button>
+      <button type="button" class="ps-write" id="ps-enrich-btn" onclick="openEnrich()">🔎 找官網與聯絡方式</button>
       <button type="button" id="ps-export-btn" onclick="exportResult()">📤 匯出目前結果（CSV）</button>
       <a id="ps-sheet-link" class="admin-only" href="#" target="_blank" rel="noopener" style="display:none;">開啟名單試算表</a>
       <button type="button" class="admin-only ps-danger" onclick="clearAll()">清空名單庫</button>
@@ -101,6 +102,11 @@
           <option value="">負責業務：全部</option>
           <option value="me">我負責的</option>
           <option value="none">尚未指派</option>
+        </select>
+        <select id="ps-site" onchange="onSiteChange()">
+          <option value="">官網查詢：全部</option>
+          <option value="unchecked">還沒查過</option>
+          <option value="checked">已經查過</option>
         </select>
         <select id="ps-size" onchange="onSizeChange()">
           <option value="30">每頁 30 筆</option>
@@ -136,6 +142,9 @@
       <div class="calc-hint">選一個 CSV（或政府下載的 .zip，不用解壓縮）。第一列要是欄位標題；Excel 請「另存新檔 → CSV UTF-8」。統編相同的資料會合併成同一家，來源會累加記錄。</div>
       <input type="file" id="ps-file" accept=".csv,.txt,.zip" onchange="onFilePicked(this.files[0])" style="margin:10px 0;" />
       <div id="ps-file-msg" class="calc-hint"></div>
+      <div class="calc-hint" style="margin-top:12px;">或直接貼上公司名稱（一行一家；有統編可以用逗號接在後面，例如「大立光電股份有限公司,24942496」）：</div>
+      <textarea id="ps-paste" rows="6" placeholder="大立光電股份有限公司,24942496&#10;某某精密工業有限公司"></textarea>
+      <button type="button" class="btn-mini" onclick="usePastedNames()">使用貼上的名單</button>
     </div>
     <div id="ps-step-map" style="display:none;">
       <div id="ps-file-info" style="font-weight:600;"></div>
@@ -158,6 +167,28 @@
   </div>
 </div>
 
+<div id="ps-enrich-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:920px;">
+    <div class="modal-header"><h3 style="margin:0;">🔎 找官網與聯絡方式</h3><button type="button" onclick="closeEnrich()">關閉</button></div>
+    <div id="pen-setup">
+      <div class="calc-hint">每家公司：沒有官網就先搜尋 → 打開首頁確認頁面上有這家公司的名稱（或統編）才採用 → 網站 robots.txt 允許才讀 → 讀首頁與最多 3 個「聯絡我們 / 關於我們」頁 → 抓公開的 Email 與電話。<b>人工填過的官網、Email、電話不會被覆蓋</b>，多抓到的放在「其他聯絡方式」；標了「拒絕聯絡」的不查。</div>
+      <div id="pen-source" style="margin:10px 0;"></div>
+      <div id="pen-scope" style="font-weight:600;"></div>
+      <label style="display:block;margin-top:8px;"><input type="checkbox" id="pen-onlynew" checked style="width:auto;" /> 只查還沒查過的</label>
+      <label style="display:block;margin-top:6px;">這次最多查幾家（1–500）：<input id="pen-limit" type="number" min="1" max="500" value="50" style="width:100px;display:inline-block;margin-left:6px;" /></label>
+      <div class="calc-hint">一家大約 5～15 秒，50 家約 5～10 分鐘；過程中請不要關閉這個分頁。</div>
+      <div style="margin-top:10px;"><button type="button" id="pen-go" onclick="startEnrich()">開始查詢</button> <span id="pen-msg" class="calc-hint"></span></div>
+    </div>
+    <div id="pen-run" style="display:none;">
+      <div class="ps-progress"><div id="pen-bar" class="ps-bar-fill"></div></div>
+      <div id="pen-text" style="margin-top:6px;"></div>
+      <div id="pen-tally" class="calc-hint" style="margin-top:4px;"></div>
+      <div style="margin:8px 0;"><button type="button" id="pen-stop" class="ps-danger" onclick="stopEnrich()">停止</button></div>
+      <div class="nc-scroll" style="max-height:45vh;overflow:auto;"><table class="nc-table ps-table"><thead><tr><th>公司</th><th>結果</th><th>官網</th><th>Email</th><th>電話</th><th>說明</th></tr></thead><tbody id="pen-body"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
 <div id="ps-edit-modal" class="modal-overlay" style="display:none;">
   <div class="modal-box" style="max-width:600px;">
     <div class="modal-header"><h3 style="margin:0;">開發紀錄</h3><button type="button" onclick="closeModal('ps-edit-modal')">關閉</button></div>
@@ -170,6 +201,7 @@
     <label>電話：</label><input id="pse-phone" maxlength="60" />
     <label>Email：</label><input id="pse-email" maxlength="120" />
     <label>網站：</label><input id="pse-website" maxlength="200" />
+    <div id="pse-enrich" class="calc-hint" style="margin-top:6px;"></div>
     <label>備註：</label><textarea id="pse-notes" rows="4" maxlength="500"></textarea>
     <label style="display:block;margin-top:6px;"><input type="checkbox" id="pse-optout" style="width:auto;" /> 拒絕聯絡（對方要求不要再聯絡；之後寄信一定會排除）</label>
     <div style="margin-top:10px;"><button type="button" onclick="saveEdit()">儲存</button> <span id="pse-msg" class="calc-hint"></span></div>

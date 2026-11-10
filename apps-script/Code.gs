@@ -11369,7 +11369,7 @@ function handleCopyGenerate(body) {
 // ============================================================
 var PS_SHEET = 'Prospects';
 // 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
-var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt'];
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts'];
 var PS_STAGES = ['未處理', '開發中', '已聯絡', '有興趣', '無意願', '已轉客戶', '無效'];
 var PS_MERGE_FIELDS = ['Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact'];
 var PS_IMPORT_MAX = 3000;
@@ -11388,6 +11388,7 @@ function prospectPerms_() {
   return {
     prospectStatus: ['customers', 'r'], prospectQuery: ['customers', 'r'], prospectExport: ['customers', 'r'],
     prospectUpdate: ['customers', 'w'], prospectBulk: ['customers', 'w'], prospectImport: ['customers', 'w'],
+    prospectEnrichPlan: ['customers', 'w'], prospectEnrich: ['customers', 'w'],
     prospectClear: ['admin', 'd'],
   };
 }
@@ -11400,6 +11401,8 @@ function prospectRoutes_() {
     prospectUpdate: { auth: true, fn: handleProspectUpdate },
     prospectBulk: { auth: true, fn: handleProspectBulk },
     prospectImport: { auth: true, fn: handleProspectImport },
+    prospectEnrichPlan: { auth: true, fn: handleProspectEnrichPlan },
+    prospectEnrich: { auth: true, fn: handleProspectEnrich },
     prospectClear: { auth: true, fn: handleProspectClear },
   };
 }
@@ -11426,7 +11429,7 @@ function psSheet_(create) {
   var ss = psSs_(create);
   if (!ss) return null;
   var sh = ss.getSheetByName(PS_SHEET);
-  if (sh) return sh;
+  if (sh) return psEnsureShape_(sh);
   if (!create) return null;
   ['工作表1', 'Sheet1'].forEach(function (n) {
     var d = ss.getSheetByName(n);
@@ -11436,10 +11439,22 @@ function psSheet_(create) {
     }
   });
   if (!sh) sh = ss.insertSheet(PS_SHEET);
+  if (sh.getMaxColumns() < PS_COLS.length) sh.insertColumnsAfter(sh.getMaxColumns(), PS_COLS.length - sh.getMaxColumns());
   sh.getRange(1, 1, 1, PS_COLS.length).setValues([PS_COLS]).setFontWeight('bold').setBackground('#eef2f7');
   sh.setFrozenRows(1);
   // 統編、電話、登記編號都要純文字，不然開頭的 0 會被吃掉
   sh.getRange(1, 1, sh.getMaxRows(), PS_COLS.length).setNumberFormat('@');
+  return sh;
+}
+
+/** 舊版建立的名單分頁（欄位比現在少）：補上新欄位的標題、欄數、純文字格式，已經匯入的資料不動。 */
+function psEnsureShape_(sh) {
+  var have = sh.getLastColumn();
+  if (have >= PS_COLS.length) return sh;
+  if (sh.getMaxColumns() < PS_COLS.length) sh.insertColumnsAfter(sh.getMaxColumns(), PS_COLS.length - sh.getMaxColumns());
+  var missing = PS_COLS.slice(have);
+  sh.getRange(1, have + 1, 1, missing.length).setValues([missing]).setFontWeight('bold').setBackground('#eef2f7');
+  sh.getRange(1, have + 1, sh.getMaxRows(), missing.length).setNumberFormat('@');
   return sh;
 }
 
@@ -11552,7 +11567,7 @@ function psKey_(r) {
 function psDerive_(r) {
   r.City = psCityOf_(r.Address) || r.City || '';
   r.CatCodes = psCatParse_(r.Category).map(function (c) { return c.code; }).join('|');
-  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '');
+  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '') + (r.Enriched ? 'C' : ''); // C = 已經查過官網 / 聯絡方式
   r.Search = [r.Name, r.TaxId, r.Owner, r.Products, r.Address, r.Phone, r.Email, r.Website, r.Contact].join(' ').toLowerCase().replace(/台/g, '臺').replace(/\s+/g, ' ').slice(0, 400);
   r.Key = psKey_(r);
   return r;
@@ -11725,7 +11740,8 @@ function psFilter_(b) {
   var q = String(b.q || '').toLowerCase().replace(/台/g, '臺').split(/\s+/).filter(Boolean).slice(0, 6);
   var has = String(b.has || '').replace(/[^PEW]/g, '');
   var assigned = b.assigned === 'me' || b.assigned === 'none' ? b.assigned : '';
-  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned };
+  var site = b.site === 'unchecked' || b.site === 'checked' ? b.site : '';
+  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site };
 }
 
 function psSet_(arr) {
@@ -11758,6 +11774,8 @@ function psRun_(scan, search, asg, f, me) {
     if (f.cats.length) fl[2] = cats.some(function (x) { return kSet[x]; });
     if (f.stages.length) fl[3] = !!tSet[stage];
     if (f.has) for (var h = 0; h < f.has.length; h++) if (has.indexOf(f.has.charAt(h)) < 0) fl[4] = false;
+    if (f.site === 'unchecked' && has.indexOf('C') > -1) fl[4] = false;
+    if (f.site === 'checked' && has.indexOf('C') < 0) fl[4] = false;
     if (f.q.length) {
       var text = String(search[i]);
       for (var t = 0; t < f.q.length; t++) if (text.indexOf(f.q[t]) < 0) fl[5] = false;
@@ -11818,7 +11836,8 @@ function handleProspectStatus(body) {
   } catch (e) {
     last = {};
   }
-  var out = { success: true, ready: !!sh, total: sh ? Math.max(0, sh.getLastRow() - 1) : 0, stages: PS_STAGES, industry: PS_INDUSTRY, last: last };
+  var eq = psEnrichQuota_();
+  var out = { success: true, ready: !!sh, total: sh ? Math.max(0, sh.getLastRow() - 1) : 0, stages: PS_STAGES, industry: PS_INDUSTRY, last: last, enrich: { source: psEnrichSource_(), limit: eq.limit, used: eq.used } };
   try {
     var u = sh && body._user ? findUserRow_(body._user.username) : null;
     if (u && u['Role'] === 'admin' && sh.getParent) out.url = sh.getParent().getUrl(); // 只給系統管理員看試算表連結
@@ -11972,4 +11991,482 @@ function handleProspectClear(body) {
     PropertiesService.getScriptProperties().deleteProperty('PS_LAST_IMPORT');
     return { success: true, removed: removed };
   });
+}
+
+// ------------------------------------------------------------
+// 找官網 + 抓聯絡方式
+// 流程（每家公司）：沒有官網 → 用 Google Places（有設金鑰）或 Gemini 搜尋找 → 打開首頁確認真的是這家公司 →
+// 看 robots.txt 允許才爬 → 首頁 + 最多 3 個「聯絡我們 / 關於我們」頁面 → 抓公開的 Email 與電話 → 寫回名單。
+// 只讀公開頁面，不登入、不填表單、不繞過任何限制；人工填過的 Email / 電話 / 官網不會被覆蓋。
+// 設定（指令碼屬性，可在 Apps Script「專案設定」修改）：
+//   GOOGLE_PLACES_API_KEY  有的話優先用 Google Places 找官網（比較準，同時給電話）；沒有就用 Gemini 搜尋
+//   PS_ENRICH_DAILY        每天最多查幾家（預設 1500，0 = 不限）
+// ------------------------------------------------------------
+var PS_ENRICH_DAILY_DEFAULT = 1500;
+var PS_ENRICH_BATCH_MS = 22000; // 一次請求最多處理這麼久，剩下的交給前端下一次
+var PS_FETCH_UA = 'Mozilla/5.0 (compatible; AOI-Sales-Research/1.0; public-contact-lookup)';
+var PS_SITE_BLOCKLIST = ['facebook.com', 'instagram.com', 'linkedin.com', 'youtube.com', 'twitter.com', 'x.com', 'line.me', '104.com.tw', '1111.com.tw', 'yes123.com.tw', '518.com.tw', 'pcsc.com.tw', 'twincn.com', 'findcompany.com.tw', 'opencorporates.com', 'biznet.com.tw', 'taiwanyellowpages.com', 'yellowpages.com.tw', 'google.com', 'goo.gl', 'wikipedia.org', 'twse.com.tw', 'gcis.nat.gov.tw', 'moea.gov.tw', 'taiwantrade.com', 'alibaba.com', 'made-in-china.com', 'globalsources.com', 'ec21.com', 'kompass.com', 'mobile01.com', 'ptt.cc', 'pixnet.net', 'blogspot.com', 'wordpress.com', 'shopee.tw', 'ruten.com.tw', 'momoshop.com.tw'];
+var PS_EMAIL_JUNK_DOMAINS = ['example.com', 'example.org', 'domain.com', 'email.com', 'yourdomain.com', 'yoursite.com', 'sentry.io', 'wixpress.com', 'schema.org', 'w3.org', 'googleusercontent.com', 'gstatic.com'];
+var PS_EMAIL_ROLE_RE = /^(sales|info|service|contact|support|marketing|business|order|cs|inquiry|enquiry|hello|office|rfq|quote)/i;
+// 不適合寄業務開發信的信箱：人資、福委會、投資人關係、個資、系統信 → 排到最後
+var PS_EMAIL_AVOID_RE = /(^|[._\-])(hr|job|jobs|recruit|career|careers|welfare|ir|investor|stock|privacy|dpo|abuse|noreply|no-reply|donotreply|webmaster|postmaster)([._\-]|@|$)/i;
+
+/** 公司名稱去掉「股份有限公司、工廠、一廠」之類，剩下用來比對網頁內容的核心字。太短就用原名。 */
+function psCoreName_(name) {
+  var s = String(name || '').replace(/[（(][^）)]*[）)]/g, '').replace(/[一二三四五六七八九十\d]+廠$/, '');
+  s = s.replace(/股份有限公司|有限責任|有限公司|無限公司|股份|企業社|工業社|實業社|商行|工廠|公司/g, '').replace(/[廠行社]$/, '').trim();
+  return s.length >= 2 ? s : String(name || '').trim();
+}
+
+function psHost_(url) {
+  var m = String(url || '').match(/^https?:\/\/([^\/?#:]+)/i);
+  return m ? m[1].toLowerCase().replace(/^www\./, '') : '';
+}
+
+/** 搜尋結果的網址 → 官網首頁（只留 http(s) 與網域）；是目錄 / 社群 / 電商 / 政府網站就回空字串。 */
+function psNormalizeSite_(url) {
+  var s = String(url || '').trim();
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) {
+    if (/^[a-z][a-z0-9+.\-]*:/i.test(s)) return '';
+    s = 'http://' + s;
+  }
+  var m = s.match(/^(https?:\/\/[^\/?#]+)/i);
+  if (!m) return '';
+  var host = psHost_(m[1]);
+  if (!host || host.indexOf('.') < 0) return '';
+  if (PS_SITE_BLOCKLIST.some(function (b) { return host === b || host.slice(-b.length - 1) === '.' + b; })) return '';
+  return m[1].toLowerCase();
+}
+
+function psDecodeEntities_(t) {
+  return String(t || '')
+    .replace(/&#x([0-9a-f]+);/gi, function (_, h) { return String.fromCharCode(parseInt(h, 16)); })
+    .replace(/&#(\d+);/g, function (_, d) { return String.fromCharCode(Number(d)); })
+    .replace(/&nbsp;/gi, ' ').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&amp;/gi, '&');
+}
+
+function psHtmlText_(html) {
+  return psDecodeEntities_(String(html || '').replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/[ \t\r\n ]+/g, ' ');
+}
+
+/** Cloudflare 的「電子郵件保護」：data-cfemail="十六進位" 用第一個位元組當金鑰 XOR。 */
+function psCfDecode_(hex) {
+  var key = parseInt(hex.substr(0, 2), 16);
+  var out = '';
+  for (var i = 2; i + 1 < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.substr(i, 2), 16) ^ key);
+  return out;
+}
+
+function psEmailOk_(e) {
+  if (e.length > 80 || e.length < 6) return false;
+  var at = e.lastIndexOf('@');
+  var local = e.slice(0, at);
+  var domain = e.slice(at + 1);
+  if (/\.(png|jpe?g|gif|svg|webp|css|js|ico|woff2?|ttf)$/i.test(domain)) return false;
+  if (PS_EMAIL_JUNK_DOMAINS.some(function (d) { return domain === d || domain.slice(-d.length - 1) === '.' + d; })) return false;
+  if (/^(your|name|user|email|username|example|test|xxx+|abc)$/i.test(local)) return false;
+  return /^[a-z0-9._%+\-]+$/.test(local) && /^[a-z0-9.\-]+\.[a-z]{2,}$/.test(domain);
+}
+
+/** 從網頁抓公開的 Email：mailto 連結、一般文字、[at] 寫法、Cloudflare 保護。回傳小寫、去重的陣列。 */
+function psExtractEmails_(html) {
+  var h = String(html || '').slice(0, 400000);
+  var found = [];
+  var add = function (e) {
+    e = String(e || '').toLowerCase().replace(/^mailto:/, '').replace(/[.,;:)>\]]+$/, '');
+    if (psEmailOk_(e) && found.indexOf(e) < 0) found.push(e);
+  };
+  (h.match(/data-cfemail="([0-9a-f]+)"/gi) || []).forEach(function (m) {
+    add(psCfDecode_(m.replace(/.*"([0-9a-f]+)"/i, '$1')));
+  });
+  var text = psDecodeEntities_(h.replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' '));
+  text = text.replace(/[＠]/g, '@').replace(/\s*[\[\(（]\s*(?:at|AT|@)\s*[\]\)）]\s*/g, '@').replace(/\s*[\[\(（]\s*(?:dot|DOT)\s*[\]\)）]\s*/g, '.');
+  (text.match(/mailto:\s*([^"'?\s<>]+)/gi) || []).forEach(function (m) { add(decodeURIComponent(m.replace(/^mailto:\s*/i, '')).split(',')[0]); });
+  (text.match(/[a-z0-9._%+\-]+@[a-z0-9\-]+(?:\.[a-z0-9\-]+)*\.[a-z]{2,}/gi) || []).forEach(add);
+  return found;
+}
+
+/** 台灣電話格式化：手機 09xx-xxx-xxx；市話 02 / 03 / 04… 區碼 + 號碼；0800 免付費。不合規格回空字串。 */
+function psPhoneFormat_(raw) {
+  var d = String(raw || '').replace(/\D/g, '');
+  if (/^886/.test(d)) d = '0' + d.slice(3).replace(/^0/, '');
+  if (/^09\d{8}$/.test(d)) return d.slice(0, 4) + '-' + d.slice(4, 7) + '-' + d.slice(7);
+  if (/^0800\d{6}$/.test(d)) return d.slice(0, 4) + '-' + d.slice(4, 7) + '-' + d.slice(7);
+  // 市話：02、04 可以是 8 碼號碼（共 10 碼），其他區碼（03、05、06、07、08、037、049…）共 9 碼
+  if (/^0[2-8]\d{7}$/.test(d) || /^0[24]\d{8}$/.test(d)) return d.slice(0, 2) + '-' + d.slice(2);
+  return '';
+}
+
+/** 從網頁文字抓台灣電話（略過傳真）。tel: 連結優先。回傳格式化、去重的陣列。 */
+function psExtractPhones_(html) {
+  var h = String(html || '').slice(0, 400000);
+  var out = [];
+  var add = function (raw) {
+    var f = psPhoneFormat_(raw);
+    if (f && out.indexOf(f) < 0) out.push(f);
+  };
+  (h.match(/href=["']tel:([^"']+)["']/gi) || []).forEach(function (m) {
+    add(decodeURIComponent(m.replace(/^href=["']tel:/i, '').replace(/["']$/, '')));
+  });
+  var text = psHtmlText_(h);
+  var re = /(?<![\d])(?:\+886[-\s]?\(?0?\)?|\(?0)\d[\d\-\s()]{6,14}\d(?![\d])/g;
+  var m;
+  while ((m = re.exec(text))) {
+    var before = text.slice(Math.max(0, m.index - 8), m.index);
+    if (/傳真|傳 真|fax|FAX|Fax|F\s*[:：]/.test(before)) continue; // 傳真不是電話
+    add(m[0]);
+  }
+  return out;
+}
+
+/** 頁面裡的連結 → [{url, score}]：同網域、看起來是「聯絡我們 / 關於我們」的才留下，分數高的優先。 */
+function psContactLinks_(html, origin) {
+  var host = psHost_(origin);
+  var seen = {};
+  var out = [];
+  var re = /<a\s[^>]*?href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  var m;
+  var h = String(html || '').slice(0, 400000);
+  while ((m = re.exec(h))) {
+    var href = psDecodeEntities_(m[1]).trim();
+    var label = psHtmlText_(m[2]).trim().slice(0, 40);
+    if (/^(mailto|tel|javascript):/i.test(href) || /\.(pdf|jpe?g|png|gif|zip|docx?|xlsx?|pptx?)(\?|$)/i.test(href)) continue;
+    var url;
+    if (/^https?:\/\//i.test(href)) url = href;
+    else if (href.indexOf('//') === 0) url = 'http:' + href;
+    else if (href.charAt(0) === '/') url = origin + href;
+    else url = origin + '/' + href.replace(/^\.\//, '');
+    if (psHost_(url) !== host) continue;
+    var score = 0;
+    if (/contact|聯絡|聯繫|聯係|連絡/i.test(href + ' ' + label)) score += 3;
+    if (/about|關於|公司簡介|company|inquiry|詢價|詢問|客服|support|據點|location/i.test(href + ' ' + label)) score += 1;
+    if (!score) continue;
+    var key = url.replace(/\/+$/, '').toLowerCase();
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push({ url: url, score: score });
+  }
+  return out.sort(function (a, b) { return b.score - a.score; });
+}
+
+/** robots.txt：這個站允不允許爬這些路徑。解析 User-agent: * 的 Disallow / Allow（最長比對優先）。 */
+function psRobotsAllows_(robotsTxt, path) {
+  var lines = String(robotsTxt || '').split(/\r?\n/);
+  var applies = false;
+  var rules = [];
+  var inGroup = false;
+  lines.forEach(function (ln) {
+    ln = ln.replace(/#.*/, '').trim();
+    var m = ln.match(/^([A-Za-z\-]+)\s*:\s*(.*)$/);
+    if (!m) return;
+    var k = m[1].toLowerCase();
+    var v = m[2].trim();
+    if (k === 'user-agent') {
+      if (!inGroup) applies = false;
+      if (v === '*') applies = true;
+      inGroup = true;
+    } else {
+      inGroup = false;
+      if (applies && (k === 'disallow' || k === 'allow')) rules.push({ allow: k === 'allow', path: v });
+    }
+  });
+  var best = null;
+  rules.forEach(function (r) {
+    if (!r.path) return;
+    if (path.indexOf(r.path) === 0 && (!best || r.path.length >= best.path.length)) best = r;
+  });
+  return best ? best.allow : true;
+}
+
+/** 讀網頁文字：優先 UTF-8；老網站常見 Big5（標頭或 meta 有寫）就用 Big5 解。失敗回 null。 */
+function psFetchPage_(url) {
+  try {
+    var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { 'User-Agent': PS_FETCH_UA, 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.5' } });
+    return psPageFromResponse_(res);
+  } catch (e) {
+    return null;
+  }
+}
+
+function psPageFromResponse_(res) {
+  var code = res.getResponseCode();
+  if (code < 200 || code >= 300) return null;
+  var text = res.getContentText();
+  var head = String(text || '').slice(0, 3000);
+  var ct = '';
+  try {
+    ct = String((res.getHeaders() || {})['Content-Type'] || '');
+  } catch (e) {
+    ct = '';
+  }
+  if ((/big5/i.test(ct) || /<meta[^>]+charset=["']?big5/i.test(head)) && typeof res.getContent === 'function') {
+    try {
+      return Utilities.newBlob(res.getContent()).getDataAsString('Big5');
+    } catch (e) {
+      // 解不開就用原本的文字
+    }
+  }
+  return text;
+}
+
+/** 用 Google Places（Text Search）找官網與電話。回傳 { url, phone, name } 或 null；API 錯誤丟出。 */
+function psPlacesFind_(rec, key) {
+  var q = String(rec.Name) + ' ' + String(rec.Address || rec.City || '');
+  var res = UrlFetchApp.fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber' },
+    payload: JSON.stringify({ textQuery: q.slice(0, 200), languageCode: 'zh-TW', regionCode: 'TW', maxResultCount: 3 }),
+  });
+  var code = res.getResponseCode();
+  var body = {};
+  try { body = JSON.parse(res.getContentText() || '{}'); } catch (e) { body = {}; }
+  if (code < 200 || code >= 300) throw new Error('Google Places 錯誤：' + String((body.error && body.error.message) || 'HTTP ' + code).split(key).join('••••').slice(0, 200));
+  var core = psCoreName_(rec.Name);
+  var places = body.places || [];
+  for (var i = 0; i < places.length; i++) {
+    var p = places[i];
+    var title = String((p.displayName && p.displayName.text) || '');
+    if (title && (title.indexOf(core) > -1 || core.indexOf(psCoreName_(title)) > -1) && p.websiteUri) {
+      return { url: p.websiteUri, phone: p.nationalPhoneNumber || '', name: title };
+    }
+  }
+  return null;
+}
+
+/** 用 Gemini + Google 搜尋找官網。回傳網址字串（可能是空字串）；沒有可用的 Gemini 設定或 API 錯誤丟出。 */
+function psGeminiFind_(rec) {
+  var cfg = botAiList_().filter(function (m) { return m.provider === 'gemini'; })[0];
+  if (!cfg) throw new Error('找官網需要 Google Places 金鑰（指令碼屬性 GOOGLE_PLACES_API_KEY），或在「BOT 設定 → AI 模型」設定 Gemini');
+  var prompt = '請用 Google 搜尋，找出台灣這家公司的「官方網站」：\n公司名稱：' + rec.Name + (rec.TaxId ? '\n統一編號：' + rec.TaxId : '') + (rec.Address ? '\n地址：' + rec.Address : '') + (rec.Products ? '\n主要產品：' + String(rec.Products).slice(0, 80) : '') +
+    '\n\n只能回答公司自己的網站首頁（不要人力銀行、黃頁、公司資料庫、社群網站、電商平台）。找不到或不確定就回空字串，不要猜。\n只輸出一行 JSON：{"website":"https://...","reason":"一句話"}';
+  var url = String(cfg.endpoint).replace(/\/+$/, '') + '/models/' + encodeURIComponent(cfg.model) + ':generateContent';
+  var res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': cfg.apiKey }, payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], tools: [{ google_search: {} }] }) });
+  var code = res.getResponseCode();
+  var body = {};
+  try { body = JSON.parse(res.getContentText() || '{}'); } catch (e) { body = {}; }
+  if (code < 200 || code >= 300) throw new Error('Gemini 搜尋錯誤：' + String((body.error && body.error.message) || 'HTTP ' + code).split(cfg.apiKey).join('••••').slice(0, 200));
+  var text = ((((body.candidates || [])[0] || {}).content || {}).parts || []).map(function (p) { return p.text || ''; }).join('');
+  var m = text.match(/\{[\s\S]*?\}/);
+  if (!m) return '';
+  try {
+    return String(JSON.parse(m[0]).website || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+/** 今天（台灣時間）已查幾家 / 上限。每天自動歸零。 */
+function psEnrichQuota_() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty('PS_ENRICH_DAILY');
+  var limit = raw === null || raw === '' ? PS_ENRICH_DAILY_DEFAULT : Math.max(0, Math.floor(Number(raw)) || 0);
+  var day = todayStr();
+  var used = 0;
+  try {
+    var o = JSON.parse(props.getProperty('PS_ENRICH_USED') || '{}');
+    if (o.day === day) used = Number(o.n) || 0;
+  } catch (e) {
+    used = 0;
+  }
+  return { limit: limit, used: used, day: day, left: limit === 0 ? Infinity : Math.max(0, limit - used) };
+}
+
+function psEnrichCount_(n) {
+  var q = psEnrichQuota_();
+  PropertiesService.getScriptProperties().setProperty('PS_ENRICH_USED', JSON.stringify({ day: q.day, n: q.used + n }));
+}
+
+/**
+ * 查一家公司，回傳要寫回的欄位與結果摘要（不碰試算表）。
+ * rec = 目前這一列的物件。結果 status：ok（有官網且抓到聯絡方式）/ nocontact（有官網但沒抓到）/ nosite（找不到或不確定是官網）/ blocked（網站不讓爬）/ error（網路或 API 錯誤）。
+ */
+function psEnrichCompany_(rec) {
+  var out = { status: 'nosite', note: '', website: '', emails: [], phones: [], fill: {} };
+  var key = PropertiesService.getScriptProperties().getProperty('GOOGLE_PLACES_API_KEY');
+  var site = psNormalizeSite_(rec.Website);
+  var trustedByPlaces = false;
+  var placesPhone = '';
+  var hadSite = !!site;
+  try {
+    if (!site && !key && psEnrichSource_() === 'none') {
+      out.note = '還沒有設定搜尋方式（BOT 設定裡的 Gemini，或指令碼屬性 GOOGLE_PLACES_API_KEY），沒有官網的公司無法自動找';
+      return out;
+    }
+    if (!site) {
+      if (key) {
+        var p = psPlacesFind_(rec, key);
+        if (p) {
+          site = psNormalizeSite_(p.url);
+          trustedByPlaces = !!site;
+          placesPhone = p.phone;
+        }
+      } else {
+        site = psNormalizeSite_(psGeminiFind_(rec));
+      }
+      if (!site) {
+        out.note = '搜尋沒有找到可信的官網';
+        return out;
+      }
+    }
+    var host = psHost_(site);
+    // robots.txt：不允許就不爬
+    var robots = psFetchPage_(site + '/robots.txt');
+    if (robots !== null && !psRobotsAllows_(robots, '/')) {
+      out.status = 'blocked';
+      out.note = '網站 robots.txt 不允許自動讀取：' + host;
+      if (!hadSite && trustedByPlaces) out.fill.Website = site;
+      return out;
+    }
+    var home = psFetchPage_(site + '/');
+    if (home === null) home = psFetchPage_(site);
+    if (home === null) {
+      out.status = 'error';
+      out.note = '打不開網站：' + host;
+      return out;
+    }
+    // 確認是這家公司（找官網的來源是搜尋時才需要；原本就有的官網是人填的，直接信任）
+    var homeText = psHtmlText_(home).toLowerCase();
+    var core = psCoreName_(rec.Name).toLowerCase();
+    var verified = hadSite || trustedByPlaces || homeText.indexOf(core) > -1 || (rec.TaxId && homeText.indexOf(String(rec.TaxId)) > -1);
+    if (!verified) {
+      out.note = '疑似官網但頁面沒有出現公司名稱，未採用：' + site;
+      return out;
+    }
+    if (!hadSite) out.fill.Website = site;
+    out.website = site;
+    // 聯絡頁（最多 3 個），平行讀取
+    var pages = [home];
+    var links = psContactLinks_(home, site).filter(function (l) { return psRobotsAllows_(robots || '', l.url.replace(/^https?:\/\/[^\/]+/i, '') || '/'); }).slice(0, 3);
+    if (links.length) {
+      try {
+        UrlFetchApp.fetchAll(links.map(function (l) { return { url: l.url, muteHttpExceptions: true, followRedirects: true, headers: { 'User-Agent': PS_FETCH_UA } }; })).forEach(function (r) {
+          var t = psPageFromResponse_(r);
+          if (t) pages.push(t);
+        });
+      } catch (e) {
+        // 聯絡頁讀不到就只用首頁
+      }
+    }
+    var emails = [];
+    var phones = placesPhone ? [psPhoneFormat_(placesPhone) || placesPhone] : [];
+    pages.forEach(function (pg) {
+      psExtractEmails_(pg).forEach(function (e) { if (emails.indexOf(e) < 0) emails.push(e); });
+      psExtractPhones_(pg).forEach(function (t) { if (phones.indexOf(t) < 0) phones.push(t); });
+    });
+    // 排序：同網域的信箱優先，其次是 sales / info 這類業務窗口
+    emails.sort(function (a, b) {
+      var sa = (psHost_('http://' + a.split('@')[1]) === host ? 2 : 0) + (PS_EMAIL_ROLE_RE.test(a) ? 1 : 0) - (PS_EMAIL_AVOID_RE.test(a) ? 5 : 0);
+      var sb = (psHost_('http://' + b.split('@')[1]) === host ? 2 : 0) + (PS_EMAIL_ROLE_RE.test(b) ? 1 : 0) - (PS_EMAIL_AVOID_RE.test(b) ? 5 : 0);
+      return sb - sa;
+    });
+    // 電話：公司總機（市話）優先，其次免付費，手機最後（手機常是個人的）
+    var phoneRank = function (t) { return /^09/.test(t) ? 2 : /^0800/.test(t) ? 1 : 0; };
+    phones = phones.map(function (t, i) { return { t: t, i: i }; }).sort(function (a, b) { return phoneRank(a.t) - phoneRank(b.t) || a.i - b.i; }).map(function (x) { return x.t; });
+    out.emails = emails.slice(0, 5);
+    out.phones = phones.slice(0, 3);
+    out.status = out.emails.length || out.phones.length ? 'ok' : 'nocontact';
+    out.note = (hadSite ? '' : (trustedByPlaces ? 'Google Places 找到：' : '搜尋找到：')) + host + '（讀了 ' + pages.length + ' 頁）' + (out.status === 'nocontact' ? '，沒有找到公開的 Email 或電話' : '');
+    return out;
+  } catch (e) {
+    out.status = 'error';
+    out.note = String(e.message || e).slice(0, 160);
+    return out;
+  }
+}
+
+/** 把查詢結果套到名單物件：只補空白欄位（人工填過的 Email / 電話 / 官網不動），其餘信箱電話放「其他聯絡方式」。 */
+function psApplyEnrich_(o, res) {
+  if (res.fill.Website && !o.Website) o.Website = res.fill.Website;
+  var extraE = res.emails.slice();
+  var extraP = res.phones.slice();
+  if (!o.Email && extraE.length) o.Email = extraE.shift();
+  else extraE = extraE.filter(function (e) { return e !== o.Email; });
+  if (!o.Phone && extraP.length) o.Phone = extraP.shift();
+  else extraP = extraP.filter(function (p) { return p !== o.Phone; });
+  var parts = [];
+  if (extraE.length) parts.push('信箱：' + extraE.join('、'));
+  if (extraP.length) parts.push('電話：' + extraP.join('、'));
+  if (parts.length) o.ExtraContacts = parts.join('｜').slice(0, 300);
+  o.Enriched = res.status;
+  o.EnrichedAt = nowStr();
+  o.EnrichNote = res.note.slice(0, 200);
+  o.UpdatedAt = o.EnrichedAt;
+  psDerive_(o);
+  return o;
+}
+
+function psEnrichSource_() {
+  if (PropertiesService.getScriptProperties().getProperty('GOOGLE_PLACES_API_KEY')) return 'places';
+  return botAiList_().some(function (m) { return m.provider === 'gemini'; }) ? 'gemini' : 'none';
+}
+
+/** 規劃要查哪些：勾選的（keys）或符合篩選的全部（filter），預設只查「還沒查過」的、排除拒絕聯絡的。回傳 [{key,row,name}]。 */
+function handleProspectEnrichPlan(body) {
+  var sh = psSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return { success: false, message: '名單庫還是空的' };
+  var n = sh.getLastRow() - 1;
+  var onlyNew = body.onlyNew !== false;
+  var limit = Math.min(500, Math.max(1, Math.floor(Number(body.limit)) || 100));
+  var hits;
+  if (Array.isArray(body.keys)) {
+    var want = psSet_(psList_(body.keys, 3000));
+    var keysCol = psColVals_(sh, 1, n);
+    var hasCol = sh.getRange(2, psCol_('Has'), n, 1).getValues();
+    hits = [];
+    keysCol.forEach(function (k, i) {
+      if (want[k] && !(onlyNew && String(hasCol[i][0]).indexOf('C') > -1)) hits.push(i);
+    });
+  } else {
+    var f = Object.assign({}, body.filter || {}, { _user: body._user });
+    if (onlyNew) f.site = 'unchecked';
+    hits = psMatch_(sh, f).hits;
+  }
+  var total = hits.length;
+  var rowNums = hits.slice(0, limit * 2).map(function (i) { return i + 2; });
+  var read = psReadRows_(sh, rowNums);
+  var items = [];
+  rowNums.forEach(function (r) {
+    var o = psObj_(read[r]);
+    if (o.Optout || items.length >= limit) return;
+    items.push({ key: o.Key, row: r, name: o.Name });
+  });
+  var q = psEnrichQuota_();
+  return { success: true, items: items, matched: total, source: psEnrichSource_(), quota: { limit: q.limit, used: q.used, left: q.left === Infinity ? -1 : q.left } };
+}
+
+/** 實際查一小批（前端每次送 3 家左右）；單次請求有時間上限，沒處理完的回 remaining 讓前端再送。 */
+function handleProspectEnrich(body) {
+  var items = (Array.isArray(body.items) ? body.items : []).slice(0, 10);
+  if (!items.length) return { success: false, message: '沒有要查的公司' };
+  var src = psEnrichSource_();
+  var t0 = Date.now();
+  var results = [];
+  var i = 0;
+  for (; i < items.length; i++) {
+    if (i > 0 && Date.now() - t0 > PS_ENRICH_BATCH_MS) break;
+    var q = psEnrichQuota_();
+    if (q.left <= 0) return { success: true, results: results, remaining: items.slice(i), quotaReached: true, quota: { limit: q.limit, used: q.used } };
+    var it = items[i];
+    var row = Math.floor(Number(it.row)) || 0;
+    var arr = row >= 2 ? psReadRows_(psSheet_(false), [row])[row] : null;
+    if (!arr || String(arr[0]) !== String(it.key)) {
+      results.push({ key: it.key, name: it.name, status: 'error', note: '找不到這筆名單（可能已被刪除或列號變了），請重新整理' });
+      continue;
+    }
+    var rec = psObj_(arr);
+    var res = psEnrichCompany_(rec); // 網路請求在鎖外面做，不卡住其他人
+    psEnrichCount_(1);
+    // 寫回時重新讀一次（這段時間別人可能改過），只補空白欄位
+    withLock_(function () {
+      var sh = psSheet_(false);
+      var cur = psReadRows_(sh, [row])[row];
+      if (!cur || String(cur[0]) !== String(it.key)) return;
+      var o = psApplyEnrich_(psObj_(cur), res);
+      sh.getRange(row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+      results.push({ key: o.Key, name: o.Name, status: res.status, note: res.note, website: o.Website, email: o.Email, phone: o.Phone, extra: o.ExtraContacts });
+    });
+  }
+  var q2 = psEnrichQuota_();
+  return { success: true, results: results, remaining: items.slice(i), source: src, quota: { limit: q2.limit, used: q2.used } };
 }

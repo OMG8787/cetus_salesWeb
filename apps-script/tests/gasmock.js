@@ -82,6 +82,7 @@ class Sheet {
     this.maxRows -= n;
   }
   insertRowsAfter(after, n) { this.maxRows += n; }
+  insertColumnsAfter(after, n) { this.maxCols += n; }
   appendRow(arr) { const r = this.getLastRow() + 1; arr.forEach((v, i) => this.set(r, i + 1, v)); }
   setFrozenRows() {}
   getFrozenRows() { return 1; }
@@ -233,8 +234,17 @@ function makeEnv(opts) {
       fetch: (url, o) => {
         fetchLog.push({ url, o });
         const r = opts.fetch ? opts.fetch(url, o) : { code: 404, body: '' };
-        return { getResponseCode: () => r.code, getContentText: () => (typeof r.body === 'string' ? r.body : JSON.stringify(r.body)) };
+        if (r && r.throw) throw new Error(r.throw);
+        return { getResponseCode: () => r.code, getContentText: () => (typeof r.body === 'string' ? r.body : JSON.stringify(r.body)), getHeaders: () => r.headers || {} };
       },
+      fetchAll: (reqs) =>
+        reqs.map((q) => {
+          const url = typeof q === 'string' ? q : q.url;
+          fetchLog.push({ url, o: q });
+          const r = opts.fetch ? opts.fetch(url, q) : { code: 404, body: '' };
+          if (r && r.throw) throw new Error(r.throw);
+          return { getResponseCode: () => r.code, getContentText: () => (typeof r.body === 'string' ? r.body : JSON.stringify(r.body)), getHeaders: () => r.headers || {} };
+        }),
     },
     ContentService: { createTextOutput: (s) => ({ s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     ScriptApp: { getProjectTriggers: () => [], newTrigger: () => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => {} }), everyHours: () => ({ create: () => {} }) }) }), deleteTrigger: () => {} },
