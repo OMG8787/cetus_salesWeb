@@ -128,7 +128,13 @@ async function registerCard(c, confirmText) {
     c = Object.assign({}, c, { company, existingCustomer: '' });
   }
   if (!confirm(confirmText ? confirmText + '\n\n' + describeRegister(c) : describeRegister(c) + '\n\n確定登入嗎？')) return null;
-  const r = await callApi('cardToCustomer', { id: c.id, company });
+  // 新客戶：開發名單（含隱藏名單）裡有這家 → 問要不要從名單轉成客戶
+  let conv = {};
+  if (!c.existingCustomer) {
+    conv = await askProspectConvert(c.company, c.taxId);
+    if (conv === null) return null;
+  }
+  const r = await callApi('cardToCustomer', { id: c.id, company, fromProspect: conv.fromProspect || null });
   if (!r.success) {
     alert(r.message);
     return null;
@@ -140,9 +146,35 @@ async function registerCard(c, confirmText) {
 async function toCustomer(id) {
   const c = cardById(id);
   if (!c) return;
+  // 公司還不是客戶：先問要登入成一般客戶，還是放進開發名單（陌生開發）
+  if (!c.existingCustomer) {
+    const where = await chooseOption('這張名片要登入到哪裡？', `${c.company || '（名片上沒有公司名稱）'}${c.name ? '｜' + c.name : ''}${c.title ? ' ' + c.title : ''}`, [
+      { value: 'customer', label: '👔 一般客戶', desc: '新增到客戶管理（已經在往來、或確定要當客戶經營的）', primary: true },
+      { value: 'prospect', label: '🧭 陌生開發名單', desc: '放進開發名單庫，來源標「名片」，負責業務是你；之後聯繫有進展再轉客戶' },
+    ]);
+    if (!where) return;
+    if (where === 'prospect') return toProspect(c);
+  }
   const r = await registerCard(c);
   if (!r) return;
   alert(r.kind === 'addContact' ? `已新增為「${r.company}」的聯絡窗口` : `已新增客戶「${r.company}」`);
+  await loadCards();
+}
+
+/** 名片放進開發名單（陌生開發）。公司在隱藏名單裡會先問要不要恢復。 */
+async function toProspect(c) {
+  let company = '';
+  if (!c.company) {
+    company = (prompt('這張名片沒有公司名稱，請輸入公司名稱（要寫全名）：') || '').trim();
+    if (!company) return;
+  }
+  let r = await callApi('cardToProspect', { id: c.id, company });
+  if (r && !r.success && r.hidden) {
+    if (!confirm(`${r.message}。\n\n要把它從隱藏名單恢復，並把這張名片的資料加進去嗎？`)) return;
+    r = await callApi('cardToProspect', { id: c.id, company, unhide: true });
+  }
+  if (!r || !r.success) return alert((r && r.message) || '加入開發名單失敗');
+  alert(`${r.added ? '已加入開發名單' : '已併入開發名單裡原本的'}「${r.company}」（來源：${r.source}，標示為陌生開發）`);
   await loadCards();
 }
 

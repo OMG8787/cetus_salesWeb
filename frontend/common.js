@@ -1268,3 +1268,56 @@ function openFollowUpDialog(opts) {
   };
 }
 let followUpLegacyWarned = false;
+
+// ---------------- 選項視窗 / 新增客戶前比對開發名單 ----------------
+/**
+ * 跳出一個有多個按鈕的視窗，回傳使用者選的 value（按取消或關閉回傳 null）。
+ * options: [{ value, label, desc, primary }]
+ */
+function chooseOption(title, message, options) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-overlay choose-modal';
+    wrap.style.display = 'flex';
+    wrap.innerHTML = `<div class="modal-box" style="max-width:520px;">
+      <div class="modal-header"><h3 style="margin:0;">${htmlEsc(title)}</h3><button type="button" data-v="">取消</button></div>
+      <div class="choose-msg">${htmlEsc(message).replace(/\n/g, '<br>')}</div>
+      <div class="choose-opts">${options.map((o, i) => `<button type="button" class="choose-opt${o.primary ? ' primary' : ''}" data-i="${i}"><b>${htmlEsc(o.label)}</b>${o.desc ? `<span>${htmlEsc(o.desc)}</span>` : ''}</button>`).join('')}</div>
+    </div>`;
+    const done = (v) => {
+      wrap.remove();
+      resolve(v);
+    };
+    wrap.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button');
+      if (b && b.dataset.i !== undefined) return done(options[Number(b.dataset.i)].value);
+      if ((b && b.dataset.v === '') || ev.target === wrap) done(null);
+    });
+    document.body.appendChild(wrap);
+  });
+}
+
+/**
+ * 新增客戶前：開發名單（含隱藏名單）裡有這家的話，問要不要「從名單轉成客戶」。
+ * 回傳 { fromProspect: { key, row } }（要轉）、{}（只新增客戶，名單不動）、null（取消新增）。
+ */
+async function askProspectConvert(companyName, taxId) {
+  const name = String(companyName || '').trim();
+  if (!name) return {};
+  let r = null;
+  try {
+    r = await callApi('prospectLookup', { name, taxId: taxId || '' }, { silent: true });
+  } catch (e) {
+    r = null;
+  }
+  const m = r && r.success && r.matches && r.matches[0];
+  if (!m) return {};
+  const where = m.hidden ? `開發名單的「隱藏名單」裡${m.hiddenAt ? `（${String(m.hiddenAt).slice(0, 10)} 隱藏）` : ''}` : `開發名單（陌生開發，狀態：${m.stage}）`;
+  const v = await chooseOption('這家公司在開發名單裡', `「${m.name}」在${where}。\n來源：${m.source || '—'}${m.phone ? '\n電話：' + m.phone : ''}${m.email ? '\nEmail：' + m.email : ''}`, [
+    { value: 'convert', label: '⭐ 從開發名單轉成客戶', desc: '名單的電話、Email、官網、統編、地址會補進沒填的欄位，聯繫紀錄一起帶過去，名單標成「已轉客戶」', primary: true },
+    { value: 'plain', label: '只新增客戶', desc: '名單保持原樣（會顯示「已是客戶」）' },
+  ]);
+  if (v === 'convert') return { fromProspect: { key: m.key, row: m.row } };
+  if (v === 'plain') return {};
+  return null;
+}

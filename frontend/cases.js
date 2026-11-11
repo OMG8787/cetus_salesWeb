@@ -222,7 +222,10 @@ function closeQuickStaffModal() {
 }
 
 async function submitQuickCustomer() {
+  const conv = await askProspectConvert(document.getElementById('quick-customer-name').value);
+  if (conv === null) return;
   const result = await callApi('addCustomer', {
+    fromProspect: conv.fromProspect || null,
     companyName: document.getElementById('quick-customer-name').value,
     contact: document.getElementById('quick-customer-contact').value,
     phone: document.getElementById('quick-customer-phone').value,

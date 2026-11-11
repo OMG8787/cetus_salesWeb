@@ -5,8 +5,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>開發名單庫 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261110d" />
-<link rel="stylesheet" href="dark.css?v=20261110d" />
+<link rel="stylesheet" href="style.css?v=20261111a" />
+<link rel="stylesheet" href="dark.css?v=20261111a" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -126,6 +126,7 @@
         </select>
         <button type="button" class="btn-mini" onclick="resetFilters()">清除全部條件</button>
       </div>
+      <div id="ps-views" class="ps-views"></div>
       <div id="ps-chips" class="ps-chips"></div>
       <div id="ps-bulk" class="ps-bulk" style="display:none;"></div>
       <div class="nc-scroll">
@@ -178,6 +179,7 @@
     <div id="ps-step-check" style="display:none;">
       <div id="pc-progress" class="calc-hint"></div>
       <div id="pc-summary" class="pc-summary"></div>
+      <div id="pc-hidden"></div>
       <div id="pc-diff"></div>
       <div id="pc-cust"></div>
       <div style="margin-top:12px;"><button type="button" id="pc-go" onclick="confirmImport()">確認匯入</button> <button type="button" class="btn-secondary" onclick="backToMap()">上一步</button> <span id="pc-msg" class="calc-hint"></span></div>
@@ -213,11 +215,25 @@
   </div>
 </div>
 
+<div id="ps-conv-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:540px;">
+    <div class="modal-header"><h3 style="margin:0;">⭐ 轉成正式客戶</h3><button type="button" onclick="closeConv(null)">取消</button></div>
+    <div id="pcv-name" class="ps-edit-title"></div>
+    <div class="ps-sub" style="margin:4px 0 10px;">會在「客戶管理」新增這家公司，下面的資料一起帶過去；名單標成「已轉客戶」，之後在客戶管理追蹤。</div>
+    <ul id="pcv-list" class="pcv-list"></ul>
+    <div id="pcv-exist" class="pcv-exist"></div>
+    <label class="ps-label" for="pcv-cat">客戶分類</label>
+    <select id="pcv-cat"><option value="一般客戶" selected>一般客戶</option><option value="機構合作設備商">機構合作設備商</option><option value="器材原廠">器材原廠</option><option value="AOI同業資料">AOI同業資料</option></select>
+    <div class="pcv-btns"><button type="button" class="ps-btn ps-btn-primary" onclick="closeConv('convert')">⭐ 轉成客戶</button><button type="button" class="ps-btn" id="pcv-label" onclick="closeConv('label')">只改狀態，不新增客戶</button></div>
+  </div>
+</div>
+
 <div id="ps-edit-modal" class="modal-overlay" style="display:none;">
   <div class="modal-box" style="max-width:600px;">
     <div class="modal-header"><h3 style="margin:0;">聯繫與開發紀錄</h3><button type="button" onclick="closeModal('ps-edit-modal')">關閉</button></div>
     <div id="pse-title" class="ps-edit-title"></div>
     <div id="pse-sub" class="ps-sub" style="margin-top:2px;"></div>
+    <div id="pse-tools" class="ps-edit-tools ps-write-block"></div>
     <div id="pse-quick" class="ps-quick"></div>
     <div class="ps-logbox ps-write-block">
       <div class="ps-logbox-title">＋ 記錄這次聯繫</div>
@@ -253,10 +269,10 @@
 
 <script src="config.js?v=20261109b"></script>
 <script src="demo.js?v=20261109b"></script>
-<script src="common.js?v=20261109b"></script>
+<script src="common.js?v=20261111a"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261109b"></script>
-<script src="prospects-lib.js?v=20261110d"></script>
-<script src="prospects.js?v=20261110d"></script>
+<script src="prospects-lib.js?v=20261111a"></script>
+<script src="prospects.js?v=20261111a"></script>
 </body>
 </html>

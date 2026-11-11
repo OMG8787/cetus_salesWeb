@@ -5,7 +5,7 @@
  */
 
 const IMPORT_CHUNK = 2000;
-const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', site: '', follow: '', page: 1, size: 30 };
+const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', site: '', follow: '', hidden: '', page: 1, size: 30 };
 let data = null; // 最近一次查詢結果
 let selected = new Set(); // 勾選的 Key
 let selectAllMatching = false; // 是否已選「符合條件的全部」
@@ -32,6 +32,7 @@ function filterBody() {
     assigned: state.assigned,
     site: state.site,
     follow: state.follow,
+    hidden: state.hidden,
   };
 }
 
@@ -63,6 +64,7 @@ function render() {
   document.getElementById('ps-export-btn').style.display = empty ? 'none' : '';
   if (empty) return;
   renderFilters();
+  renderViews();
   renderChips();
   renderRows();
   renderPager();
@@ -72,8 +74,9 @@ function render() {
 function renderStats() {
   const st = window.__psStatus;
   const stageN = (s) => ((data.facets && data.facets.stage) || []).filter((x) => x.v === s).reduce((n, x) => n + x.n, 0);
+  const hid = data.hidden || 0;
   const cards = [
-    ['名單庫', data.all.toLocaleString(), '家公司'],
+    ['名單庫', (data.all - hid).toLocaleString(), hid ? `家公司（另有 ${hid.toLocaleString()} 家隱藏）` : '家公司'],
     ['符合目前條件', (data.total || 0).toLocaleString(), '家'],
     ['開發中 / 已聯絡', (stageN('開發中') + stageN('已聯絡') + stageN('有興趣')).toLocaleString(), '家（目前條件內）'],
   ];
@@ -292,12 +295,12 @@ function renderRows() {
       const src = (r.Source || '').split('、').join('、');
       return `<tr data-i="${i}" class="${r.Optout ? 'ps-optout' : ''}">
         <td><input type="checkbox" data-key="${e(r.Key)}" ${selected.has(r.Key) || selectAllMatching ? 'checked' : ''} ${selectAllMatching ? 'disabled' : ''} /></td>
-        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}${r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源：${e(src)}">📂 ${e(src.split('、').map(shortSource).join('、'))}</div></td>
+        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}${r.ConvertedTo ? ` <span class="ps-conv" title="已轉成客戶：${e(r.ConvertedTo)}（${e(String(r.ConvertedAt || '').slice(0, 10))}）">✅ 已轉客戶</span>` : r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}${r.Hidden ? ` <span class="ps-hid" title="${e(r.HiddenBy || '')} ${e(r.HiddenAt || '')} 隱藏">🙈 隱藏</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源：${e(src)}">📂 ${e(src.split('、').map(shortSource).join('、'))}</div></td>
         <td class="ps-cat">${catHtml(r)}<div class="ps-prod" title="${e(r.Products || '')}">${e((r.Products || '').slice(0, 70))}</div></td>
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
         <td class="ps-stage-cell"><select class="ps-stage" data-stage="${e(r.Stage)}" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${followHtml(r)}${r.AssignedTo ? `<div class="ps-meta">👤 ${e(r.AssignedTo)}</div>` : ''}</td>
-        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button></td>
+        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button>${r.Hidden && !ro ? `<div><button type="button" class="btn-mini ps-unhide" onclick="setHidden([data.rows[${i}].Key], false)">↩ 取消隱藏</button></div>` : ''}</td>
       </tr>`;
     })
     .join('');
@@ -336,6 +339,13 @@ function clearSelection() {
 
 async function changeStage(i, value, selectEl) {
   const r = data.rows[i];
+  if (value === '已轉客戶' && !r.ConvertedTo) {
+    const v = await convertProspect(r, true);
+    if (v !== 'label') {
+      if (!v) selectEl.value = r.Stage;
+      return;
+    }
+  }
   const res = await callApi('prospectUpdate', { key: r.Key, row: r.RowIndex, fields: { Stage: value } }, { silent: true });
   if (!res || !res.success) {
     alert((res && res.message) || '儲存失敗');
@@ -375,6 +385,8 @@ function renderBulk() {
     <button type="button" class="btn-mini" onclick="applyBulk('me')">指派給我</button>
     <button type="button" class="btn-mini" onclick="applyBulk('unassign')">取消指派</button>
     <button type="button" class="btn-mini ps-danger" onclick="applyBulk('optout')">標記拒絕聯絡</button>
+    ${state.hidden ? `<button type="button" class="btn-mini" onclick="applyBulk('unhide')">↩ 取消隱藏</button>` : `<button type="button" class="btn-mini" onclick="applyBulk('hide')">🙈 隱藏（不是客戶）</button>`}
+    ${canDelete() ? `<button type="button" class="btn-mini ps-danger" onclick="bulkDelete()">🗑 刪除</button>` : ''}
     <button type="button" class="btn-mini" onclick="clearSelection();renderRows();renderBulk();">取消勾選</button>`;
 }
 
@@ -398,6 +410,12 @@ async function applyBulk(kind) {
   } else if (kind === 'unassign') {
     set.AssignedTo = '';
     what = '取消指派';
+  } else if (kind === 'hide') {
+    set.Hidden = true;
+    what = `隱藏（標記為不是客戶）。\n\n隱藏後：不會出現在名單和「今天要聯繫」；之後匯入同一家也不會再加進來（匯入時會提醒）。可以在「🙈 隱藏名單」取消隱藏`;
+  } else if (kind === 'unhide') {
+    set.Hidden = false;
+    what = '取消隱藏（回到開發名單）';
   } else {
     set.Optout = true;
     what = '標記為「拒絕聯絡」';
@@ -411,6 +429,128 @@ async function applyBulk(kind) {
   clearSelection();
   await load();
   alert(`完成：已更新 ${r.count.toLocaleString()} 筆`);
+}
+
+/** 刪除勾選的（或符合目前條件的全部）名單，連同聯繫紀錄。 */
+async function bulkDelete() {
+  const n = selectAllMatching ? data.total : selected.size;
+  if (!selectAllMatching && selected.size > 3000) return alert('一次最多勾選 3,000 筆；要處理更多請用「改選符合條件的全部」');
+  if (!confirm(`確定要刪除 ${n.toLocaleString()} 筆名單嗎？\n\n聯繫紀錄會一起刪除，無法復原。\n刪除後之後再匯入同一家會當成新的；如果只是「不是客戶、不想再看到」，請改用「🙈 隱藏」。`)) return;
+  const r = await callApi('prospectDelete', selectAllMatching ? { all: true, filter: filterBody() } : { keys: [...selected] });
+  if (!r || !r.success) return alert((r && r.message) || '刪除失敗');
+  clearSelection();
+  await load();
+  loadStatus();
+  alert(`已刪除 ${r.count.toLocaleString()} 筆${r.logsRemoved ? `（聯繫紀錄 ${r.logsRemoved} 筆）` : ''}`);
+}
+
+/** 隱藏 / 取消隱藏指定的名單。 */
+async function setHidden(keys, on) {
+  if (on && !confirm('隱藏這家公司（標記為不是客戶）？\n\n隱藏後：不會出現在名單和「今天要聯繫」；之後匯入同一家也不會再加進來（匯入時會提醒）。\n可以在「🙈 隱藏名單」取消隱藏。')) return false;
+  const r = await callApi('prospectBulk', { keys, set: { Hidden: on } });
+  if (!r || !r.success) {
+    alert((r && r.message) || '修改失敗');
+    return false;
+  }
+  selected.clear();
+  await load();
+  return true;
+}
+
+// ---------- 隱藏名單 ----------
+function renderViews() {
+  const el = document.getElementById('ps-views');
+  const h = data.hidden || 0;
+  if (!h && !state.hidden) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `<button type="button" class="ps-view ${state.hidden ? '' : 'on'}" onclick="setHiddenView('')">📋 開發名單</button><button type="button" class="ps-view ${state.hidden ? 'on' : ''}" onclick="setHiddenView('only')">🙈 隱藏名單 <span class="ps-n">${h.toLocaleString()}</span></button>${state.hidden ? '<span class="calc-hint">標記為「不是客戶」的公司：不會出現在名單與今天要聯繫，匯入時也不會再加進來。</span>' : ''}`;
+}
+
+function setHiddenView(v) {
+  state.hidden = v;
+  state.page = 1;
+  clearSelection();
+  load();
+}
+
+// ---------- 轉成正式客戶 ----------
+let convResolve = null;
+
+function closeConv(v) {
+  document.getElementById('ps-conv-modal').style.display = 'none';
+  if (convResolve) convResolve(v);
+  convResolve = null;
+}
+
+/** 問要不要轉成客戶。回傳 'convert' / 'label'（只改狀態）/ null（取消）。 */
+function askConvert(r, allowLabel) {
+  document.getElementById('pcv-name').textContent = r.Name;
+  const items = [['統編', r.TaxId], ['公司電話', r.Phone], ['Email', r.Email], ['官網', r.Website], ['地址', r.Address], ['聯絡人', r.Contact], ['來源 / 備註', [r.Source, r.Notes].filter(Boolean).join('；')], ['下次追蹤日', r.NextFollowUp]].filter((x) => x[1]);
+  document.getElementById('pcv-list').innerHTML = items.map(([k, v]) => `<li><span>${e(k)}</span>${e(String(v).slice(0, 120))}</li>`).join('') + '<li><span>聯繫紀錄</span>全部複製到客戶的聯繫紀錄</li>';
+  document.getElementById('pcv-exist').textContent = r.IsCustomer ? `客戶管理裡已經有「${r.IsCustomer}」，不會重複新增；只會把名單標成已轉客戶、聯繫紀錄帶過去。` : '';
+  document.getElementById('pcv-label').style.display = allowLabel ? '' : 'none';
+  document.getElementById('ps-conv-modal').style.display = 'flex';
+  return new Promise((res) => (convResolve = res));
+}
+
+/** 轉成正式客戶。回傳 API 結果（成功）/ 'label'（使用者選只改狀態）/ false（取消或失敗）。 */
+async function convertProspect(r, allowLabel) {
+  const v = await askConvert(r, allowLabel);
+  if (v === 'label') return 'label';
+  if (v !== 'convert') return false;
+  const res = await callApi('prospectToCustomer', { key: r.Key, row: r.RowIndex, category: document.getElementById('pcv-cat').value });
+  if (!res || !res.success) {
+    alert((res && res.message) || '轉客戶失敗');
+    return false;
+  }
+  clearCached('customers');
+  clearCached('casesPageData');
+  alert(`${res.created ? '已新增客戶' : '客戶管理裡原本就有'}「${res.customer}」，名單已標成「已轉客戶」${res.logsCopied ? `；聯繫紀錄 ${res.logsCopied} 筆已帶到客戶管理` : ''}。\n之後請到「客戶管理」追蹤這家。`);
+  if (res.row) {
+    const i = data.rows.findIndex((x) => x.Key === res.row.Key);
+    if (i > -1) data.rows[i] = Object.assign({}, res.row, { IsCustomer: res.customer });
+    if (editRow && editRow.Key === res.row.Key) editRow = data.rows[i] || res.row;
+  }
+  load();
+  return res;
+}
+
+/** 聯繫視窗上方的按鈕：轉客戶 / 隱藏 / 刪除。 */
+function renderEditTools(r) {
+  const el = document.getElementById('pse-tools');
+  const t = [];
+  if (r.ConvertedTo) t.push(`<span class="ps-conv">✅ 已轉客戶：${e(r.ConvertedTo)}（${e(String(r.ConvertedAt || '').slice(0, 10))}）</span> <a class="ps-tool-link" href="customers.html" target="_blank" rel="noopener">到客戶管理 ↗</a>`);
+  else t.push(`<button type="button" class="ps-btn ps-btn-primary" onclick="convertFromEdit()">⭐ 轉成客戶</button>`);
+  t.push(r.Hidden ? `<button type="button" class="ps-btn" onclick="hideFromEdit(false)">↩ 取消隱藏</button>` : `<button type="button" class="ps-btn" onclick="hideFromEdit(true)">🙈 隱藏（不是客戶）</button>`);
+  if (canDelete()) t.push(`<button type="button" class="ps-btn ps-btn-danger" onclick="deleteFromEdit()">🗑 刪除</button>`);
+  el.innerHTML = t.join('');
+}
+
+async function convertFromEdit() {
+  const res = await convertProspect(editRow, false);
+  if (res && res.row) {
+    editRow = Object.assign({}, res.row, { IsCustomer: res.customer });
+    renderEditTools(editRow);
+    document.getElementById('pse-stage').value = editRow.Stage;
+    document.getElementById('pse-next').value = '';
+    document.getElementById('psl-next').value = '';
+    document.getElementById('pse-title').innerHTML = e(editRow.Name) + ` <span class="ps-iscust">已是客戶：${e(res.customer)}</span>`;
+  }
+}
+
+async function hideFromEdit(on) {
+  if (await setHidden([editRow.Key], on)) closeModal('ps-edit-modal');
+}
+
+async function deleteFromEdit() {
+  if (!confirm(`確定刪除「${editRow.Name}」嗎？\n\n聯繫紀錄會一起刪除，無法復原；之後再匯入會當成新的公司。\n如果只是不是客戶、不想再看到，請改用「🙈 隱藏」。`)) return;
+  const r = await callApi('prospectDelete', { keys: [editRow.Key] });
+  if (!r || !r.success) return alert((r && r.message) || '刪除失敗');
+  closeModal('ps-edit-modal');
+  await load();
+  loadStatus();
 }
 
 // ---------- 匯出 ----------
@@ -451,6 +591,7 @@ function openEdit(i) {
   document.getElementById('pse-optout').checked = !!r.Optout;
   document.getElementById('pse-next').value = r.NextFollowUp || '';
   openLogPanel(r);
+  renderEditTools(r);
   document.getElementById('pse-enrich').innerHTML = (r.ExtraContacts ? `其他聯絡方式：${e(r.ExtraContacts)}<br>` : '') + (r.Enriched ? `官網查詢（${e(r.EnrichedAt || '')}）：${e(ENRICH_LABEL[r.Enriched] || r.Enriched)}　${e(r.EnrichNote || '')}` : '');
   document.getElementById('pse-msg').textContent = ro ? '你只有查看權限' : '';
   ['pse-stage', 'pse-next', 'pse-assigned', 'pse-contact', 'pse-phone', 'pse-email', 'pse-website', 'pse-notes', 'pse-optout'].forEach((id) => (document.getElementById(id).disabled = ro));
@@ -463,6 +604,14 @@ function assignMe() {
 
 async function saveEdit() {
   const v = (id) => document.getElementById(id).value.trim();
+  if (v('pse-stage') === '已轉客戶' && !editRow.ConvertedTo) {
+    const c = await convertProspect(editRow, true);
+    if (!c) return;
+    if (c !== 'label') {
+      editRow = Object.assign({}, c.row || editRow);
+      document.getElementById('pse-next').value = '';
+    }
+  }
   const fields = { Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked, NextFollowUp: v('pse-next') };
   const r = await callApi('prospectUpdate', { key: editRow.Key, row: editRow.RowIndex, fields });
   if (!r || !r.success) {
@@ -603,7 +752,7 @@ async function startImport() {
     ev.returnValue = '';
   };
   window.addEventListener('beforeunload', warn);
-  const totals = { added: 0, merged: 0, same: 0, invalid: skipped, dup: 0 };
+  const totals = { added: 0, merged: 0, same: 0, invalid: skipped, dup: 0, hidden: 0 };
   let done = startAt - 1;
   const t0 = Date.now();
   let failed = '';
@@ -627,6 +776,7 @@ async function startImport() {
     totals.same += r.same;
     totals.invalid += r.invalid;
     totals.dup += r.duplicateInBatch;
+    totals.hidden += r.hiddenSkipped || 0;
     done += chunk.length;
     const pct = Math.round((done / records.length) * 100);
     bar.style.width = pct + '%';
@@ -639,7 +789,7 @@ async function startImport() {
   window.removeEventListener('beforeunload', warn);
   importing = false;
   document.getElementById('ps-cancel').style.display = 'none';
-  const summary = `新增 ${totals.added.toLocaleString()}、合併 ${totals.merged.toLocaleString()}、已存在 ${totals.same.toLocaleString()}、略過 ${totals.invalid.toLocaleString()}`;
+  const summary = `新增 ${totals.added.toLocaleString()}、合併 ${totals.merged.toLocaleString()}、已存在 ${totals.same.toLocaleString()}、略過 ${totals.invalid.toLocaleString()}${totals.hidden ? `、隱藏名單略過 ${totals.hidden.toLocaleString()}` : ''}`;
   if (failed) {
     text.textContent = `⚠️ 匯入中斷：${failed}`;
     log.textContent += `\n已處理到第 ${done.toLocaleString()} 筆。重新選同一個檔案、把「從第幾筆開始」填 ${(done + 1).toLocaleString()} 即可接續。\n${summary}`;
@@ -666,6 +816,7 @@ let checkResults = [];
 let checkSkipped = 0;
 const diffChoice = {}; // 列索引 → 'update' / 'keep'
 const custChoice = {}; // 列索引 → true（仍加入名單）
+const hiddenChoice = {}; // 列索引 → true（從隱藏名單恢復並匯入）
 const CHECK_CHUNK = 2000;
 
 function backToMap() {
@@ -683,9 +834,10 @@ async function checkImport() {
   checkResults = [];
   Object.keys(diffChoice).forEach((k) => delete diffChoice[k]);
   Object.keys(custChoice).forEach((k) => delete custChoice[k]);
+  Object.keys(hiddenChoice).forEach((k) => delete hiddenChoice[k]);
   document.getElementById('ps-step-map').style.display = 'none';
   document.getElementById('ps-step-check').style.display = '';
-  ['pc-summary', 'pc-diff', 'pc-cust', 'pc-msg'].forEach((id) => (document.getElementById(id).innerHTML = ''));
+  ['pc-summary', 'pc-hidden', 'pc-diff', 'pc-cust', 'pc-msg'].forEach((id) => (document.getElementById(id).innerHTML = ''));
   document.getElementById('pc-go').disabled = true;
   const prog = document.getElementById('pc-progress');
   for (let off = 0; off < records.length; off += CHECK_CHUNK) {
@@ -728,11 +880,14 @@ function renderCheck() {
   const nNew = by('new').length, same = by('same'), diff = by('diff'), cust = by('customer'), dup = by('dup').length, invalid = by('invalid').length + checkSkipped;
   const nUpd = diff.filter((x) => diffChoice[x.i] === 'update').length;
   const nCust = cust.filter((x) => custChoice[x.i]).length;
+  const hid = by('hidden');
+  const nHid = hid.filter((x) => hiddenChoice[x.i]).length;
   document.getElementById('pc-summary').innerHTML = [
     ['新的公司（會新增）', nNew, '#27ae60'],
     ['已存在、資料相同（不新增）', same.length, '#7f8c8d'],
     ['已存在、資料不同', diff.length, '#d35400'],
     ['已經是客戶', cust.length, '#2c5aa0'],
+    ['在隱藏名單（不是客戶）', hid.length, '#8e44ad'],
     ['同一份檔案裡重複', dup, '#95a5a6'],
     ['沒有公司名稱（略過）', invalid, '#95a5a6'],
   ]
@@ -740,6 +895,16 @@ function renderCheck() {
     .map(([l, n, c]) => `<span class="sch-chip" style="border-color:${c};color:${c};"><b>${n.toLocaleString()}</b> ${l}</span>`)
     .join('');
   const SHOW = 300;
+  document.getElementById('pc-hidden').innerHTML = hid.length
+    ? `<h4>🙈 在隱藏名單裡的公司（${hid.length.toLocaleString()} 家）：之前標記為「不是客戶」</h4>
+      <div class="calc-hint">預設略過（不新增、不更新）。勾選的會從隱藏名單恢復，並用檔案裡的資料補上空白欄位。</div>
+      <div style="margin:6px 0;"><button type="button" class="btn-mini" onclick="setAllHidden(false)">全部略過</button> <button type="button" class="btn-mini" onclick="setAllHidden(true)">全部恢復</button> <span class="calc-hint">目前勾選恢復 ${nHid} 家</span></div>
+      <div class="nc-scroll" style="max-height:30vh;overflow:auto;"><table class="nc-table pc-table"><thead><tr><th>恢復</th><th>公司</th><th>隱藏時間 / 誰隱藏的</th></tr></thead><tbody>
+      ${hid
+        .slice(0, SHOW)
+        .map((x) => `<tr><td><input type="checkbox" ${hiddenChoice[x.i] ? 'checked' : ''} onchange="hiddenChoice[${x.i}]=this.checked;renderCheck()" style="width:auto;" /></td><td><b>${e(x.name)}</b><div class="calc-hint">${e(x.stage)}</div></td><td>${e(String(x.hiddenAt || '').slice(0, 16))} ${e(x.hiddenBy || '')}</td></tr>`)
+        .join('')}</tbody></table></div>`
+    : '';
   document.getElementById('pc-diff').innerHTML = diff.length
     ? `<h4>已存在但資料不同（${diff.length.toLocaleString()} 家）：要更新成檔案裡的資料嗎？</h4>
       <div class="calc-hint">「更新」= 有差異的欄位改成新的；「保留原本」= 這家完全不動。開發狀態、聯繫紀錄、負責業務不會被改。</div>
@@ -765,14 +930,19 @@ function renderCheck() {
         .map((x) => `<tr><td><input type="checkbox" ${custChoice[x.i] ? 'checked' : ''} onchange="custChoice[${x.i}]=this.checked;renderCheck()" style="width:auto;" /></td><td>${e(checkRecords[x.i].Name)}</td><td>${e(x.customer)}</td></tr>`)
         .join('')}</tbody></table></div>`
     : '';
-  const total = nNew + nUpd + nCust;
+  const total = nNew + nUpd + nCust + nHid;
   const btn = document.getElementById('pc-go');
-  btn.textContent = total ? `確認匯入（新增 ${(nNew + nCust).toLocaleString()} 家${nUpd ? '、更新 ' + nUpd.toLocaleString() + ' 家' : ''}）` : '沒有需要新增或更新的資料';
+  btn.textContent = total ? `確認匯入（新增 ${(nNew + nCust).toLocaleString()} 家${nUpd ? '、更新 ' + nUpd.toLocaleString() + ' 家' : ''}${nHid ? '、恢復 ' + nHid.toLocaleString() + ' 家' : ''}）` : '沒有需要新增或更新的資料';
   btn.disabled = !total;
 }
 
 function setAllDiff(v) {
   checkResults.filter((x) => x.status === 'diff').forEach((x) => (diffChoice[x.i] = v));
+  renderCheck();
+}
+
+function setAllHidden(v) {
+  checkResults.filter((x) => x.status === 'hidden').forEach((x) => (hiddenChoice[x.i] = v));
   renderCheck();
 }
 
@@ -788,6 +958,7 @@ function confirmImport() {
     if (x.status === 'new') final.push(rec);
     else if (x.status === 'diff' && diffChoice[x.i] === 'update') final.push(Object.assign({ _update: true }, rec));
     else if (x.status === 'customer' && custChoice[x.i]) final.push(rec);
+    else if (x.status === 'hidden' && hiddenChoice[x.i]) final.push(Object.assign({ _unhide: true }, rec));
   });
   if (!final.length) return;
   importFinal = final;
@@ -1028,6 +1199,7 @@ async function addLog() {
   msg.textContent = '✓ 已記錄' + (r.row.NextFollowUp ? `，下次追蹤 ${r.row.NextFollowUp}` : '');
   loadLogs(r.row.Key);
   renderRows();
+  if (r.row.Stage === '已轉客戶' && !r.row.ConvertedTo) await convertFromEdit();
 }
 
 window.refreshPageData = () => load();

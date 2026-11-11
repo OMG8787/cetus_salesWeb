@@ -6359,6 +6359,8 @@ function handleAddCustomer(body) {
   if (!String(body.companyName || '').trim()) return { success: false, message: '公司名稱不能空白' };
   var dup = findDuplicateCustomerRow_(body.companyName, 0);
   if (dup) return { success: false, message: '已經有「' + String(body.companyName).trim() + '」這間客戶了（第 ' + dup + ' 列），不能重複新增。要補資料請直接編輯那一筆。' };
+  var fromP = body.fromProspect ? psConvertSource_(body.fromProspect) : null;
+  if (fromP) body = psFillFromProspect_(body, fromP.found.obj);
   var website = cleanWebsite_(body.website);
   if (website === null) return { success: false, message: '公司網址格式不正確（例如 www.example.com 或 https://www.example.com）' };
   var sheet = getSheet(SHEET_CUSTOMERS);
@@ -6386,8 +6388,8 @@ function handleAddCustomer(body) {
   appendObjectRow(SHEET_CUSTOMERS, customer);
   var rowNum = sheet.getLastRow();
   syncCustomerFollowUpToCalendar(rowNum, header, sheet, customer);
-
-  return { success: true };
+  var conv = fromP ? psFinishConvert_(fromP, customer.CompanyName, body._user) : null;
+  return conv ? { success: true, fromProspect: true, logsCopied: conv.logsCopied } : { success: true };
 }
 
 // ---- 客戶資料修改：比對差異、記下修改紀錄、公司改名連動 ----
@@ -6940,7 +6942,7 @@ function botPerms_() {
     botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
     botKbImageUpload: ['bot', 'w'], botLeads: ['bot', 'r'], botLeadDelete: ['bot', 'd'],
     botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'],
-    getNameCards: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardDelete: ['customers', 'w'],
+    getNameCards: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardToProspect: ['customers', 'w'], cardDelete: ['customers', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -6982,6 +6984,7 @@ function botRoutes_() {
     getNameCards: { auth: true, fn: handleGetNameCards },
     cardUpdate: { auth: true, fn: handleCardUpdate },
     cardToCustomer: { auth: true, fn: handleCardToCustomer },
+    cardToProspect: { auth: true, fn: handleCardToProspect },
     cardDelete: { auth: true, fn: handleCardDelete },
   };
   if (typeof botStaffRoutes_ === 'function') botMergePerms_(base, botStaffRoutes_());
@@ -10482,7 +10485,7 @@ function botCardsRun_(ctx, w, user) {
     var result = '';
     try {
       if (x.kind === 'newCustomer') {
-        var r1 = handleAddCustomer({ _user: user, companyName: m.company, contact: m.name, phone: m.phone, email: m.email, companyPhone: m.companyPhone, address: m.address, taxId: m.taxId, website: m.website, category: x.category || '一般客戶', urgency: '中', notes: botCardNotes_(m, batch) });
+        var r1 = handleAddCustomer({ _user: user, companyName: m.company, contact: m.name, phone: m.phone, email: m.email, companyPhone: m.companyPhone, address: m.address, taxId: m.taxId, website: m.website, category: x.category || '一般客戶', urgency: '中', notes: botCardNotes_(m, batch), fromProspect: d.fromProspect || null });
         if (!r1.success) throw new Error(r1.message);
         done.newCustomers++;
         result = '新增客戶 ' + m.company;
@@ -10585,7 +10588,7 @@ function handleCardToCustomer(body) {
   }
   var ctx = { ownerKey: body._user.username };
   try {
-    botCardsRun_(ctx, { action: 'saveCards', data: { ids: [card.id], overrides: ovAll, category: body.category } }, body._user);
+    botCardsRun_(ctx, { action: 'saveCards', data: { ids: [card.id], overrides: ovAll, category: body.category, fromProspect: body.fromProspect || null } }, body._user);
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -11369,7 +11372,7 @@ function handleCopyGenerate(body) {
 // ============================================================
 var PS_SHEET = 'Prospects';
 // 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
-var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt'];
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt'];
 var PS_LOG_SHEET = 'ProspectLogs';
 var PS_LOG_COLS = ['ID', 'Key', 'Time', 'User', 'Method', 'Content', 'Stage', 'NextFollowUp'];
 var PS_LOG_METHODS = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'];
@@ -11394,6 +11397,7 @@ function prospectPerms_() {
     prospectEnrichPlan: ['customers', 'w'], prospectEnrich: ['customers', 'w'],
     prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'], workAgenda: ['customers', 'r'], prospectImportCheck: ['customers', 'w'],
     prospectClear: ['admin', 'd'],
+    prospectToCustomer: ['customers', 'w'], prospectDelete: ['customers', 'd'], prospectLookup: ['customers', 'r'],
   };
 }
 
@@ -11412,6 +11416,9 @@ function prospectRoutes_() {
     prospectImportCheck: { auth: true, fn: handleProspectImportCheck },
     prospectLogAdd: { auth: true, fn: handleProspectLogAdd },
     prospectClear: { auth: true, fn: handleProspectClear },
+    prospectToCustomer: { auth: true, fn: handleProspectToCustomer },
+    prospectDelete: { auth: true, fn: handleProspectDelete },
+    prospectLookup: { auth: true, fn: handleProspectLookup },
   };
 }
 
@@ -11575,7 +11582,7 @@ function psKey_(r) {
 function psDerive_(r) {
   r.City = psCityOf_(r.Address) || r.City || '';
   r.CatCodes = psCatParse_(r.Category).map(function (c) { return c.code; }).join('|');
-  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '') + (r.Enriched ? 'C' : ''); // C = 已經查過官網 / 聯絡方式
+  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '') + (r.Enriched ? 'C' : '') + (r.Hidden ? 'H' : ''); // C = 已經查過官網 / 聯絡方式；H = 隱藏
   r.Search = [r.Name, r.TaxId, r.Owner, r.Products, r.Address, r.Phone, r.Email, r.Website, r.Contact].join(' ').toLowerCase().replace(/台/g, '臺').replace(/\s+/g, ' ').slice(0, 400);
   r.Key = psKey_(r);
   return r;
@@ -11673,7 +11680,7 @@ function handleProspectImport(body) {
       if (!target && rec.TaxId) target = rec.RegNo ? taxNoReg[rec.TaxId] : taxFirst[rec.TaxId];
       if (!target && !rec.TaxId && !rec.RegNo) target = nameMap[psNameKey_(rec.Name)];
       if (target) {
-        steps.push({ row: target, rec: rec, isNew: false, forceUpdate: !!(o && o._update) });
+        steps.push({ row: target, rec: rec, isNew: false, forceUpdate: !!(o && o._update), unhide: !!(o && o._unhide) });
         return;
       }
       var row = nextRow++;
@@ -11697,6 +11704,8 @@ function handleProspectImport(body) {
     var merged = 0;
     var same = 0;
     var dupInBatch = 0;
+    var hiddenSkipped = 0;
+    var hiddenSeen = {};
     var changedRows = {};
     steps.forEach(function (s) {
       if (s.isNew) {
@@ -11706,7 +11715,19 @@ function handleProspectImport(body) {
       }
       if (!objs[s.row]) objs[s.row] = psObj_(read[s.row]);
       var ex = objs[s.row];
-      var changed = psMergeInto_(ex, s.rec, update || s.forceUpdate);
+      var unhid = false;
+      if (ex.Hidden) {
+        if (!s.unhide) {
+          if (!hiddenSeen[s.row]) hiddenSkipped++;
+          hiddenSeen[s.row] = true;
+          return; // 隱藏名單：不新增、不更新
+        }
+        ex.Hidden = '';
+        ex.HiddenAt = '';
+        ex.HiddenBy = '';
+        unhid = true;
+      }
+      var changed = psMergeInto_(ex, s.rec, update || s.forceUpdate) || unhid;
       if (changed) {
         ex.UpdatedAt = now;
         psDerive_(ex);
@@ -11741,7 +11762,7 @@ function handleProspectImport(body) {
       i2 = j + 1;
     }
     PropertiesService.getScriptProperties().setProperty('PS_LAST_IMPORT', JSON.stringify({ time: now, source: source, by: (body._user && body._user.username) || '' }));
-    return { success: true, added: added, merged: merged, same: same, invalid: invalid, duplicateInBatch: dupInBatch, total: Math.max(0, sh.getLastRow() - 1) };
+    return { success: true, added: added, merged: merged, same: same, invalid: invalid, duplicateInBatch: dupInBatch, hiddenSkipped: hiddenSkipped, total: Math.max(0, sh.getLastRow() - 1) };
   });
 }
 
@@ -11758,7 +11779,8 @@ function psFilter_(b) {
   var site = b.site === 'unchecked' || b.site === 'checked' ? b.site : '';
   var follow = b.follow === 'due' || b.follow === 'planned' || b.follow === 'none' ? b.follow : '';
   var dueBy = isDateStr(b.dueBy) ? String(b.dueBy) : '';
-  return { q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site, follow: follow, dueBy: dueBy };
+  var hidden = b.hidden === 'only' ? 'only' : '';
+  return { hidden: hidden, q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site, follow: follow, dueBy: dueBy };
 }
 
 function psSet_(arr) {
@@ -11777,9 +11799,13 @@ function psRun_(scan, search, asg, f, me, fol, today) {
   var sSet = psSet_(f.sources), cSet = psSet_(f.cities), kSet = psSet_(f.cats), tSet = psSet_(f.stages);
   var fac = { source: {}, city: {}, cat: {}, stage: {}, has: {} };
   var hits = [];
+  var hiddenN = 0;
   var bump = function (m, k) { m[k] = (m[k] || 0) + 1; };
   for (var i = 0; i < scan.length; i++) {
     var r = scan[i];
+    var hid = String(r[4]).indexOf('H') > -1;
+    if (hid) hiddenN++;
+    if (f.hidden === 'only' ? !hid : hid) continue; // 隱藏名單：平常不出現、不計入任何統計
     var srcs = String(r[0]).split('、');
     var city = String(r[1]) || '未知';
     var cats = String(r[2]).split('|');
@@ -11813,9 +11839,9 @@ function psRun_(scan, search, asg, f, me, fol, today) {
     if (miss === 0 || which === 1) bump(fac.city, city);
     if (miss === 0 || which === 2) cats.forEach(function (x) { if (x) bump(fac.cat, x); });
     if (miss === 0 || which === 3) bump(fac.stage, stage);
-    if (miss === 0 || which === 4) for (var p = 0; p < has.length; p++) bump(fac.has, has.charAt(p));
+    if (miss === 0 || which === 4) for (var p = 0; p < has.length; p++) if (has.charAt(p) !== 'H') bump(fac.has, has.charAt(p));
   }
-  return { hits: hits, facets: fac };
+  return { hits: hits, facets: fac, hidden: hiddenN };
 }
 
 function psFacetList_(m, order) {
@@ -11829,7 +11855,7 @@ function psFacetList_(m, order) {
 function psMatch_(sh, body) {
   var f = psFilter_(body);
   var n = Math.max(0, sh.getLastRow() - 1);
-  if (!n) return { f: f, n: 0, hits: [], facets: { source: {}, city: {}, cat: {}, stage: {}, has: {} } };
+  if (!n) return { f: f, n: 0, hits: [], hidden: 0, facets: { source: {}, city: {}, cat: {}, stage: {}, has: {} } };
   var scan = sh.getRange(2, 2, n, 5).getValues();
   var search = f.q.length ? psColVals_(sh, psCol_('Search'), n) : null;
   var me = String((body._user && body._user.username) || '');
@@ -11874,7 +11900,7 @@ function handleProspectStatus(body) {
 
 function handleProspectQuery(body) {
   var sh = psSheet_(false);
-  var empty = { success: true, ready: !!sh, total: 0, all: 0, page: 1, pages: 1, rows: [], facets: { source: [], city: [], cat: [], stage: [], has: [] }, industry: PS_INDUSTRY, stages: PS_STAGES };
+  var empty = { success: true, ready: !!sh, total: 0, all: 0, hidden: 0, page: 1, pages: 1, rows: [], facets: { source: [], city: [], cat: [], stage: [], has: [] }, industry: PS_INDUSTRY, stages: PS_STAGES };
   if (!sh || sh.getLastRow() < 2) return empty;
   var res = psMatch_(sh, body);
   var size = Math.min(100, Math.max(10, Math.floor(Number(body.size)) || 30));
@@ -11883,7 +11909,7 @@ function handleProspectQuery(body) {
   var rowNums = res.hits.slice((page - 1) * size, page * size).map(function (i) { return i + 2; });
   var read = psReadRows_(sh, rowNums);
   return {
-    success: true, ready: true, all: res.n, total: res.hits.length, page: page, pages: pages, size: size,
+    success: true, ready: true, all: res.n, hidden: res.hidden, total: res.hits.length, page: page, pages: pages, size: size,
     rows: psMarkCustomers_(rowNums.map(function (r) { return psOut_(read[r], r); })),
     facets: {
       source: psFacetList_(res.facets.source),
@@ -11972,6 +11998,11 @@ function handleProspectBulk(body) {
     if (set.Stage !== undefined) upd.Stage = psCheckStage_(set.Stage);
     if (set.AssignedTo !== undefined) upd.AssignedTo = psAssignee_(set.AssignedTo, body);
     if (set.Optout !== undefined) upd.Optout = set.Optout ? 'Y' : '';
+    if (set.Hidden !== undefined) {
+      upd.Hidden = set.Hidden ? 'Y' : '';
+      upd.HiddenAt = set.Hidden ? nowStr() : '';
+      upd.HiddenBy = set.Hidden ? String((body._user && body._user.username) || '') : '';
+    }
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -11993,11 +12024,13 @@ function handleProspectBulk(body) {
     }
     if (!hits.length) return { success: true, count: 0 };
     var stamp = nowStr();
-    Object.keys(upd).concat(['UpdatedAt']).forEach(function (c) {
+    var cols = Object.keys(upd).concat(['UpdatedAt']);
+    if (upd.Hidden !== undefined) cols.push('Has'); // 隱藏記號也寫在 Has（H），篩選時不用多讀一欄
+    cols.forEach(function (c) {
       var range = sh.getRange(2, psCol_(c), n, 1);
       var vals = range.getValues();
       hits.forEach(function (i) {
-        vals[i][0] = c === 'UpdatedAt' ? stamp : upd[c];
+        vals[i][0] = c === 'UpdatedAt' ? stamp : c === 'Has' ? String(vals[i][0]).replace(/H/g, '') + (upd.Hidden ? 'H' : '') : upd[c];
       });
       range.setValues(vals);
     });
@@ -12460,7 +12493,8 @@ function handleProspectEnrichPlan(body) {
     var hasCol = sh.getRange(2, psCol_('Has'), n, 1).getValues();
     hits = [];
     keysCol.forEach(function (k, i) {
-      if (want[k] && !(onlyNew && String(hasCol[i][0]).indexOf('C') > -1)) hits.push(i);
+      var hv = String(hasCol[i][0]);
+      if (want[k] && hv.indexOf('H') < 0 && !(onlyNew && hv.indexOf('C') > -1)) hits.push(i);
     });
   } else {
     var f = Object.assign({}, body.filter || {}, { _user: body._user });
@@ -12826,6 +12860,7 @@ function handleProspectImportCheck(body) {
   var out = plan.map(function (p) {
     if (p.status !== 'exist') return p;
     var ex = psObj_(read[p.row]);
+    if (ex.Hidden) return { i: p.i, status: 'hidden', key: ex.Key, name: ex.Name, hiddenAt: String(ex.HiddenAt || ''), hiddenBy: String(ex.HiddenBy || ''), stage: ex.Stage || PS_STAGES[0] };
     var diffs = [];
     PS_DIFF_FIELDS.forEach(function (f) {
       var nv = p.rec[f[0]];
@@ -12838,7 +12873,222 @@ function handleProspectImportCheck(body) {
     if (c) r.customer = c;
     return r;
   });
-  var count = { new: 0, same: 0, diff: 0, customer: 0, dup: 0, invalid: 0 };
+  var count = { new: 0, same: 0, diff: 0, customer: 0, dup: 0, invalid: 0, hidden: 0 };
   out.forEach(function (r) { count[r.status]++; });
   return { success: true, results: out, count: count };
+}
+
+// ------------------------------------------------------------
+// 開發名單：轉成正式客戶、隱藏（不是客戶，之後匯入也不會再加進來）、刪除、新增客戶時比對名單、名片加入開發名單
+// ------------------------------------------------------------
+var PS_CUSTOMER_CATS = ['AOI同業資料', '器材原廠', '機構合作設備商', '一般客戶'];
+
+/** 找到要轉的名單列：{ key, row } → { sh, found } 或 null。 */
+function psConvertSource_(ref) {
+  if (!ref || !ref.key) return null;
+  var sh = psSheet_(false);
+  if (!sh) return null;
+  var found = psFindRow_(sh, ref.key, ref.row);
+  return found ? { sh: sh, found: found } : null;
+}
+
+function psProspectNotes_(o) {
+  return ['由開發名單轉入（來源：' + (o.Source || '—') + '，' + todayStr() + '）', o.Products ? '主要產品：' + o.Products : '', o.Category ? '產業：' + o.Category : '', o.Notes].filter(Boolean).join('；').slice(0, 1000);
+}
+
+/** 新增客戶的表單沒填的欄位，用名單的資料補上（使用者填的優先）。 */
+function psFillFromProspect_(body, o) {
+  var b = Object.assign({}, body);
+  if (!b.contact) b.contact = o.Contact;
+  if (!b.companyPhone && !b.phone) b.companyPhone = o.Phone;
+  if (!b.email) b.email = o.Email;
+  if (!b.taxId) b.taxId = o.TaxId;
+  if (!b.address) b.address = o.Address;
+  if (!b.website && o.Website && cleanWebsite_(o.Website) !== null) b.website = o.Website;
+  if (!b.nextFollowUpDate && o.NextFollowUp) b.nextFollowUpDate = o.NextFollowUp;
+  var pn = psProspectNotes_(o);
+  b.notes = b.notes ? String(b.notes) + '\n' + pn : pn;
+  return b;
+}
+
+/** 名單的聯繫紀錄複製到客戶的聯繫紀錄（保留原本日期），回傳筆數。 */
+function psCopyLogsToCustomer_(key, companyName) {
+  var lsh = psLogSheet_(false);
+  if (!lsh || lsh.getLastRow() < 2) return 0;
+  var vals = lsh.getRange(2, 1, lsh.getLastRow() - 1, PS_LOG_COLS.length).getValues();
+  var logs = [];
+  vals.forEach(function (v) {
+    var o = {};
+    PS_LOG_COLS.forEach(function (c, j) { o[c] = v[j] == null ? '' : String(v[j]); });
+    if (o.Key === key) logs.push(o);
+  });
+  logs.sort(function (a, b) { return a.Time < b.Time ? -1 : a.Time > b.Time ? 1 : Number(a.ID) - Number(b.ID); });
+  logs.forEach(function (l) {
+    appendObjectRow(SHEET_CONTACT_LOGS, { Date: String(l.Time).slice(0, 10), CreatedAt: l.Time, CompanyName: companyName, Contact: '', Method: l.Method, Summary: '【開發名單】' + l.Content + (l.Stage ? '（狀態：' + l.Stage + '）' : ''), Salesperson: l.User, CaseID: '', Changes: '' });
+  });
+  return logs.length;
+}
+
+/** 名單標成「已轉客戶」：記下客戶名稱、取消隱藏、清掉名單的追蹤日（之後在客戶管理追蹤），聯繫紀錄複製過去。 */
+function psFinishConvert_(src, customerName, user) {
+  return withLock_(function () {
+    var found = psFindRow_(src.sh, src.found.obj.Key, src.found.row) || src.found;
+    var o = found.obj;
+    var copied = o.ConvertedTo ? 0 : psCopyLogsToCustomer_(o.Key, customerName);
+    var now = nowStr();
+    o.Stage = '已轉客戶';
+    o.ConvertedTo = customerName;
+    o.ConvertedAt = now;
+    o.Hidden = '';
+    o.HiddenAt = '';
+    o.HiddenBy = '';
+    o.NextFollowUp = '';
+    if (!o.AssignedTo && user) o.AssignedTo = String(user.username || '');
+    o.UpdatedAt = now;
+    psDerive_(o);
+    src.sh.getRange(found.row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+    return { logsCopied: copied, row: psOut_(psArr_(o), found.row) };
+  });
+}
+
+/** 一鍵轉客戶：客戶管理還沒有這家就用名單資料新增；已經有了就只把名單標成已轉客戶。 */
+function handleProspectToCustomer(body) {
+  var src = psConvertSource_({ key: body.key, row: body.row });
+  if (!src) return { success: false, message: '找不到這筆名單（可能已被刪除），請重新整理' };
+  var o = src.found.obj;
+  if (o.ConvertedTo) return { success: false, message: '這家已經轉成客戶了（客戶名稱：' + o.ConvertedTo + '）' };
+  var exName = psCustomerOf_(psCustomerIndex_(), o);
+  if (!exName) {
+    var dupRow = findDuplicateCustomerRow_(o.Name, 0);
+    if (dupRow) exName = String(getSheet(SHEET_CUSTOMERS).getRange(dupRow, 1).getValue());
+  }
+  var created = false;
+  if (!exName) {
+    var cat = PS_CUSTOMER_CATS.indexOf(String(body.category || '')) > -1 ? String(body.category) : '一般客戶';
+    var r = handleAddCustomer({ _user: body._user, companyName: o.Name, category: cat, urgency: '中', fromProspect: { key: o.Key, row: src.found.row } });
+    if (!r.success) return r;
+    var after = psConvertSource_({ key: o.Key, row: src.found.row });
+    return { success: true, created: true, customer: o.Name, logsCopied: r.logsCopied || 0, row: after ? psOut_(psArr_(after.found.obj), after.found.row) : null };
+  }
+  var done = psFinishConvert_(src, exName, body._user);
+  return { success: true, created: created, customer: exName, logsCopied: done.logsCopied, row: done.row };
+}
+
+/** 新增客戶前比對：開發名單（含隱藏名單）裡有沒有這家（統編或名稱相同，還沒轉過客戶的）。 */
+function handleProspectLookup(body) {
+  var name = psClean_(body.name, 120);
+  var tax = psTaxId_(body.taxId);
+  if (!name && !tax) return { success: true, matches: [] };
+  var sh = psSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return { success: true, matches: [] };
+  var n = sh.getLastRow() - 1;
+  var names = psColVals_(sh, psCol_('Name'), n);
+  var taxes = psColVals_(sh, psCol_('TaxId'), n);
+  var nk = name ? psNameKey_(name) : '';
+  var rows = [];
+  for (var i = 0; i < n && rows.length < 5; i++) {
+    if ((tax && taxes[i] === tax) || (nk && psNameKey_(names[i]) === nk)) rows.push(i + 2);
+  }
+  var read = psReadRows_(sh, rows);
+  var matches = [];
+  rows.forEach(function (r) {
+    var o = psObj_(read[r]);
+    if (o.ConvertedTo) return;
+    matches.push({ key: o.Key, row: r, name: o.Name, stage: o.Stage || PS_STAGES[0], hidden: !!o.Hidden, hiddenAt: String(o.HiddenAt || ''), source: o.Source, taxId: o.TaxId, phone: o.Phone, email: o.Email, website: o.Website, contact: o.Contact, address: o.Address, assignedTo: o.AssignedTo });
+  });
+  return { success: true, matches: matches };
+}
+
+/** 刪除名單（勾選的 keys，或 all = true 時刪除符合目前篩選的全部），連同聯繫紀錄。刪掉的之後可以再匯入；不想再出現請用「隱藏」。 */
+function handleProspectDelete(body) {
+  return withLock_(function () {
+    var sh = psSheet_(false);
+    if (!sh || sh.getLastRow() < 2) return { success: true, count: 0 };
+    var n = sh.getLastRow() - 1;
+    var keysCol = psColVals_(sh, 1, n);
+    var hits;
+    if (Array.isArray(body.keys)) {
+      var want = psSet_(psList_(body.keys, 3000));
+      hits = [];
+      keysCol.forEach(function (k, i) { if (want[k]) hits.push(i); });
+    } else if (body.all === true) {
+      hits = psMatch_(sh, Object.assign({}, body.filter || {}, { _user: body._user })).hits.slice().sort(function (a, b) { return a - b; });
+    } else {
+      return { success: false, message: '沒有指定要刪除哪些名單' };
+    }
+    if (!hits.length) return { success: true, count: 0 };
+    var del = psSet_(hits.map(String));
+    var gone = {};
+    hits.forEach(function (i) { gone[keysCol[i]] = true; });
+    // 連續的列一次刪；太分散就整張重寫
+    var runs = [];
+    hits.forEach(function (i) {
+      var last = runs[runs.length - 1];
+      if (last && i === last.end + 1) last.end = i;
+      else runs.push({ start: i, end: i });
+    });
+    if (runs.length <= 50 && hits.length < n) {
+      for (var k = runs.length - 1; k >= 0; k--) sh.deleteRows(runs[k].start + 2, runs[k].end - runs[k].start + 1);
+    } else {
+      var vals = sh.getRange(2, 1, n, PS_COLS.length).getValues();
+      var keep = vals.filter(function (v, i) { return !del[String(i)]; });
+      sh.getRange(2, 1, n, PS_COLS.length).clearContent();
+      if (keep.length) sh.getRange(2, 1, keep.length, PS_COLS.length).setValues(keep);
+    }
+    // 聯繫紀錄
+    var lsh = psLogSheet_(false);
+    var logsRemoved = 0;
+    if (lsh && lsh.getLastRow() >= 2) {
+      var ln = lsh.getLastRow() - 1;
+      var lv = lsh.getRange(2, 1, ln, PS_LOG_COLS.length).getValues();
+      var lkeep = lv.filter(function (v) { return !gone[String(v[1])]; });
+      logsRemoved = ln - lkeep.length;
+      if (logsRemoved) {
+        lsh.getRange(2, 1, ln, PS_LOG_COLS.length).clearContent();
+        if (lkeep.length) lsh.getRange(2, 1, lkeep.length, PS_LOG_COLS.length).setValues(lkeep);
+      }
+    }
+    return { success: true, count: hits.length, logsRemoved: logsRemoved };
+  });
+}
+
+/** 名片加入開發名單（陌生開發）：來源標「名片」，負責業務是自己；公司在隱藏名單裡要使用者確認（unhide = true）才恢復。 */
+function handleCardToProspect(body) {
+  var card;
+  try {
+    card = nameCardMine_(body, body.id);
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  if (card.status === 'saved') return { success: false, message: '這張名片已經登入過了（' + card.result + '）' };
+  if (card.status !== 'pending') return { success: false, message: '這張名片已經不在專區裡了' };
+  var m = botCardMerge_(card, body.company ? { company: String(body.company) } : {});
+  if (!m.company) return { success: false, needCompany: true, message: '名片上沒有公司名稱' };
+  var hit = botFindCustomerRow_(m.company);
+  if (hit) return { success: false, message: '「' + hit.obj['CompanyName'] + '」已經是客戶了，請用「登入成客戶」把這位新增為聯絡窗口' };
+  var me = String(body._user.username);
+  var source = '名片' + (card.batch ? '（' + psClean_(card.batch, 40) + '）' : '');
+  var notes = botCardNotes_(m, card.batch) + (m.phone && m.companyPhone && m.phone !== m.companyPhone ? '；聯絡人電話：' + m.phone : '');
+  var row = { Name: m.company, TaxId: m.taxId, Address: m.address, Website: m.website, Phone: m.companyPhone || m.phone, Email: m.email, Contact: [m.name, m.title].filter(Boolean).join(' '), Notes: notes, _unhide: !!body.unhide };
+  return withLock_(function () {
+    var r = handleProspectImport({ _user: body._user, source: source, rows: [row] });
+    if (!r.success) return r;
+    if (r.hiddenSkipped) return { success: false, hidden: true, message: '「' + m.company + '」在隱藏名單裡（之前標記為不是客戶）' };
+    // 負責業務：名片是誰的就給誰（已經有人負責就不改）
+    var sh = psSheet_(false);
+    var look = handleProspectLookup({ name: m.company, taxId: m.taxId });
+    var t = look.matches && look.matches[0];
+    if (sh && t && !t.assignedTo) {
+      var f = psFindRow_(sh, t.key, t.row);
+      if (f) {
+        f.obj.AssignedTo = me;
+        f.obj.UpdatedAt = nowStr();
+        psDerive_(f.obj);
+        sh.getRange(f.row, 1, 1, PS_COLS.length).setValues([psArr_(f.obj)]);
+      }
+    }
+    var result = (r.added ? '加入開發名單（陌生開發）' : '併入開發名單既有的') + ' ' + m.company + ' ' + todayStr();
+    updateRowFields(SHEET_BOT_CARDS, card.RowIndex, { Status: 'saved', Result: result, Company: m.company });
+    return { success: true, added: r.added, company: m.company, source: source, result: result };
+  });
 }

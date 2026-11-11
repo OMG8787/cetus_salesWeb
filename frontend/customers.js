@@ -8,7 +8,11 @@ let allContactsForLog = []; // 目前選的公司底下的聯絡人清單（給�
 let currentContactsCompany = null; // 聯絡窗口彈窗目前是哪間公司
 
 async function addCustomer() {
+  // 開發名單（含隱藏名單）裡有這家 → 問要不要從名單轉成客戶
+  const conv = await askProspectConvert(document.getElementById('cust-company').value, document.getElementById('cust-taxid').value.trim());
+  if (conv === null) return;
   const result = await callApi('addCustomer', {
+    fromProspect: conv.fromProspect || null,
     companyName: document.getElementById('cust-company').value,
     contact: document.getElementById('cust-contact').value,
     phone: document.getElementById('cust-phone').value,
@@ -28,7 +32,7 @@ async function addCustomer() {
   if (result.success) {
     clearCached('customers');
     clearCached('casesPageData');
-    alert('已新增客戶');
+    alert(result.fromProspect ? `已新增客戶，並從開發名單轉入${result.logsCopied ? `（聯繫紀錄 ${result.logsCopied} 筆一起帶過來）` : ''}` : '已新增客戶');
     ['cust-company', 'cust-contact', 'cust-phone', 'cust-company-phone', 'cust-taxid', 'cust-address', 'cust-website', 'cust-email', 'cust-followup', 'cust-followup-time', 'cust-followup-note', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('cust-has-transacted').checked = false;
     loadCustomers();
