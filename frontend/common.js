@@ -1262,6 +1262,7 @@ function openFollowUpDialog(opts) {
       applySaved(r);
       close();
       if (typeof opts.onDone === 'function') opts.onDone(r);
+      if (body.log && body.log.method === '拜訪') askLevelUp(st.companyName, 4, '記錄了一次拜訪');
     } finally {
       btn.disabled = false;
     }
@@ -1274,7 +1275,7 @@ let followUpLegacyWarned = false;
  * 跳出一個有多個按鈕的視窗，回傳使用者選的 value（按取消或關閉回傳 null）。
  * options: [{ value, label, desc, primary }]
  */
-function chooseOption(title, message, options) {
+function chooseOption(title, message, options, extra) {
   return new Promise((resolve) => {
     const wrap = document.createElement('div');
     wrap.className = 'modal-overlay choose-modal';
@@ -1282,11 +1283,13 @@ function chooseOption(title, message, options) {
     wrap.innerHTML = `<div class="modal-box" style="max-width:520px;">
       <div class="modal-header"><h3 style="margin:0;">${htmlEsc(title)}</h3><button type="button" data-v="">取消</button></div>
       <div class="choose-msg">${htmlEsc(message).replace(/\n/g, '<br>')}</div>
+      ${extra ? `<label class="choose-extra">${htmlEsc(extra.label)}<select>${extra.items.map(([v, l]) => `<option value="${htmlEsc(v)}" ${v === extra.value ? 'selected' : ''}>${htmlEsc(l)}</option>`).join('')}</select></label>` : ''}
       <div class="choose-opts">${options.map((o, i) => `<button type="button" class="choose-opt${o.primary ? ' primary' : ''}" data-i="${i}"><b>${htmlEsc(o.label)}</b>${o.desc ? `<span>${htmlEsc(o.desc)}</span>` : ''}</button>`).join('')}</div>
     </div>`;
     const done = (v) => {
+      const sel = wrap.querySelector('.choose-extra select');
       wrap.remove();
-      resolve(v);
+      resolve(extra ? { value: v, extra: sel ? sel.value : '' } : v);
     };
     wrap.addEventListener('click', (ev) => {
       const b = ev.target.closest('button');
@@ -1320,4 +1323,44 @@ async function askProspectConvert(companyName, taxId) {
   if (v === 'convert') return { fromProspect: { key: m.key, row: m.row } };
   if (v === 'plain') return {};
   return null;
+}
+
+// ---------------- 客戶分級（類型：一般使用者 / 設備商，各自 8 級） ----------------
+const CUST_LEVELS = ['', '陌生開發名單', '有興趣', '有需求', '已經拜訪過', '需要追蹤', '樣品測試評估', '成案', '已經成交'];
+const CUST_TYPES = ['一般使用者', '設備商'];
+function custLevelLabel(n) {
+  n = Number(n) || 0;
+  return n ? `${n} ${CUST_LEVELS[n]}` : '（未設定）';
+}
+/** 客戶等級下拉選單的選項（2～8；1 是開發名單）。 */
+function custLevelOptions(selected) {
+  return CUST_LEVELS.map((n, i) => (i >= 2 ? `<option value="${i}" ${String(i) === String(selected) ? 'selected' : ''}>${i} ${n}</option>` : '')).join('');
+}
+
+/**
+ * 發生「可能要升級」的事（記錄拜訪、建立案件、案件完成訂單）時，問業務要不要把客戶升到 target 級。
+ * 目前等級已經 >= target 就不問；業務按「先不要」就維持原等級。回傳是否有升級。
+ */
+async function askLevelUp(companyName, target, reason) {
+  if (!companyName) return false;
+  let r = null;
+  try {
+    r = await callApi('customerLevel', { companyName }, { silent: true });
+  } catch (e) {
+    return false;
+  }
+  if (!r || !r.success || !r.found || (Number(r.level) || 2) >= target) return false;
+  const v = await chooseOption('要調整客戶等級嗎？', `「${r.name}」${reason}。\n目前等級：${custLevelLabel(r.level)}${r.type ? '（' + r.type + '）' : ''}`, [
+    { value: 'up', label: `⬆️ 升到 ${custLevelLabel(target)}`, primary: true },
+    { value: 'keep', label: `先不要，維持 ${custLevelLabel(r.level)}` },
+  ]);
+  if (v !== 'up') return false;
+  const u = await callApi('updateCustomer', { rowIndex: r.rowIndex, companyName: r.name, fields: { Level: String(target) }, logSummary: `客戶等級調整：${reason}` });
+  if (!u || !u.success) {
+    alert((u && u.message) || '等級調整失敗');
+    return false;
+  }
+  clearCached('customers');
+  if (typeof window.onCustomerLevelChanged === 'function') window.onCustomerLevelChanged(u);
+  return true;
 }

@@ -5,7 +5,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>客戶管理 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261111a" />
+<link rel="stylesheet" href="style.css?v=20261111c" />
 <link rel="stylesheet" href="dark.css?v=20261109b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -66,7 +66,7 @@
   </div>
 </nav>
 
-<section class="tab-content">
+<section class="tab-content wide">
   <h2>新增客戶</h2>
   <div id="customer-add-panel">
     <input id="cust-company" placeholder="公司名稱" />
@@ -84,6 +84,10 @@
       <option value="機構合作設備商">機構合作設備商</option>
       <option value="一般客戶" selected>一般客戶</option>
     </select>
+    <label>類型：</label>
+    <select id="cust-type"><option value="">（未設定）</option><option value="一般使用者">一般使用者</option><option value="設備商">設備商</option></select>
+    <label>客戶等級：</label>
+    <select id="cust-level"><option value="2" selected>2 有興趣</option><option value="3">3 有需求</option><option value="4">4 已經拜訪過</option><option value="5">5 需要追蹤</option><option value="6">6 樣品測試評估</option><option value="7">7 成案</option><option value="8">8 已經成交</option></select>
     <label>急迫性：</label>
     <select id="cust-urgency">
       <option value="高">高</option>
@@ -101,6 +105,8 @@
   </div>
 
   <h2>客戶列表</h2>
+  <div class="calc-hint">客戶分級：一般使用者、設備商各自 8 級（1 陌生開發名單 = 開發名單庫；2～8 在這裡）。點數字可以篩選，點第 1 級會打開開發名單庫。</div>
+  <div id="lv-board" class="lv-board"></div>
   <div>
     搜尋：<input id="cust-search" placeholder="公司/聯絡人/電話/Email/備註" oninput="renderCustomerTable()" />
     篩選：
@@ -111,6 +117,8 @@
       <option value="機構合作設備商">機構合作設備商</option>
       <option value="一般客戶">一般客戶</option>
     </select>
+    <select id="cust-filter-type" onchange="renderCustomerTable()"><option value="">全部類型</option><option value="一般使用者">一般使用者</option><option value="設備商">設備商</option><option value="-">未設定類型</option></select>
+    <select id="cust-filter-level" onchange="renderCustomerTable()"><option value="">全部等級</option><option value="2">2 有興趣</option><option value="3">3 有需求</option><option value="4">4 已經拜訪過</option><option value="5">5 需要追蹤</option><option value="6">6 樣品測試評估</option><option value="7">7 成案</option><option value="8">8 已經成交</option></select>
     <select id="cust-filter-urgency" onchange="renderCustomerTable()">
       <option value="">全部急迫性</option>
       <option value="高">高</option>
@@ -120,7 +128,7 @@
     <button onclick="loadCustomers()">重新整理</button>
   </div>
   <table id="customer-table">
-    <thead><tr><th>公司</th><th>聯絡人</th><th>聯繫人電話</th><th>分類</th><th>急迫性</th><th>下次追蹤日</th><th>交易狀態</th><th>操作</th></tr></thead>
+    <thead><tr><th>公司</th><th>聯絡人</th><th>聯繫人電話</th><th>分類</th><th>類型／等級</th><th>急迫性</th><th>下次追蹤日</th><th>交易狀態</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 
@@ -173,6 +181,10 @@
       <option value="機構合作設備商">機構合作設備商</option>
       <option value="一般客戶">一般客戶</option>
     </select>
+    <label>類型：</label>
+    <select id="ce-type"><option value="">（未設定）</option><option value="一般使用者">一般使用者</option><option value="設備商">設備商</option></select>
+    <label>客戶等級：</label>
+    <select id="ce-level"><option value="2" selected>2 有興趣</option><option value="3">3 有需求</option><option value="4">4 已經拜訪過</option><option value="5">5 需要追蹤</option><option value="6">6 樣品測試評估</option><option value="7">7 成案</option><option value="8">8 已經成交</option></select>
     <label>急迫性：</label>
     <select id="ce-urgency"><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
     <label>下次追蹤日：</label><input id="ce-followup" type="date" />
@@ -248,9 +260,9 @@
 
 <script src="config.js?v=20261109b"></script>
 <script src="demo.js?v=20261109b"></script>
-<script src="common.js?v=20261111a"></script>
+<script src="common.js?v=20261111c"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261109b"></script>
-<script src="customers.js?v=20261111a"></script>
+<script src="customers.js?v=20261111b"></script>
 </body>
 </html>

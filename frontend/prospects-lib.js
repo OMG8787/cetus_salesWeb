@@ -19,6 +19,7 @@ const PS_FIELDS = [
   { key: 'Email', label: 'Email', aliases: ['email', 'e-mail', 'mail', '電子郵件', '電子信箱', '信箱'] },
   { key: 'Contact', label: '聯絡人', aliases: ['聯絡人', '聯絡窗口', '窗口', 'contact'] },
   { key: 'Notes', label: '備註', aliases: ['備註', 'note', 'notes', 'remark'] },
+  { key: 'Type', label: '類型（一般使用者 / 設備商）', aliases: ['類型', '客戶類型', '公司類型', 'type'] },
 ];
 
 // 行業快速選取（經濟部工廠登記的產業類別代碼）

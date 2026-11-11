@@ -1035,3 +1035,35 @@ html[data-theme="dark"] .modal-box button.choose-opt { background: #1d232b; colo
 html[data-theme="dark"] .modal-box button.choose-opt span { color: #9aa5b4; }
 html[data-theme="dark"] .modal-box button.choose-opt:hover, html[data-theme="dark"] .modal-box button.choose-opt.primary { background: rgba(79,134,214,.16); border-color: #4f86d6; }
 html[data-theme="dark"] .modal-box button.choose-opt.primary b { color: #9fc2f5; }
+
+.choose-extra { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #6b7280; margin: -4px 0 14px; }
+.choose-extra select { margin: 0; }
+html[data-theme="dark"] .choose-extra { color: #9aa5b4; }
+
+/* 客戶分級 */
+.lv-board { overflow-x: auto; margin: 8px 0 14px; }
+.lv-table { border-collapse: separate; border-spacing: 4px; width: 100%; min-width: 760px; }
+.lv-table th { font-size: 12px; font-weight: 600; color: #6b7280; background: none; border: 0; padding: 2px 4px; text-align: center; white-space: nowrap; }
+.lv-table th.lv-type { text-align: left; }
+.lv-table td { border: 0; padding: 0; }
+.lv-table td.lv-type { font-weight: 700; font-size: 13px; white-space: nowrap; padding-right: 6px; }
+.lv-cell { display: block; width: 100%; margin: 0 !important; padding: 8px 4px !important; border-radius: 8px; border: 1px solid #e3e8ef !important; background: #fff !important; color: #1f2937 !important; font-size: 16px; font-weight: 700; text-align: center; cursor: pointer; }
+.lv-cell:hover { border-color: #2c5aa0 !important; }
+.lv-cell.on { background: #2c5aa0 !important; color: #fff !important; border-color: #2c5aa0 !important; }
+.lv-cell.zero { color: #c0c7d2 !important; font-weight: 400; }
+.lv-cell.lv1 { background: #f3e8fb !important; }
+.lv-cell.lv8 { background: #e6f6ec !important; }
+.lv-badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 12px; background: #e8effa; color: #1f4c8f; white-space: nowrap; }
+.lv-badge.maker { background: #fff4e0; color: #9a5b00; }
+.lv-badge.none { background: #f3f4f6; color: #6b7280; }
+select.lv-select { margin: 4px 0 0; padding: 3px 6px; font-size: 12px; border-radius: 12px; width: auto; }
+html[data-theme="dark"] .lv-cell { background: #1d232b !important; border-color: #323b48 !important; color: #e5e7eb !important; }
+html[data-theme="dark"] .lv-cell.on { background: #4f86d6 !important; color: #fff !important; }
+html[data-theme="dark"] .lv-cell.zero { color: #4b5563 !important; }
+html[data-theme="dark"] .lv-cell.lv1 { background: rgba(150,110,230,.15) !important; }
+html[data-theme="dark"] .lv-cell.lv8 { background: rgba(60,180,100,.15) !important; }
+html[data-theme="dark"] .lv-badge { background: rgba(79,134,214,.2); color: #9fc2f5; }
+html[data-theme="dark"] .lv-badge.maker { background: rgba(240,170,60,.18); color: #f4c27a; }
+html[data-theme="dark"] .lv-badge.none { background: #2a323d; color: #9aa5b4; }
+#customer-table th { white-space: nowrap; }
+#customer-table td:nth-child(5) { white-space: nowrap; }

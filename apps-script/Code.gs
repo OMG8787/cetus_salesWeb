@@ -216,6 +216,8 @@ var ROUTES = {
   updateCustomer:          { auth: true, fn: handleUpdateCustomer },
   saveFollowUp:            { auth: true, fn: handleSaveFollowUp },
   deleteCustomer:          { auth: true, fn: handleDeleteCustomer },
+  customerLevel:           { auth: true, fn: handleCustomerLevel },
+  levelSummary:            { auth: true, fn: handleLevelSummary },
 
   // 客戶聯絡人（一間公司可以有多個聯絡窗口/電話/信箱）
   getCustomerContacts:     { auth: true, fn: handleGetCustomerContacts },
@@ -282,7 +284,7 @@ SCHEMA[SHEET_PRICE_HISTORY] = ['Date', 'ProductInternalModel', 'Supplier', 'Pric
 SCHEMA[SHEET_CASES] = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'SoftwareCustomization', 'SoftwareCustomizationNote', 'Status', 'CreatedDate', 'RequirementDetails', 'AttachmentLinksJson', 'EvaluationResult', 'EvaluationReportHtml', 'LastUpdated', 'Urgency', 'CloseResult', 'CloseDate', 'CloseAmount', 'CloseNote', 'OrderItems'];
 SCHEMA[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'CcdIndex', 'Description', 'FovLengthMm', 'FovWidthMm', 'WdMm', 'AccuracyUm', 'FlyingSpeedMmS', 'InspectionSpeedPs', 'LightingNote'];
 SCHEMA[SHEET_STAFF] = ['Name', 'Role'];
-SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime', 'CompanyPhone', 'TaxId', 'Address', 'Website'];
+SCHEMA[SHEET_CUSTOMERS] = ['CompanyName', 'Contact', 'Phone', 'Email', 'NextFollowUpDate', 'Category', 'Urgency', 'Notes', 'CalendarEventId', 'HasTransacted', 'LastTransactionDate', 'NextFollowUpNote', 'NextFollowUpTime', 'CompanyPhone', 'TaxId', 'Address', 'Website', 'CustomerType', 'Level', 'LevelAt'];
 SCHEMA[SHEET_CONTACT_LOGS] = ['Date', 'CompanyName', 'Contact', 'Method', 'Summary', 'Salesperson', 'CaseID', 'CreatedAt', 'Changes'];
 SCHEMA[SHEET_CUSTOMER_CONTACTS] = ['CompanyName', 'ContactName', 'Phone', 'Email', 'Title', 'Notes'];
 SCHEMA[SHEET_CASE_COMPANIES] = ['CaseID', 'CompanyName', 'Role'];
@@ -309,7 +311,7 @@ TEXT_COLUMNS[SHEET_CASES] = ['ContactPhone', 'CaseID'];
 TEXT_COLUMNS[SHEET_CCD_REQUIREMENTS] = ['CaseID', 'AccuracyUm'];
 TEXT_COLUMNS[SHEET_CONTACT_LOGS] = ['CaseID', 'CreatedAt'];
 TEXT_COLUMNS[SHEET_CASE_COMPANIES] = ['CaseID'];
-TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime', 'CompanyPhone', 'TaxId']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
+TEXT_COLUMNS[SHEET_CUSTOMERS] = ['Phone', 'NextFollowUpTime', 'CompanyPhone', 'TaxId', 'Level']; // 預約時間 HH:mm 一定要純文字，不然 Sheets 會轉成時間值
 TEXT_COLUMNS[SHEET_CUSTOMER_CONTACTS] = ['Phone'];
 TEXT_COLUMNS['BotLeads'] =['UserId', 'Name', 'Company', 'Phone', 'Email', 'Note']; // 客人填的內容：存成純文字，開頭是 = + - @ 也不會被當成公式執行
 TEXT_COLUMNS[SHEET_USERS] =['Username', 'PasswordHash', 'Phone', 'Birthday', 'ResetHash'];
@@ -396,6 +398,7 @@ var ACTION_PERM = {
   addCustomer: ['customers', 'w'], updateCustomer: ['customers', 'w'], saveFollowUp: ['customers', 'w'], addCustomerContact: ['customers', 'w'], updateCustomerContact: ['customers', 'w'],
   addContactLog: ['customers', 'w'], updateContactLog: ['customers', 'w'],
   deleteCustomer: ['customers', 'd'], deleteCustomerContact: ['customers', 'd'], deleteContactLog: ['customers', 'd'],
+  customerLevel: ['customers', 'r'], levelSummary: ['customers', 'r'],
 };
 
 /** 舊版「只有這些角色能做」的限制（舊角色 sales / fae 還沒遷移前沿用，行為跟以前一模一樣）。 */
@@ -6254,6 +6257,7 @@ function normTimeStr_(v) {
 }
 
 function handleGetCustomers(body) {
+  custLevelEnsure_();
   var sheet = getSheet(SHEET_CUSTOMERS);
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return { success: true, customers: [] };
@@ -6357,6 +6361,7 @@ function cleanWebsite_(v) {
 
 function handleAddCustomer(body) {
   if (!String(body.companyName || '').trim()) return { success: false, message: '公司名稱不能空白' };
+  custLevelEnsure_();
   var dup = findDuplicateCustomerRow_(body.companyName, 0);
   if (dup) return { success: false, message: '已經有「' + String(body.companyName).trim() + '」這間客戶了（第 ' + dup + ' 列），不能重複新增。要補資料請直接編輯那一筆。' };
   var fromP = body.fromProspect ? psConvertSource_(body.fromProspect) : null;
@@ -6383,6 +6388,9 @@ function handleAddCustomer(body) {
     TaxId: body.taxId || '',
     Address: body.address || '',
     Website: website,
+    CustomerType: CUST_TYPES.indexOf(String(body.customerType || '')) > -1 ? String(body.customerType) : '',
+    Level: String(custLevelNum_(body.level) >= 2 ? custLevelNum_(body.level) : 2),
+    LevelAt: nowStr(),
   };
 
   appendObjectRow(SHEET_CUSTOMERS, customer);
@@ -6411,6 +6419,8 @@ var CUSTOMER_FIELD_LABELS = {
   NextFollowUpDate: '下次追蹤日',
   NextFollowUpTime: '預約時間',
   NextFollowUpNote: '下次洽談內容',
+  CustomerType: '類型',
+  Level: '等級',
 };
 var CUSTOMER_FOLLOW_FIELDS = ['NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote'];
 
@@ -6437,9 +6447,10 @@ function describeCustomerChanges_(oldObj, newObj, changed) {
     return v === '' ? '（空白）' : v;
   };
   var lines = [];
-  ['CompanyName', 'Contact', 'Phone', 'Email', 'CompanyPhone', 'TaxId', 'Address', 'Website', 'Category', 'Urgency'].forEach(function (f) {
+  ['CompanyName', 'Contact', 'Phone', 'Email', 'CompanyPhone', 'TaxId', 'Address', 'Website', 'Category', 'Urgency', 'CustomerType'].forEach(function (f) {
     if (has(f)) lines.push(CUSTOMER_FIELD_LABELS[f] + '：' + show(clip_(custVal_(f, oldObj[f]), 60)) + ' → ' + show(clip_(custVal_(f, newObj[f]), 60)));
   });
+  if (has('Level')) lines.push('等級：' + custLevelLabel_(oldObj.Level) + ' → ' + custLevelLabel_(newObj.Level));
   if (has('HasTransacted') || has('LastTransactionDate')) {
     var tx = function (o) {
       var d = custVal_('LastTransactionDate', o.LastTransactionDate);
@@ -6552,6 +6563,7 @@ function customerOut_(rowNum) {
  */
 function applyCustomerUpdate_(rowNum, fields, opts) {
   opts = opts || {};
+  custLevelEnsure_();
   var sheet = getSheet(SHEET_CUSTOMERS);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
   var oldObj = readRowAsObject(SHEET_CUSTOMERS, rowNum);
@@ -6570,6 +6582,12 @@ function applyCustomerUpdate_(rowNum, fields, opts) {
     input[k] = v;
   });
   if (badWebsite) return { error: '公司網址格式不正確（例如 www.example.com 或 https://www.example.com）' };
+  if (input.Level !== undefined) {
+    var lvNum = custLevelNum_(input.Level);
+    if (lvNum < 2) return { error: '客戶等級要是 2～8（' + CUST_LEVELS.slice(2).map(function (n, i) { return (i + 2) + ' ' + n; }).join('、') + '）；1 陌生開發名單請放在開發名單庫' };
+    input.Level = String(lvNum);
+  }
+  if (input.CustomerType !== undefined && input.CustomerType && CUST_TYPES.indexOf(input.CustomerType) < 0) return { error: '類型只能是：' + CUST_TYPES.join('、') };
   if (input.CompanyName !== undefined) {
     if (!input.CompanyName) return { error: '公司名稱不能空白' };
     var dup = findDuplicateCustomerRow_(input.CompanyName, rowNum);
@@ -6589,6 +6607,7 @@ function applyCustomerUpdate_(rowNum, fields, opts) {
   changed.forEach(function (k) {
     write[k] = input[k];
   });
+  if (changed.indexOf('Level') > -1 && header.indexOf('LevelAt') > -1) write.LevelAt = nowStr();
   updateRowFields(SHEET_CUSTOMERS, rowNum, write);
   var newObj = Object.assign({}, oldObj, write);
 
@@ -9510,7 +9529,7 @@ function botTrimRow_(obj, keys, noteLimit) {
   return out;
 }
 
-var BOT_CUSTOMER_KEYS = ['CompanyName', 'Contact', 'Phone', 'CompanyPhone', 'Email', 'Address', 'TaxId', 'Website', 'Category', 'Urgency', 'NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote', 'Notes', 'HasTransacted', 'LastTransactionDate'];
+var BOT_CUSTOMER_KEYS = ['CompanyName', 'CustomerType', 'Level', 'Contact', 'Phone', 'CompanyPhone', 'Email', 'Address', 'TaxId', 'Website', 'Category', 'Urgency', 'NextFollowUpDate', 'NextFollowUpTime', 'NextFollowUpNote', 'Notes', 'HasTransacted', 'LastTransactionDate'];
 var BOT_CASE_KEYS = ['CaseID', 'CustomerName', 'EndCustomerName', 'ProjectContact', 'ContactPhone', 'Status', 'Urgency', 'Salesperson', 'FAE', 'ProductApplication', 'TestObject', 'SoftwareName', 'CreatedDate', 'RequirementDetails', 'EvaluationResult'];
 var BOT_PRODUCT_KEYS = ['InternalModel', 'SupplierModel', 'Brand', 'Category', 'Interface', 'Resolution', 'PixelSize', 'SensorSize', 'FPS', 'Mount', 'FocalLength', 'Magnification', 'WD', 'DOF', 'FocusWD', 'EffectivePixels', 'Notes'];
 
@@ -9864,7 +9883,7 @@ var BOT_PRICE_WRITES = ['addPriceRecord', 'createInquiryDraft', 'deletePriceReco
 var BOT_CASE_EDITABLE = { ProjectContact: '專案聯絡人', ContactPhone: '聯絡電話', EndCustomerName: '終端客戶', Salesperson: '業務', FAE: 'FAE', RequirementDetails: '需求說明', EvaluationResult: '評估結果' };
 var BOT_PRODUCT_EDITABLE = { SupplierModel: '供應商型號', Brand: '品牌', Category: '類別', Interface: '介面', Resolution: '解析度', PixelSize: '像素尺寸', SensorSize: '靶面', FPS: '幀率', Mount: '接口', FocalLength: '焦距', Magnification: '倍率', WD: '工作距離', DOF: '景深', FocusWD: '對焦距離', EffectivePixels: '有效像素', CompatibleGroup: '相容群組', Origin: '產地', Notes: '備註' };
 var BOT_PRODUCT_PRICEY = { Supplier: '供應商', SupplierContact: '供應商聯絡人', SupplierContactEmail: '供應商 Email', RefPrice: '參考底價' }; // 有價格權限（沒被隱藏）才能改
-var BOT_CUSTOMER_EDITABLE = { Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', Address: '地址', TaxId: '統一編號', Website: '公司網址', Category: '分類', Urgency: '急迫性', Notes: '客戶備註' };
+var BOT_CUSTOMER_EDITABLE = { CustomerType: '類型（一般使用者 / 設備商）', Level: '等級（2～8）', Contact: '聯絡人', Phone: '聯繫人電話', Email: 'Email', CompanyPhone: '公司電話', Address: '地址', TaxId: '統一編號', Website: '公司網址', Category: '分類', Urgency: '急迫性', Notes: '客戶備註' };
 
 function botWritableOps_(ctx) {
   var allowed = botStaffCfg_().writes;
@@ -10485,7 +10504,7 @@ function botCardsRun_(ctx, w, user) {
     var result = '';
     try {
       if (x.kind === 'newCustomer') {
-        var r1 = handleAddCustomer({ _user: user, companyName: m.company, contact: m.name, phone: m.phone, email: m.email, companyPhone: m.companyPhone, address: m.address, taxId: m.taxId, website: m.website, category: x.category || '一般客戶', urgency: '中', notes: botCardNotes_(m, batch), fromProspect: d.fromProspect || null });
+        var r1 = handleAddCustomer({ _user: user, companyName: m.company, contact: m.name, phone: m.phone, email: m.email, companyPhone: m.companyPhone, address: m.address, taxId: m.taxId, website: m.website, category: x.category || '一般客戶', urgency: '中', notes: botCardNotes_(m, batch), customerType: d.customerType || '', level: 2, fromProspect: d.fromProspect || null });
         if (!r1.success) throw new Error(r1.message);
         done.newCustomers++;
         result = '新增客戶 ' + m.company;
@@ -10588,7 +10607,7 @@ function handleCardToCustomer(body) {
   }
   var ctx = { ownerKey: body._user.username };
   try {
-    botCardsRun_(ctx, { action: 'saveCards', data: { ids: [card.id], overrides: ovAll, category: body.category, fromProspect: body.fromProspect || null } }, body._user);
+    botCardsRun_(ctx, { action: 'saveCards', data: { ids: [card.id], overrides: ovAll, category: body.category, customerType: body.customerType || '', fromProspect: body.fromProspect || null } }, body._user);
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -11372,12 +11391,12 @@ function handleCopyGenerate(body) {
 // ============================================================
 var PS_SHEET = 'Prospects';
 // 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
-var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt'];
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt', 'Type'];
 var PS_LOG_SHEET = 'ProspectLogs';
 var PS_LOG_COLS = ['ID', 'Key', 'Time', 'User', 'Method', 'Content', 'Stage', 'NextFollowUp'];
 var PS_LOG_METHODS = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'];
 var PS_STAGES = ['未處理', '開發中', '已聯絡', '有興趣', '無意願', '已轉客戶', '無效'];
-var PS_MERGE_FIELDS = ['Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact'];
+var PS_MERGE_FIELDS = ['Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Type'];
 var PS_IMPORT_MAX = 3000;
 var PS_EXPORT_MAX = 5000;
 var PS_CITIES = ['臺北市', '新北市', '桃園市', '臺中市', '臺南市', '高雄市', '基隆市', '新竹市', '嘉義市', '新竹縣', '苗栗縣', '彰化縣', '南投縣', '雲林縣', '嘉義縣', '屏東縣', '宜蘭縣', '花蓮縣', '臺東縣', '澎湖縣', '金門縣', '連江縣'];
@@ -11470,6 +11489,7 @@ function psEnsureShape_(sh) {
   var missing = PS_COLS.slice(have);
   sh.getRange(1, have + 1, 1, missing.length).setValues([missing]).setFontWeight('bold').setBackground('#eef2f7');
   sh.getRange(1, have + 1, sh.getMaxRows(), missing.length).setNumberFormat('@');
+  if (missing.indexOf('Type') > -1) psMigrateType_(sh);
   return sh;
 }
 
@@ -11582,7 +11602,7 @@ function psKey_(r) {
 function psDerive_(r) {
   r.City = psCityOf_(r.Address) || r.City || '';
   r.CatCodes = psCatParse_(r.Category).map(function (c) { return c.code; }).join('|');
-  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '') + (r.Enriched ? 'C' : '') + (r.Hidden ? 'H' : ''); // C = 已經查過官網 / 聯絡方式；H = 隱藏
+  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '') + (r.Enriched ? 'C' : '') + (r.Hidden ? 'H' : '') + psTypeLetter_(r.Type); // C = 已經查過官網 / 聯絡方式；H = 隱藏；D / U = 設備商 / 一般使用者
   r.Search = [r.Name, r.TaxId, r.Owner, r.Products, r.Address, r.Phone, r.Email, r.Website, r.Contact].join(' ').toLowerCase().replace(/台/g, '臺').replace(/\s+/g, ' ').slice(0, 400);
   r.Key = psKey_(r);
   return r;
@@ -11597,6 +11617,7 @@ function psIncoming_(o, source) {
     Source: source, Stage: '', Optout: '', AssignedTo: '',
   };
   if (!r.Name) return null;
+  r.Type = psTypeOf_(o.Type) || psGuessType_(r);
   return r;
 }
 
@@ -11780,7 +11801,8 @@ function psFilter_(b) {
   var follow = b.follow === 'due' || b.follow === 'planned' || b.follow === 'none' ? b.follow : '';
   var dueBy = isDateStr(b.dueBy) ? String(b.dueBy) : '';
   var hidden = b.hidden === 'only' ? 'only' : '';
-  return { hidden: hidden, q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site, follow: follow, dueBy: dueBy };
+  var ptypes = psList_(b.ptypes, 3).filter(function (x) { return x === 'D' || x === 'U' || x === 'N'; });
+  return { hidden: hidden, ptypes: ptypes, q: q, sources: psList_(b.sources), cities: psList_(b.cities), cats: psList_(b.cats), stages: psList_(b.stages), has: has, assigned: assigned, site: site, follow: follow, dueBy: dueBy };
 }
 
 function psSet_(arr) {
@@ -11796,8 +11818,8 @@ function psSet_(arr) {
  * 一個迴圈、每列算 6 個條件：全過 → 計入所有分面；只有 1 個沒過 → 只計入那個沒過的分面。
  */
 function psRun_(scan, search, asg, f, me, fol, today) {
-  var sSet = psSet_(f.sources), cSet = psSet_(f.cities), kSet = psSet_(f.cats), tSet = psSet_(f.stages);
-  var fac = { source: {}, city: {}, cat: {}, stage: {}, has: {} };
+  var sSet = psSet_(f.sources), cSet = psSet_(f.cities), kSet = psSet_(f.cats), tSet = psSet_(f.stages), ySet = psSet_(f.ptypes || []);
+  var fac = { source: {}, city: {}, cat: {}, stage: {}, has: {}, ptype: {} };
   var hits = [];
   var hiddenN = 0;
   var bump = function (m, k) { m[k] = (m[k] || 0) + 1; };
@@ -11811,11 +11833,13 @@ function psRun_(scan, search, asg, f, me, fol, today) {
     var cats = String(r[2]).split('|');
     var stage = String(r[3]) || PS_STAGES[0];
     var has = String(r[4]);
-    var fl = [true, true, true, true, true, true]; // source, city, cat, stage, has, other(q / assigned)
+    var ptype = has.indexOf('D') > -1 ? 'D' : has.indexOf('U') > -1 ? 'U' : 'N';
+    var fl = [true, true, true, true, true, true, true]; // source, city, cat, stage, has, other(q / assigned), type
     if (f.sources.length) fl[0] = srcs.some(function (x) { return sSet[x]; });
     if (f.cities.length) fl[1] = !!cSet[city];
     if (f.cats.length) fl[2] = cats.some(function (x) { return kSet[x]; });
     if (f.stages.length) fl[3] = !!tSet[stage];
+    if (f.ptypes && f.ptypes.length) fl[6] = !!ySet[ptype];
     if (f.has) for (var h = 0; h < f.has.length; h++) if (has.indexOf(f.has.charAt(h)) < 0) fl[4] = false;
     if (f.site === 'unchecked' && has.indexOf('C') > -1) fl[4] = false;
     if (f.site === 'checked' && has.indexOf('C') < 0) fl[4] = false;
@@ -11832,14 +11856,15 @@ function psRun_(scan, search, asg, f, me, fol, today) {
       fl[5] = f.follow === 'due' ? !!nd && nd <= today : f.follow === 'planned' ? nd > today : !nd;
     }
     var miss = 0, which = -1;
-    for (var k = 0; k < 6; k++) if (!fl[k]) { miss++; which = k; }
+    for (var k = 0; k < 7; k++) if (!fl[k]) { miss++; which = k; }
     if (miss > 1 || (miss === 1 && which === 5)) continue;
     if (miss === 0) hits.push(i);
     if (miss === 0 || which === 0) srcs.forEach(function (x) { if (x) bump(fac.source, x); });
     if (miss === 0 || which === 1) bump(fac.city, city);
     if (miss === 0 || which === 2) cats.forEach(function (x) { if (x) bump(fac.cat, x); });
     if (miss === 0 || which === 3) bump(fac.stage, stage);
-    if (miss === 0 || which === 4) for (var p = 0; p < has.length; p++) if (has.charAt(p) !== 'H') bump(fac.has, has.charAt(p));
+    if (miss === 0 || which === 4) for (var p = 0; p < has.length; p++) if ('HDU'.indexOf(has.charAt(p)) < 0) bump(fac.has, has.charAt(p));
+    if (miss === 0 || which === 6) bump(fac.ptype, ptype);
   }
   return { hits: hits, facets: fac, hidden: hiddenN };
 }
@@ -11855,7 +11880,7 @@ function psFacetList_(m, order) {
 function psMatch_(sh, body) {
   var f = psFilter_(body);
   var n = Math.max(0, sh.getLastRow() - 1);
-  if (!n) return { f: f, n: 0, hits: [], hidden: 0, facets: { source: {}, city: {}, cat: {}, stage: {}, has: {} } };
+  if (!n) return { f: f, n: 0, hits: [], hidden: 0, facets: { source: {}, city: {}, cat: {}, stage: {}, has: {}, ptype: {} } };
   var scan = sh.getRange(2, 2, n, 5).getValues();
   var search = f.q.length ? psColVals_(sh, psCol_('Search'), n) : null;
   var me = String((body._user && body._user.username) || '');
@@ -11900,7 +11925,7 @@ function handleProspectStatus(body) {
 
 function handleProspectQuery(body) {
   var sh = psSheet_(false);
-  var empty = { success: true, ready: !!sh, total: 0, all: 0, hidden: 0, page: 1, pages: 1, rows: [], facets: { source: [], city: [], cat: [], stage: [], has: [] }, industry: PS_INDUSTRY, stages: PS_STAGES };
+  var empty = { success: true, ready: !!sh, total: 0, all: 0, hidden: 0, page: 1, pages: 1, rows: [], facets: { source: [], city: [], cat: [], stage: [], has: [], ptype: [] }, industry: PS_INDUSTRY, stages: PS_STAGES };
   if (!sh || sh.getLastRow() < 2) return empty;
   var res = psMatch_(sh, body);
   var size = Math.min(100, Math.max(10, Math.floor(Number(body.size)) || 30));
@@ -11917,6 +11942,7 @@ function handleProspectQuery(body) {
       cat: psFacetList_(res.facets.cat).sort(function (a, b) { return a.v < b.v ? -1 : a.v > b.v ? 1 : 0; }),
       stage: psFacetList_(res.facets.stage, PS_STAGES),
       has: psFacetList_(res.facets.has),
+      ptype: psFacetList_(res.facets.ptype || {}),
     },
     industry: PS_INDUSTRY, stages: PS_STAGES,
   };
@@ -11938,7 +11964,7 @@ function psAssignee_(v, body) {
   return s === '@me' ? String((body._user && body._user.username) || '') : s;
 }
 
-var PS_EDITABLE = { Stage: 1, Notes: 1, Website: 1, Phone: 1, Email: 1, Contact: 1, Optout: 1, AssignedTo: 1, NextFollowUp: 1 };
+var PS_EDITABLE = { Stage: 1, Notes: 1, Website: 1, Phone: 1, Email: 1, Contact: 1, Optout: 1, AssignedTo: 1, NextFollowUp: 1, Type: 1 };
 
 function psCheckStage_(v) {
   var s = psClean_(v, 20);
@@ -11978,6 +12004,7 @@ function handleProspectUpdate(body) {
         } else if (k === 'Optout') o.Optout = v ? 'Y' : '';
         else if (k === 'AssignedTo') o.AssignedTo = psAssignee_(v, body);
         else if (k === 'NextFollowUp') o.NextFollowUp = psDate_(v);
+        else if (k === 'Type') o.Type = psTypeStrict_(v);
         else o[k] = psClean_(v, k === 'Phone' ? 60 : 80);
       });
     } catch (e) {
@@ -12003,6 +12030,7 @@ function handleProspectBulk(body) {
       upd.HiddenAt = set.Hidden ? nowStr() : '';
       upd.HiddenBy = set.Hidden ? String((body._user && body._user.username) || '') : '';
     }
+    if (set.Type !== undefined) upd.Type = psTypeStrict_(set.Type);
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -12025,12 +12053,17 @@ function handleProspectBulk(body) {
     if (!hits.length) return { success: true, count: 0 };
     var stamp = nowStr();
     var cols = Object.keys(upd).concat(['UpdatedAt']);
-    if (upd.Hidden !== undefined) cols.push('Has'); // 隱藏記號也寫在 Has（H），篩選時不用多讀一欄
+    if (upd.Hidden !== undefined || upd.Type !== undefined) cols.push('Has'); // 隱藏、類型記號也寫在 Has（H / D / U），篩選時不用多讀一欄
     cols.forEach(function (c) {
       var range = sh.getRange(2, psCol_(c), n, 1);
       var vals = range.getValues();
       hits.forEach(function (i) {
-        vals[i][0] = c === 'UpdatedAt' ? stamp : c === 'Has' ? String(vals[i][0]).replace(/H/g, '') + (upd.Hidden ? 'H' : '') : upd[c];
+        if (c === 'Has') {
+          var hv = String(vals[i][0]);
+          if (upd.Hidden !== undefined) hv = hv.replace(/H/g, '') + (upd.Hidden ? 'H' : '');
+          if (upd.Type !== undefined) hv = hv.replace(/[DU]/g, '') + psTypeLetter_(upd.Type);
+          vals[i][0] = hv;
+        } else vals[i][0] = c === 'UpdatedAt' ? stamp : upd[c];
       });
       range.setValues(vals);
     });
@@ -12740,7 +12773,7 @@ function handleWorkAgenda(body) {
 // ------------------------------------------------------------
 // 開發名單：跟客戶資料比對（已是客戶的不是陌生開發）、匯入前檢查重複
 // ------------------------------------------------------------
-var PS_DIFF_FIELDS = [['Name', '公司名稱'], ['TaxId', '統一編號'], ['Address', '地址'], ['Owner', '負責人'], ['Category', '產業分類'], ['Products', '主要產品'], ['Website', '官網'], ['Phone', '電話'], ['Email', 'Email'], ['Contact', '聯絡人'], ['Notes', '備註']];
+var PS_DIFF_FIELDS = [['Type', '類型'], ['Name', '公司名稱'], ['TaxId', '統一編號'], ['Address', '地址'], ['Owner', '負責人'], ['Category', '產業分類'], ['Products', '主要產品'], ['Website', '官網'], ['Phone', '電話'], ['Email', 'Email'], ['Contact', '聯絡人'], ['Notes', '備註']];
 
 /** 公司名稱比對用：全形半形、台/臺、空白、括號裡的字都拿掉，再去掉「股份有限公司」等字尾。 */
 function psNameKey_(name) {
@@ -12906,6 +12939,7 @@ function psFillFromProspect_(body, o) {
   if (!b.address) b.address = o.Address;
   if (!b.website && o.Website && cleanWebsite_(o.Website) !== null) b.website = o.Website;
   if (!b.nextFollowUpDate && o.NextFollowUp) b.nextFollowUpDate = o.NextFollowUp;
+  if (!b.customerType && o.Type) b.customerType = o.Type;
   var pn = psProspectNotes_(o);
   b.notes = b.notes ? String(b.notes) + '\n' + pn : pn;
   return b;
@@ -12965,7 +12999,7 @@ function handleProspectToCustomer(body) {
   var created = false;
   if (!exName) {
     var cat = PS_CUSTOMER_CATS.indexOf(String(body.category || '')) > -1 ? String(body.category) : '一般客戶';
-    var r = handleAddCustomer({ _user: body._user, companyName: o.Name, category: cat, urgency: '中', fromProspect: { key: o.Key, row: src.found.row } });
+    var r = handleAddCustomer({ _user: body._user, companyName: o.Name, category: cat, urgency: '中', customerType: body.customerType || o.Type, level: body.level || 2, fromProspect: { key: o.Key, row: src.found.row } });
     if (!r.success) return r;
     var after = psConvertSource_({ key: o.Key, row: src.found.row });
     return { success: true, created: true, customer: o.Name, logsCopied: r.logsCopied || 0, row: after ? psOut_(psArr_(after.found.obj), after.found.row) : null };
@@ -12994,7 +13028,7 @@ function handleProspectLookup(body) {
   rows.forEach(function (r) {
     var o = psObj_(read[r]);
     if (o.ConvertedTo) return;
-    matches.push({ key: o.Key, row: r, name: o.Name, stage: o.Stage || PS_STAGES[0], hidden: !!o.Hidden, hiddenAt: String(o.HiddenAt || ''), source: o.Source, taxId: o.TaxId, phone: o.Phone, email: o.Email, website: o.Website, contact: o.Contact, address: o.Address, assignedTo: o.AssignedTo });
+    matches.push({ key: o.Key, row: r, name: o.Name, type: o.Type, stage: o.Stage || PS_STAGES[0], hidden: !!o.Hidden, hiddenAt: String(o.HiddenAt || ''), source: o.Source, taxId: o.TaxId, phone: o.Phone, email: o.Email, website: o.Website, contact: o.Contact, address: o.Address, assignedTo: o.AssignedTo });
   });
   return { success: true, matches: matches };
 }
@@ -13069,7 +13103,7 @@ function handleCardToProspect(body) {
   var me = String(body._user.username);
   var source = '名片' + (card.batch ? '（' + psClean_(card.batch, 40) + '）' : '');
   var notes = botCardNotes_(m, card.batch) + (m.phone && m.companyPhone && m.phone !== m.companyPhone ? '；聯絡人電話：' + m.phone : '');
-  var row = { Name: m.company, TaxId: m.taxId, Address: m.address, Website: m.website, Phone: m.companyPhone || m.phone, Email: m.email, Contact: [m.name, m.title].filter(Boolean).join(' '), Notes: notes, _unhide: !!body.unhide };
+  var row = { Name: m.company, Type: psTypeStrict_(body.customerType), TaxId: m.taxId, Address: m.address, Website: m.website, Phone: m.companyPhone || m.phone, Email: m.email, Contact: [m.name, m.title].filter(Boolean).join(' '), Notes: notes, _unhide: !!body.unhide };
   return withLock_(function () {
     var r = handleProspectImport({ _user: body._user, source: source, rows: [row] });
     if (!r.success) return r;
@@ -13091,4 +13125,163 @@ function handleCardToProspect(body) {
     updateRowFields(SHEET_BOT_CARDS, card.RowIndex, { Status: 'saved', Result: result, Company: m.company });
     return { success: true, added: r.added, company: m.company, source: source, result: result };
   });
+}
+
+// ------------------------------------------------------------
+// 客戶分級：類型（一般使用者 / 設備商）各自 8 級
+//   1 陌生開發名單（= 開發名單庫裡的公司）→ 2 有興趣 → 3 有需求 → 4 已經拜訪過 → 5 需要追蹤 → 6 樣品測試評估 → 7 成案 → 8 已經成交
+// 客戶管理裡的公司是 2～8 級；等級不會自動改，系統只在記錄拜訪、建立案件、案件完成訂單時詢問業務要不要升級。
+// ------------------------------------------------------------
+var CUST_LEVELS = ['', '陌生開發名單', '有興趣', '有需求', '已經拜訪過', '需要追蹤', '樣品測試評估', '成案', '已經成交'];
+var CUST_TYPES = ['一般使用者', '設備商'];
+
+/** 等級：數字（'6'）、名稱（'樣品測試評估'）或「6 樣品測試評估」都可以；看不懂回 0。 */
+function custLevelNum_(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return 0;
+  var m = s.match(/^(\d)/);
+  if (m) {
+    var n = Number(m[1]);
+    return n >= 1 && n <= 8 ? n : 0;
+  }
+  var idx = CUST_LEVELS.indexOf(s);
+  return idx > 0 ? idx : 0;
+}
+
+function custLevelLabel_(v) {
+  var n = custLevelNum_(v);
+  return n ? n + ' ' + CUST_LEVELS[n] : '（未設定）';
+}
+
+/**
+ * 第一次用到分級時：客戶表補上「類型 / 等級」欄位，並設定現有客戶的初始等級（只做一次）：
+ * 有評估中的案件（還沒結案或已完成訂單）→ 6 樣品測試評估，其他 → 2 有興趣；
+ * 類型先依原本分類推：機構合作設備商 → 設備商、一般客戶 → 一般使用者，其他留空。
+ */
+var CUST_LEVEL_OK_ = false;
+function custLevelEnsure_() {
+  if (CUST_LEVEL_OK_) return;
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('CUST_LEVEL_INIT') === '1') {
+    CUST_LEVEL_OK_ = true;
+    return;
+  }
+  withLock_(function () {
+    if (props.getProperty('CUST_LEVEL_INIT') === '1') return;
+    var ss = getDb_(false);
+    ensureSheet_(ss, SHEET_CUSTOMERS, SCHEMA[SHEET_CUSTOMERS], TEXT_COLUMNS[SHEET_CUSTOMERS] || [], []);
+    var sheet = getSheet(SHEET_CUSTOMERS);
+    var last = sheet.getLastRow();
+    if (last >= 2) {
+      var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+      var col = function (n) { return header.indexOf(n); };
+      var data = sheet.getRange(2, 1, last - 1, header.length).getValues();
+      var evaluating = {};
+      try {
+        sheetToObjects(SHEET_CASES).rows.forEach(function (c) {
+          if (String(c['Status']) === '已結案' && String(c['CloseResult'] || '') === '取消') return;
+          evaluating[normCompanyName_(c['CustomerName'])] = true;
+        });
+      } catch (e) {
+        // 沒有案件表就全部當作還沒開始評估
+      }
+      var now = nowStr();
+      var lv = data.map(function (r) { return [String(r[col('Level')] || '')]; });
+      var ty = data.map(function (r) { return [String(r[col('CustomerType')] || '')]; });
+      var at = data.map(function (r) { return [String(r[col('LevelAt')] || '')]; });
+      data.forEach(function (r, i) {
+        if (!String(r[col('CompanyName')] || '').trim()) return;
+        if (!custLevelNum_(lv[i][0])) {
+          lv[i][0] = evaluating[normCompanyName_(r[col('CompanyName')])] ? '6' : '2';
+          at[i][0] = now;
+        }
+        if (!ty[i][0]) {
+          var cat = String(r[col('Category')] || '');
+          ty[i][0] = cat === '機構合作設備商' ? '設備商' : cat === '一般客戶' ? '一般使用者' : '';
+        }
+      });
+      sheet.getRange(2, col('Level') + 1, lv.length, 1).setNumberFormat('@').setValues(lv);
+      sheet.getRange(2, col('CustomerType') + 1, ty.length, 1).setValues(ty);
+      sheet.getRange(2, col('LevelAt') + 1, at.length, 1).setValues(at);
+    }
+    props.setProperty('CUST_LEVEL_INIT', '1');
+  });
+  CUST_LEVEL_OK_ = true;
+}
+
+/** 一間客戶目前的等級與類型（升級詢問用）。 */
+function handleCustomerLevel(body) {
+  custLevelEnsure_();
+  var name = String(body.companyName || '').trim();
+  if (!name) return { success: false, message: '缺少公司名稱' };
+  var hit = botFindCustomerRow_(name);
+  if (!hit) return { success: true, found: false };
+  return { success: true, found: true, name: String(hit.obj['CompanyName']), rowIndex: hit.row, level: custLevelNum_(hit.obj['Level']) || 2, type: String(hit.obj['CustomerType'] || '') };
+}
+
+/** 分級總覽：每個類型（一般使用者 / 設備商 / 未設定）各等級幾家；1 級 = 開發名單裡的公司（不含隱藏、已轉客戶）。 */
+function handleLevelSummary(body) {
+  custLevelEnsure_();
+  var keys = CUST_TYPES.concat(['']);
+  var out = {};
+  keys.forEach(function (t) { out[t] = [0, 0, 0, 0, 0, 0, 0, 0, 0]; });
+  sheetToObjects(SHEET_CUSTOMERS).rows.forEach(function (c) {
+    if (!String(c['CompanyName'] || '').trim()) return;
+    var t = CUST_TYPES.indexOf(String(c['CustomerType'] || '')) > -1 ? String(c['CustomerType']) : '';
+    out[t][custLevelNum_(c['Level']) || 2]++;
+  });
+  var sh = psSheet_(false);
+  if (sh && sh.getLastRow() >= 2) {
+    sh.getRange(2, 2, sh.getLastRow() - 1, 5).getValues().forEach(function (r) {
+      var has = String(r[4]);
+      if (has.indexOf('H') > -1 || String(r[3]) === '已轉客戶') return;
+      out[has.indexOf('D') > -1 ? '設備商' : has.indexOf('U') > -1 ? '一般使用者' : ''][1]++;
+    });
+  }
+  return { success: true, levels: CUST_LEVELS, types: CUST_TYPES, counts: { user: out['一般使用者'], maker: out['設備商'], none: out[''] } };
+}
+
+// ---- 開發名單的類型 ----
+function psTypeLetter_(t) {
+  return t === '設備商' ? 'D' : t === '一般使用者' ? 'U' : '';
+}
+
+/** 匯入檔案裡寫的類型：寬鬆辨識（設備 → 設備商；使用者 / 終端 / end user → 一般使用者）。 */
+function psTypeOf_(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (/設備|machine|maker|oem/i.test(s)) return '設備商';
+  if (/使用者|終端|用戶|end\s*user|user|工廠/i.test(s)) return '一般使用者';
+  return '';
+}
+
+/** 手動設定的類型：只能是一般使用者 / 設備商 / 空白。 */
+function psTypeStrict_(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (CUST_TYPES.indexOf(s) < 0) throw new Error('類型只能是：' + CUST_TYPES.join('、'));
+  return s;
+}
+
+/** 沒寫類型時從產業分類 / 備註猜（展覽名單都有寫「設備商」）。猜不到留空。 */
+function psGuessType_(r) {
+  return /設備商/.test(String(r.Category || '') + ' ' + String(r.Notes || '')) ? '設備商' : '';
+}
+
+/** 舊名單第一次補上 Type 欄位：依產業 / 備註推類型，寫進 Type 與 Has。 */
+function psMigrateType_(sh) {
+  var n = sh.getLastRow() - 1;
+  if (n < 1) return;
+  var cat = psColVals_(sh, psCol_('Category'), n);
+  var notes = psColVals_(sh, psCol_('Notes'), n);
+  var hasR = sh.getRange(2, psCol_('Has'), n, 1);
+  var has = hasR.getValues();
+  var types = [];
+  for (var i = 0; i < n; i++) {
+    var t = psGuessType_({ Category: cat[i], Notes: notes[i] });
+    types.push([t]);
+    if (t) has[i][0] = String(has[i][0]).replace(/[DU]/g, '') + psTypeLetter_(t);
+  }
+  sh.getRange(2, psCol_('Type'), n, 1).setValues(types);
+  hasR.setValues(has);
 }

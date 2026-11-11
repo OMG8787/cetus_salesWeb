@@ -25,6 +25,8 @@ async function addCustomer() {
     nextFollowUpTime: document.getElementById('cust-followup-time').value,
     nextFollowUpNote: document.getElementById('cust-followup-note').value,
     category: document.getElementById('cust-category').value,
+    customerType: document.getElementById('cust-type').value,
+    level: document.getElementById('cust-level').value,
     urgency: document.getElementById('cust-urgency').value,
     hasTransacted: document.getElementById('cust-has-transacted').checked,
     lastTransactionDate: document.getElementById('cust-last-transaction').value,
@@ -35,7 +37,10 @@ async function addCustomer() {
     alert(result.fromProspect ? `已新增客戶，並從開發名單轉入${result.logsCopied ? `（聯繫紀錄 ${result.logsCopied} 筆一起帶過來）` : ''}` : '已新增客戶');
     ['cust-company', 'cust-contact', 'cust-phone', 'cust-company-phone', 'cust-taxid', 'cust-address', 'cust-website', 'cust-email', 'cust-followup', 'cust-followup-time', 'cust-followup-note', 'cust-last-transaction'].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('cust-has-transacted').checked = false;
+    document.getElementById('cust-type').value = '';
+    document.getElementById('cust-level').value = '2';
     loadCustomers();
+    loadLevelSummary();
   } else {
     alert(result.message);
   }
@@ -87,6 +92,11 @@ function renderCustomerTable() {
   const kw = (document.getElementById('cust-search').value || '').trim().toLowerCase();
   if (kw) rows = rows.filter((c) => ['CompanyName', 'Contact', 'Phone', 'CompanyPhone', 'TaxId', 'Address', 'Email', 'Notes'].some((f) => String(c[f] || '').toLowerCase().includes(kw)));
   if (categoryFilter) rows = rows.filter((c) => c.Category === categoryFilter);
+  const typeFilter = document.getElementById('cust-filter-type').value;
+  const levelFilter = document.getElementById('cust-filter-level').value;
+  if (typeFilter) rows = rows.filter((c) => (typeFilter === '-' ? !CUST_TYPES.includes(c.CustomerType) : c.CustomerType === typeFilter));
+  if (levelFilter) rows = rows.filter((c) => String(Number(c.Level) || 2) === levelFilter);
+  renderLevelBoard();
   if (urgencyFilter) rows = rows.filter((c) => c.Urgency === urgencyFilter);
 
   rows.sort((a, b) => {
@@ -102,7 +112,7 @@ function renderCustomerTable() {
     const transactedText = c.HasTransacted === '是' ? `已交易${c.LastTransactionDate ? '（' + c.LastTransactionDate + '）' : ''}` : '未交易';
     const nameArg = encodeURIComponent(c.CompanyName || '');
     const nm = `decodeURIComponent('${nameArg}')`;
-    tr.innerHTML = `<td>${htmlEsc(c.CompanyName)}${[c.TaxId && '統編 ' + c.TaxId, c.CompanyPhone && '公司電話 ' + c.CompanyPhone, c.Address].filter(Boolean).map((x) => '<div class="calc-hint" style="margin:0;">' + htmlEsc(x) + '</div>').join('')}${websiteLinkHtml(c.Website)}</td><td>${htmlEsc(c.Contact)}</td><td>${htmlEsc(c.Phone)}</td><td>${htmlEsc(c.Category || '')}</td><td>${htmlEsc(c.Urgency || '')}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote, c.NextFollowUpTime)}</td><td>${htmlEsc(transactedText)}</td>
+    tr.innerHTML = `<td>${htmlEsc(c.CompanyName)}${[c.TaxId && '統編 ' + c.TaxId, c.CompanyPhone && '公司電話 ' + c.CompanyPhone, c.Address].filter(Boolean).map((x) => '<div class="calc-hint" style="margin:0;">' + htmlEsc(x) + '</div>').join('')}${websiteLinkHtml(c.Website)}</td><td>${htmlEsc(c.Contact)}</td><td>${htmlEsc(c.Phone)}</td><td>${htmlEsc(c.Category || '')}</td><td>${typeBadge(c.CustomerType)}<br><select class="lv-select" onchange="setCustomerLevel(${nm}, this.value, this)" ${canWrite('customers') ? '' : 'disabled'}>${custLevelOptions(Number(c.Level) || 2)}</select></td><td>${htmlEsc(c.Urgency || '')}</td><td>${customerFollowUpHtml(c.NextFollowUpDate, c.NextFollowUpNote, c.NextFollowUpTime)}</td><td>${htmlEsc(transactedText)}</td>
       <td>
         <button onclick="openCustomerContactsModal(${nm})">聯絡窗口</button>
         <button onclick="viewCasesForCompany(${nm})">相關案件</button>
@@ -116,6 +126,80 @@ function renderCustomerTable() {
     tbody.appendChild(tr);
   });
 }
+
+// ---------------- 客戶分級 ----------------
+let lvProspects = null; // 開發名單（1 級）各類型筆數
+const LV_TYPES = [['user', '一般使用者'], ['maker', '設備商'], ['none', '未設定類型']];
+
+function typeBadge(t) {
+  if (t === '設備商') return '<span class="lv-badge maker">🏭 設備商</span>';
+  if (t === '一般使用者') return '<span class="lv-badge">👤 一般使用者</span>';
+  return '<span class="lv-badge none">未設定類型</span>';
+}
+
+async function loadLevelSummary() {
+  const r = await callApi('levelSummary', {}, { silent: true });
+  if (r && r.success) {
+    lvProspects = { user: r.counts.user[1], maker: r.counts.maker[1], none: r.counts.none[1] };
+    renderLevelBoard();
+  }
+}
+
+/** 分級總覽：兩個類型（加上未設定）× 8 級。2～8 級用目前載入的客戶算，1 級是開發名單的筆數。 */
+function renderLevelBoard() {
+  const el = document.getElementById('lv-board');
+  if (!el) return;
+  const counts = { user: Array(9).fill(0), maker: Array(9).fill(0), none: Array(9).fill(0) };
+  allCustomers.forEach((c) => {
+    const k = c.CustomerType === '設備商' ? 'maker' : c.CustomerType === '一般使用者' ? 'user' : 'none';
+    counts[k][Number(c.Level) || 2]++;
+  });
+  if (lvProspects) Object.keys(lvProspects).forEach((k) => (counts[k][1] = lvProspects[k]));
+  const ft = document.getElementById('cust-filter-type').value;
+  const fl = document.getElementById('cust-filter-level').value;
+  const typeVal = { user: '一般使用者', maker: '設備商', none: '-' };
+  const rows = LV_TYPES.filter(([k]) => k !== 'none' || counts.none.some((n) => n)).map(([k, label]) => {
+    const cells = [];
+    for (let i = 1; i <= 8; i++) {
+      const n = i === 1 && !lvProspects ? '…' : counts[k][i];
+      const on = i > 1 && ft === typeVal[k] && fl === String(i);
+      cells.push(`<td><button type="button" class="lv-cell lv${i} ${on ? 'on' : ''} ${n === 0 ? 'zero' : ''}" onclick="pickLevel('${k}', ${i})" title="${label}：${custLevelLabel(i)}">${n}</button></td>`);
+    }
+    return `<tr><td class="lv-type">${label}</td>${cells.join('')}</tr>`;
+  });
+  el.innerHTML = `<table class="lv-table"><thead><tr><th class="lv-type">類型＼等級</th>${CUST_LEVELS.slice(1).map((n, i) => `<th>${i + 1} ${n}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+}
+
+function pickLevel(k, lv) {
+  if (lv === 1) {
+    location.href = 'prospects.html' + (k === 'maker' ? '?ptype=D' : k === 'user' ? '?ptype=U' : '?ptype=N');
+    return;
+  }
+  const ft = document.getElementById('cust-filter-type');
+  const fl = document.getElementById('cust-filter-level');
+  const tv = { user: '一般使用者', maker: '設備商', none: '-' }[k];
+  const same = ft.value === tv && fl.value === String(lv);
+  ft.value = same ? '' : tv;
+  fl.value = same ? '' : String(lv);
+  renderCustomerTable();
+}
+
+async function setCustomerLevel(name, value, sel) {
+  const c = findCustomerByName(name);
+  if (!c) return;
+  const r = await callApi('updateCustomer', { rowIndex: c.RowIndex, companyName: c.CompanyName, fields: { Level: value }, logSummary: '客戶等級調整' });
+  if (!r.success) {
+    alert(r.message);
+    if (sel) sel.value = Number(c.Level) || 2;
+    return;
+  }
+  applyCustomerSaved(r, c.CompanyName);
+  if (r.log) ContactLogStore.add(r.log);
+}
+
+window.onCustomerLevelChanged = (u) => {
+  if (u && u.customer) applyCustomerSaved(u, u.customer.CompanyName);
+};
 
 /** 公司網址：點了在新分頁開啟（只接受 http / https，其他一律不當成連結）。 */
 function websiteLinkHtml(url) {
@@ -191,7 +275,7 @@ function openCustomerEditModal(name) {
   editingCustomerName = c.CompanyName;
   const set = (id, v) => (document.getElementById(id).value = v || '');
   set('ce-company', c.CompanyName); set('ce-contact', c.Contact); set('ce-phone', c.Phone); set('ce-company-phone', c.CompanyPhone); set('ce-taxid', c.TaxId); set('ce-address', c.Address); set('ce-website', c.Website); set('ce-email', c.Email);
-  set('ce-category', c.Category || '一般客戶'); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate); set('ce-followup-time', c.NextFollowUpTime); set('ce-followup-note', c.NextFollowUpNote);
+  set('ce-category', c.Category || '一般客戶'); set('ce-type', c.CustomerType); set('ce-level', String(Number(c.Level) || 2)); set('ce-urgency', c.Urgency || '中'); set('ce-followup', c.NextFollowUpDate); set('ce-followup-time', c.NextFollowUpTime); set('ce-followup-note', c.NextFollowUpNote);
   document.getElementById('ce-has-transacted').checked = c.HasTransacted === '是';
   set('ce-last-transaction', c.LastTransactionDate); set('ce-notes', c.Notes);
   document.getElementById('customer-edit-modal').style.display = 'flex';
@@ -213,7 +297,7 @@ async function saveCustomerEdit() {
     companyName: editingCustomerName,
     fields: {
       CompanyName: val('ce-company').trim(), Contact: val('ce-contact'), Phone: val('ce-phone'), CompanyPhone: val('ce-company-phone'), TaxId: val('ce-taxid').trim(), Address: val('ce-address').trim(), Website: val('ce-website').trim(), Email: val('ce-email'),
-      Category: val('ce-category'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'), NextFollowUpTime: val('ce-followup-time'), NextFollowUpNote: val('ce-followup-note'),
+      Category: val('ce-category'), CustomerType: val('ce-type'), Level: val('ce-level'), Urgency: val('ce-urgency'), NextFollowUpDate: val('ce-followup'), NextFollowUpTime: val('ce-followup-time'), NextFollowUpNote: val('ce-followup-note'),
       HasTransacted: hasTx ? '是' : '', LastTransactionDate: last, Notes: val('ce-notes'),
     },
   });
@@ -381,7 +465,10 @@ async function addContactLog() {
     caseId: document.getElementById('log-case').value,
   });
   if (result.success) {
+    const visited = document.getElementById('log-method').value === '拜訪';
+    const company = document.getElementById('log-company').value.trim();
     alert('已新增聯繫紀錄');
+    if (visited) askLevelUp(company, 4, '記錄了一次拜訪');
     ['log-contact', 'log-summary'].forEach((id) => (document.getElementById(id).value = ''));
     document.getElementById('log-case').value = '';
     if (result.log) ContactLogStore.add(result.log);
@@ -454,6 +541,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   renderHeaderUser();
   applyAdminOnlyVisibility();
   await loadCustomers();
+  loadLevelSummary();
   applyCompanyFromQuery();
   loadContactLogs();
   bindEnterSubmit('#customer-add-panel', addCustomer);
@@ -464,6 +552,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 // 導覽列「↻ 重撈資料」
 window.refreshPageData = async () => {
   await loadCustomers();
+  loadLevelSummary();
   await loadContactLogs();
 };
 
@@ -603,6 +692,7 @@ async function submitNewCase() {
   clearCached('casesPageData');
   closeNewCaseModal();
   alert(msg);
+  await askLevelUp(ncCustomer.CompanyName, 6, '建立了案件「' + r.caseId + '」，進入樣品測試評估');
   if (document.getElementById('nc-open-case').checked) {
     location.href = 'cases.html?caseId=' + encodeURIComponent(r.caseId);
     return;

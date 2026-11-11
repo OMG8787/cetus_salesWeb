@@ -224,6 +224,7 @@ async function saveCloseCase() {
   clearCached('casesPageData');
   clearCached('customers');
   alert(won ? '已結案：完成訂單' + (r.markedTransacted ? '，客戶已標成已交易' : '') : '已結案：取消');
+  if (won) await askLevelUp(closeCaseCustomer, 8, '的案件「' + closeCaseId + '」完成訂單');
   await loadCases();
   if (typeof currentCaseId !== 'undefined' && currentCaseId === closeCaseId && typeof viewCase === 'function') viewCase(closeCaseId);
 }

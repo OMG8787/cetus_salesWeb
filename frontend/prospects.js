@@ -5,7 +5,7 @@
  */
 
 const IMPORT_CHUNK = 2000;
-const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), assigned: '', site: '', follow: '', hidden: '', page: 1, size: 30 };
+const state = { q: '', sources: new Set(), cities: new Set(), cats: new Set(), stages: new Set(), has: new Set(), ptypes: new Set(), assigned: '', site: '', follow: '', hidden: '', page: 1, size: 30 };
 let data = null; // 最近一次查詢結果
 let selected = new Set(); // 勾選的 Key
 let selectAllMatching = false; // 是否已選「符合條件的全部」
@@ -29,6 +29,7 @@ function filterBody() {
     cats: [...state.cats],
     stages: [...state.stages],
     has: [...state.has].join(''),
+    ptypes: [...state.ptypes],
     assigned: state.assigned,
     site: state.site,
     follow: state.follow,
@@ -133,7 +134,10 @@ function renderFilters() {
     { v: 'W', n: (f.has.find((x) => x.v === 'W') || {}).n || 0 },
   ];
   const hasLabel = { P: '有電話', E: '有 Email', W: '有網站' };
+  const ptypeLabel = { D: '🏭 設備商', U: '👤 一般使用者', N: '未設定類型' };
+  const ptypeList = ['D', 'U', 'N'].map((v) => ({ v, n: ((f.ptype || []).find((x) => x.v === v) || {}).n || 0 })).filter((x) => x.n || state.ptypes.has(x.v));
   document.getElementById('ps-filters').innerHTML =
+    facetBlock('類型', 'ptype', ptypeList, state.ptypes, (v) => ptypeLabel[v]) +
     facetBlock('產業分類', 'cat', f.cat, state.cats, catLabel, { pre: `<div class="ps-groups"><span class="calc-hint">快速選取：</span>${groups}</div>`, limit: 12, expanded: expandedFacets.has('cat') }) +
     facetBlock('來源', 'source', f.source, state.sources, (v) => v) +
     facetBlock('縣市', 'city', f.city, state.cities, (v) => v, { limit: 10, expanded: expandedFacets.has('city') }) +
@@ -144,7 +148,7 @@ function renderFilters() {
 document.addEventListener('change', (ev) => {
   const t = ev.target;
   if (!t || !t.dataset || !t.dataset.facet) return;
-  const set = { cat: state.cats, source: state.sources, city: state.cities, stage: state.stages, has: state.has }[t.dataset.facet];
+  const set = { cat: state.cats, source: state.sources, city: state.cities, stage: state.stages, has: state.has, ptype: state.ptypes }[t.dataset.facet];
   if (!set) return;
   if (t.checked) set.add(t.value);
   else set.delete(t.value);
@@ -177,7 +181,7 @@ document.addEventListener('click', (ev) => {
     } else if (k === 'assigned') {
       state.assigned = '';
       document.getElementById('ps-assigned').value = '';
-    } else ({ cat: state.cats, source: state.sources, city: state.cities, stage: state.stages, has: state.has }[k] || new Set()).delete(v);
+    } else ({ cat: state.cats, source: state.sources, city: state.cities, stage: state.stages, has: state.has, ptype: state.ptypes }[k] || new Set()).delete(v);
     filtersChanged();
   }
 });
@@ -208,7 +212,7 @@ function onFollowChange() {
 
 /** 一鍵：我負責、今天以前要聯繫的（依追蹤日排序，最早的在前）。 */
 function showMyDue() {
-  ['sources', 'cities', 'cats', 'stages', 'has'].forEach((k) => state[k].clear());
+  ['sources', 'cities', 'cats', 'stages', 'has', 'ptypes'].forEach((k) => state[k].clear());
   state.q = '';
   state.site = '';
   state.assigned = 'me';
@@ -253,6 +257,7 @@ function renderChips() {
   state.stages.forEach((v) => chips.push(['stage', v, `狀態：${v}`]));
   const hasLabel = { P: '有電話', E: '有 Email', W: '有網站' };
   state.has.forEach((v) => chips.push(['has', v, hasLabel[v]]));
+  state.ptypes.forEach((v) => chips.push(['ptype', v, `類型：${{ D: '設備商', U: '一般使用者', N: '未設定' }[v]}`]));
   if (state.assigned) chips.push(['assigned', state.assigned, state.assigned === 'me' ? '我負責的' : '尚未指派']);
   if (state.site) chips.push(['site', state.site, state.site === 'checked' ? '官網已查過' : '官網還沒查']);
   if (state.follow) chips.push(['follow', state.follow, { due: '今天以前要聯繫', planned: '已排定追蹤', none: '還沒排追蹤日' }[state.follow]]);
@@ -260,6 +265,12 @@ function renderChips() {
 }
 
 // ---------- 表格 ----------
+function psTypeBadge(t) {
+  if (t === '設備商') return '<span class="lv-badge maker" title="設備商">🏭</span>';
+  if (t === '一般使用者') return '<span class="lv-badge" title="一般使用者">👤</span>';
+  return '';
+}
+
 function contactHtml(r) {
   const out = [];
   if (r.Contact) out.push(`<div>👤 ${e(r.Contact)}</div>`);
@@ -295,7 +306,7 @@ function renderRows() {
       const src = (r.Source || '').split('、').join('、');
       return `<tr data-i="${i}" class="${r.Optout ? 'ps-optout' : ''}">
         <td><input type="checkbox" data-key="${e(r.Key)}" ${selected.has(r.Key) || selectAllMatching ? 'checked' : ''} ${selectAllMatching ? 'disabled' : ''} /></td>
-        <td class="ps-name"><div><b>${e(r.Name)}</b> ${warn}${r.ConvertedTo ? ` <span class="ps-conv" title="已轉成客戶：${e(r.ConvertedTo)}（${e(String(r.ConvertedAt || '').slice(0, 10))}）">✅ 已轉客戶</span>` : r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}${r.Hidden ? ` <span class="ps-hid" title="${e(r.HiddenBy || '')} ${e(r.HiddenAt || '')} 隱藏">🙈 隱藏</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源：${e(src)}">📂 ${e(src.split('、').map(shortSource).join('、'))}</div></td>
+        <td class="ps-name"><div>${psTypeBadge(r.Type)} <b>${e(r.Name)}</b> ${warn}${r.ConvertedTo ? ` <span class="ps-conv" title="已轉成客戶：${e(r.ConvertedTo)}（${e(String(r.ConvertedAt || '').slice(0, 10))}）">✅ 已轉客戶</span>` : r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}${r.Hidden ? ` <span class="ps-hid" title="${e(r.HiddenBy || '')} ${e(r.HiddenAt || '')} 隱藏">🙈 隱藏</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源：${e(src)}">📂 ${e(src.split('、').map(shortSource).join('、'))}</div></td>
         <td class="ps-cat">${catHtml(r)}<div class="ps-prod" title="${e(r.Products || '')}">${e((r.Products || '').slice(0, 70))}</div></td>
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
@@ -382,6 +393,8 @@ function renderBulk() {
     ${canAll ? `<button type="button" class="btn-mini" onclick="pickAllMatching()">改選符合條件的全部 ${data.total.toLocaleString()} 筆</button>` : ''}
     <select id="ps-bulk-stage"><option value="">設定開發狀態…</option>${stages.map((s) => `<option value="${e(s)}">${e(s)}</option>`).join('')}</select>
     <button type="button" class="btn-mini" onclick="applyBulk('stage')">套用狀態</button>
+    <select id="ps-bulk-type"><option value="-">設定類型…</option><option value="設備商">設備商</option><option value="一般使用者">一般使用者</option><option value="">清除類型</option></select>
+    <button type="button" class="btn-mini" onclick="applyBulk('type')">套用類型</button>
     <button type="button" class="btn-mini" onclick="applyBulk('me')">指派給我</button>
     <button type="button" class="btn-mini" onclick="applyBulk('unassign')">取消指派</button>
     <button type="button" class="btn-mini ps-danger" onclick="applyBulk('optout')">標記拒絕聯絡</button>
@@ -404,6 +417,11 @@ async function applyBulk(kind) {
     if (!v) return alert('請先選要設定的開發狀態');
     set.Stage = v;
     what = `開發狀態設為「${v}」`;
+  } else if (kind === 'type') {
+    const tv = document.getElementById('ps-bulk-type').value;
+    if (tv === '-') return alert('請先選要設定的類型');
+    set.Type = tv;
+    what = tv ? `類型設為「${tv}」` : '清除類型';
   } else if (kind === 'me') {
     set.AssignedTo = '@me'; // 伺服器換成登入帳號
     what = '指派給你';
@@ -491,6 +509,8 @@ function askConvert(r, allowLabel) {
   document.getElementById('pcv-list').innerHTML = items.map(([k, v]) => `<li><span>${e(k)}</span>${e(String(v).slice(0, 120))}</li>`).join('') + '<li><span>聯繫紀錄</span>全部複製到客戶的聯繫紀錄</li>';
   document.getElementById('pcv-exist').textContent = r.IsCustomer ? `客戶管理裡已經有「${r.IsCustomer}」，不會重複新增；只會把名單標成已轉客戶、聯繫紀錄帶過去。` : '';
   document.getElementById('pcv-label').style.display = allowLabel ? '' : 'none';
+  document.getElementById('pcv-type').value = r.Type || '';
+  document.getElementById('pcv-level').value = '2';
   document.getElementById('ps-conv-modal').style.display = 'flex';
   return new Promise((res) => (convResolve = res));
 }
@@ -500,7 +520,7 @@ async function convertProspect(r, allowLabel) {
   const v = await askConvert(r, allowLabel);
   if (v === 'label') return 'label';
   if (v !== 'convert') return false;
-  const res = await callApi('prospectToCustomer', { key: r.Key, row: r.RowIndex, category: document.getElementById('pcv-cat').value });
+  const res = await callApi('prospectToCustomer', { key: r.Key, row: r.RowIndex, category: document.getElementById('pcv-cat').value, customerType: document.getElementById('pcv-type').value, level: document.getElementById('pcv-level').value });
   if (!res || !res.success) {
     alert((res && res.message) || '轉客戶失敗');
     return false;
@@ -578,9 +598,10 @@ function openEdit(i) {
   const r = data.rows[i];
   editRow = r;
   const ro = readOnly();
-  document.getElementById('pse-title').innerHTML = e(r.Name) + (r.IsCustomer ? ` <span class="ps-iscust">已是客戶：${e(r.IsCustomer)}</span>` : ' <span class="ps-cold">陌生開發</span>');
+  document.getElementById('pse-title').innerHTML = psTypeBadge(r.Type) + ' ' + e(r.Name) + (r.IsCustomer ? ` <span class="ps-iscust">已是客戶：${e(r.IsCustomer)}</span>` : ' <span class="ps-cold">陌生開發</span>');
   document.getElementById('pse-sub').textContent = [r.TaxId ? '統編 ' + r.TaxId : '', r.City, r.Source].filter(Boolean).join('｜');
   document.getElementById('pse-stage').innerHTML = stages.map((s) => `<option value="${e(s)}" ${s === r.Stage ? 'selected' : ''}>${e(s)}</option>`).join('');
+  document.getElementById('pse-type').value = r.Type || '';
   const set = (id, v) => (document.getElementById(id).value = v || '');
   set('pse-assigned', r.AssignedTo);
   set('pse-contact', r.Contact);
@@ -594,7 +615,7 @@ function openEdit(i) {
   renderEditTools(r);
   document.getElementById('pse-enrich').innerHTML = (r.ExtraContacts ? `其他聯絡方式：${e(r.ExtraContacts)}<br>` : '') + (r.Enriched ? `官網查詢（${e(r.EnrichedAt || '')}）：${e(ENRICH_LABEL[r.Enriched] || r.Enriched)}　${e(r.EnrichNote || '')}` : '');
   document.getElementById('pse-msg').textContent = ro ? '你只有查看權限' : '';
-  ['pse-stage', 'pse-next', 'pse-assigned', 'pse-contact', 'pse-phone', 'pse-email', 'pse-website', 'pse-notes', 'pse-optout'].forEach((id) => (document.getElementById(id).disabled = ro));
+  ['pse-type', 'pse-stage', 'pse-next', 'pse-assigned', 'pse-contact', 'pse-phone', 'pse-email', 'pse-website', 'pse-notes', 'pse-optout'].forEach((id) => (document.getElementById(id).disabled = ro));
   document.getElementById('ps-edit-modal').style.display = 'flex';
 }
 
@@ -612,7 +633,7 @@ async function saveEdit() {
       document.getElementById('pse-next').value = '';
     }
   }
-  const fields = { Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked, NextFollowUp: v('pse-next') };
+  const fields = { Type: v('pse-type'), Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked, NextFollowUp: v('pse-next') };
   const r = await callApi('prospectUpdate', { key: editRow.Key, row: editRow.RowIndex, fields });
   if (!r || !r.success) {
     document.getElementById('pse-msg').textContent = (r && r.message) || '儲存失敗';
@@ -731,6 +752,7 @@ async function startImport() {
   if (!source) return alert('請填來源名稱');
   const built = importFinal ? { records: importFinal, skipped: 0 } : psBuildRecords(importFile.rows, importMap);
   const { records, skipped } = built;
+  applyDefaultType(records);
   if (!records.length) return alert('沒有可匯入的資料（公司名稱都是空白）');
   const update = document.getElementById('ps-update').checked;
   const startAt = Math.max(1, Math.floor(Number(document.getElementById('ps-start').value)) || 1);
@@ -819,6 +841,15 @@ const custChoice = {}; // 列索引 → true（仍加入名單）
 const hiddenChoice = {}; // 列索引 → true（從隱藏名單恢復並匯入）
 const CHECK_CHUNK = 2000;
 
+/** 匯入時選的「這批名單的類型」：檔案裡沒寫類型的列套用。 */
+function applyDefaultType(records) {
+  const el = document.getElementById('ps-type-default');
+  const t = el ? el.value : '';
+  if (t) records.forEach((r) => {
+    if (!r.Type) r.Type = t;
+  });
+}
+
 function backToMap() {
   document.getElementById('ps-step-check').style.display = 'none';
   document.getElementById('ps-step-map').style.display = '';
@@ -828,6 +859,7 @@ async function checkImport() {
   if (importMap.Name === undefined) return alert('一定要對應「公司名稱」欄位');
   if (!document.getElementById('ps-source').value.trim()) return alert('請填來源名稱');
   const { records, skipped } = psBuildRecords(importFile.rows, importMap);
+  applyDefaultType(records);
   if (!records.length) return alert('沒有可匯入的資料（公司名稱都是空白）');
   checkRecords = records;
   checkSkipped = skipped;
@@ -1212,6 +1244,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadStatus();
   // 從業務行事曆點「📞 記錄」：?q=公司名稱&open=1 → 搜尋並直接打開那家的聯繫視窗
   const params = new URLSearchParams(location.search);
+  if (/^[DUN]$/.test(params.get('ptype') || '')) state.ptypes.add(params.get('ptype'));
   if (params.get('q')) {
     state.q = params.get('q');
     document.getElementById('ps-q').value = state.q;

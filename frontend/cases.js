@@ -348,6 +348,7 @@ async function createCase() {
   if (result.success) {
     clearCached('casesPageData');
     alert('案件已建立：' + result.caseId);
+    await askLevelUp(fields.customerName, 6, '建立了案件「' + result.caseId + '」，進入樣品測試評估');
     [
       'case-customer', 'case-end-customer', 'case-project-contact', 'case-contact-phone',
       'case-salesperson', 'case-fae', 'case-product-application', 'case-test-object',

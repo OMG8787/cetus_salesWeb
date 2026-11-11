@@ -5,8 +5,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>開發名單庫 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261111a" />
-<link rel="stylesheet" href="dark.css?v=20261111a" />
+<link rel="stylesheet" href="style.css?v=20261111c" />
+<link rel="stylesheet" href="dark.css?v=20261111b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
 <link rel="apple-touch-icon" href="img/icon-192.png" />
@@ -168,6 +168,8 @@
       <div id="ps-file-info" style="font-weight:600;"></div>
       <label style="display:block;margin-top:8px;">來源名稱（之後可以依來源篩選）：</label>
       <input id="ps-source" maxlength="60" placeholder="例如：經濟部生產中工廠名錄、2026 台北國際自動化工業大展" />
+      <label style="display:block;margin-top:8px;">這批名單的類型（檔案裡沒寫類型的套用這個；產業或備註有寫「設備商」的會自動標設備商）：</label>
+      <select id="ps-type-default"><option value="">不指定</option><option value="設備商">設備商</option><option value="一般使用者">一般使用者</option></select>
       <div class="calc-hint" style="margin-top:10px;">欄位對應（系統已自動對好，錯的可以改；不需要的選「不匯入」）：</div>
       <div id="ps-map" class="ps-map"></div>
       <div class="calc-hint" style="margin-top:8px;">預覽（前 3 筆）：</div>
@@ -222,6 +224,10 @@
     <div class="ps-sub" style="margin:4px 0 10px;">會在「客戶管理」新增這家公司，下面的資料一起帶過去；名單標成「已轉客戶」，之後在客戶管理追蹤。</div>
     <ul id="pcv-list" class="pcv-list"></ul>
     <div id="pcv-exist" class="pcv-exist"></div>
+    <label class="ps-label" for="pcv-type">類型</label>
+    <select id="pcv-type"><option value="">（未設定）</option><option value="一般使用者">一般使用者</option><option value="設備商">設備商</option></select>
+    <label class="ps-label" for="pcv-level">客戶等級（名單是第 1 級，轉成客戶後從這裡開始）</label>
+    <select id="pcv-level"><option value="2" selected>2 有興趣</option><option value="3">3 有需求</option><option value="4">4 已經拜訪過</option><option value="5">5 需要追蹤</option><option value="6">6 樣品測試評估</option><option value="7">7 成案</option><option value="8">8 已經成交</option></select>
     <label class="ps-label" for="pcv-cat">客戶分類</label>
     <select id="pcv-cat"><option value="一般客戶" selected>一般客戶</option><option value="機構合作設備商">機構合作設備商</option><option value="器材原廠">器材原廠</option><option value="AOI同業資料">AOI同業資料</option></select>
     <div class="pcv-btns"><button type="button" class="ps-btn ps-btn-primary" onclick="closeConv('convert')">⭐ 轉成客戶</button><button type="button" class="ps-btn" id="pcv-label" onclick="closeConv('label')">只改狀態，不新增客戶</button></div>
@@ -251,6 +257,7 @@
     <div class="ps-section-title">聯繫紀錄</div>
     <div id="pse-logs" class="ps-logs"><span class="calc-hint">讀取中…</span></div>
     <details class="ps-company"><summary>公司資料（狀態、負責業務、聯絡方式、備註）</summary>
+    <label>類型：</label><select id="pse-type"><option value="">（未設定）</option><option value="一般使用者">一般使用者</option><option value="設備商">設備商</option></select>
     <label>開發狀態：</label><select id="pse-stage"></select>
     <label>下次追蹤日：</label><input id="pse-next" type="date" />
     <label>負責業務（帳號）：</label>
@@ -269,10 +276,10 @@
 
 <script src="config.js?v=20261109b"></script>
 <script src="demo.js?v=20261109b"></script>
-<script src="common.js?v=20261111a"></script>
+<script src="common.js?v=20261111c"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261109b"></script>
-<script src="prospects-lib.js?v=20261111a"></script>
-<script src="prospects.js?v=20261111a"></script>
+<script src="prospects-lib.js?v=20261111b"></script>
+<script src="prospects.js?v=20261111b"></script>
 </body>
 </html>
