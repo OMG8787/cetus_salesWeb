@@ -12,7 +12,7 @@
   // =====================================================
   var CONFIG = {
     // 位置（距離視窗邊緣的距離，單位 px）
-    position: { right: 24, bottom: 24 },
+    position: { right: 80, bottom: 24 },
 
     // 主題色
     color: '#2563eb',
@@ -87,7 +87,7 @@
     var root = host.attachShadow({ mode: 'open' });
 
     var robotSvg =
-      '<svg viewBox="0 0 64 64" width="56" height="56" aria-hidden="true">' +
+      '<svg viewBox="0 0 64 64" width="57" height="57" aria-hidden="true">' +
       '<line x1="32" y1="6" x2="32" y2="14" stroke="#fff" stroke-width="3" stroke-linecap="round"/>' +
       '<circle cx="32" cy="5" r="3.5" fill="#fde047"/>' +
       '<rect x="10" y="14" width="44" height="34" rx="12" fill="#fff"/>' +
@@ -119,16 +119,16 @@
       '.item .ic{font-size:18px;}' +
 
       /* 氣泡 */
-      '.tip{position:absolute;right:102px;bottom:24px;background:#fff;color:#1f2937;padding:8px 14px;' +
+      '.tip{position:absolute;right:108px;bottom:34px;background:#fff;color:#1f2937;padding:8px 14px;' +
       'border-radius:14px 14px 4px 14px;font-size:14px;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.15);' +
       'opacity:0;transform:translateX(8px);pointer-events:none;transition:opacity .25s,transform .25s;}' +
       '.wrap.tip-on:not(.open) .tip{opacity:1;transform:none;}' +
 
       /* 機器人按鈕 */
-      '.bot{position:relative;width:90px;height:90px;border:none;border-radius:50%;padding:0;cursor:pointer;' +
+      '.bot{position:relative;width:96px;height:96px;border:none;border-radius:50%;padding:0;cursor:pointer;' +
       'display:flex;align-items:center;justify-content:center;' +
       'background:linear-gradient(145deg,' + CONFIG.color + ',#1e3a8a);' +
-      'box-shadow:0 8px 26px rgba(0,0,0,.30);animation:float 3s ease-in-out infinite;transition:transform .2s;}' +
+      'box-shadow:0 8px 26px rgba(0,0,0,.32);animation:float 3s ease-in-out infinite;transition:transform .2s;}' +
       '.bot:hover,.bot:focus-visible{transform:scale(1.08);outline:none;}' +
       '.wrap.open .bot{animation-play-state:paused;}' +
       '.eyes{transform-origin:32px 31px;animation:blink 4s infinite;}' +
@@ -244,6 +244,11 @@
       bot.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (open) wrap.classList.remove('tip-on');
     }
+
+    // 訪客進入官網後，1 秒自動展開機器人選單
+    setTimeout(function () {
+      setOpen(true);
+    }, 1000);
 
     // 桌機：滑鼠移入展開，移出稍微延遲再收合（避免手滑一下就消失）
     wrap.addEventListener('mouseenter', function () {
