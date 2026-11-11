@@ -34,10 +34,10 @@
     //   url：不用客服視窗，直接前往的網址；target：_blank（新分頁）或 _self（同頁）
     //   若想執行自訂動作，可改用 onClick: function () { ... }
     items: [
-      { icon: '💬', label: '智能客服', action: 'chat' },
+      { icon: '💬', label: '專屬智能客服', action: 'chat' },
       { icon: '✉️', label: '聯繫我', action: 'contact', fallbackUrl: 'mailto:YOUR_MAIL@example.com' },
-      { icon: '🎧', label: '專員客服', action: 'human', fallbackUrl: 'https://line.me/R/ti/p/@your_line_id', target: '_blank' },
-      { icon: '🧭', label: '選型工具', url: 'index.html', target: '_self' }
+      //{ icon: '🎧', label: '專員客服', action: 'human', fallbackUrl: 'https://line.me/R/ti/p/@your_line_id', target: '_blank' },
+      { icon: '🧭', label: '選型工具', url: 'https://austincetus-maker.github.io/cetustool/', target: '_self' }
     ],
 
     // 不想顯示的頁面（網址路徑包含以下任一字串就不顯示）
