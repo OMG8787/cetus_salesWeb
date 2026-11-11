@@ -680,7 +680,7 @@ function renderAgenda() {
     const name = argAttr(c.CompanyName);
     items.push({
       type: 'customer', date: normalizeDateStr(c.NextFollowUpDate), time: c.NextFollowUpTime || '', title: c.CompanyName,
-      sub: [c.Contact, c.NextFollowUpNote].filter(Boolean).join('｜'), phone: c.Phone || c.CompanyPhone, email: c.Email, site: customerSite(c),
+      sub: [c.CustomerType ? c.CustomerType + '・' + custLevelLabel(Number(c.Level) || 2) : custLevelLabel(Number(c.Level) || 2), c.Contact, c.NextFollowUpNote].filter(Boolean).join('｜'), phone: c.Phone || c.CompanyPhone, email: c.Email, site: customerSite(c),
       act: `<button type="button" class="btn-mini" style="background:#27ae60;" onclick="schDone(decodeURIComponent('${name}'), '')">追蹤完畢</button> <button type="button" class="btn-mini" onclick="schChangeDate(decodeURIComponent('${name}'))">改日</button>`,
     });
   });
@@ -688,7 +688,7 @@ function renderAgenda() {
     items.push({
       type: 'prospect', date: p.NextFollowUp, time: '', title: p.Name,
       label: p.IsCustomer ? '開發名單' : '', color: '#8e44ad',
-      sub: [p.IsCustomer ? '⚠️ 已是客戶（' + p.IsCustomer + '），不是陌生開發' : '', p.Stage, p.Contact, p.City].filter(Boolean).join('｜'), phone: p.Phone, email: p.Email, site: safeSite(p.Website),
+      sub: [p.IsCustomer ? '⚠️ 已是客戶（' + p.IsCustomer + '），不是陌生開發' : (p.Type ? p.Type + '・' : '') + '1 陌生開發名單', p.Stage, p.Contact, p.City].filter(Boolean).join('｜'), phone: p.Phone, email: p.Email, site: safeSite(p.Website),
       act: `<a class="btn-mini ag-btn" href="prospects.html?q=${encodeURIComponent(p.Name)}&open=1" target="_blank" rel="noopener">📞 記錄</a>`,
     })
   );

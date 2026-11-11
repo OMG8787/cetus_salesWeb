@@ -114,3 +114,16 @@ ok(keyOf('名片陌生').Type === '一般使用者', '名片放進開發名單�
 ok(ctx.permFor_('customerLevel')[1] === 'r' && ctx.permFor_('levelSummary')[1] === 'r', '權限：查看');
 
 console.log('customers-level checks passed:', pass);
+
+// ---- LINE 助理：新增客戶時可以帶類型與等級 ----
+{
+  const ctxStaff = { access: { canDelete: false, blocks: { customers: 'edit' } }, username: 'amy', name: 'Amy', ownerKey: 'amy' };
+  const bad = (w) => { try { ctx.botWriteCheck_(ctxStaff, w); return null; } catch (e) { return e.message; } };
+  assert.ok(/類型只能是/.test(bad({ action: 'addCustomer', data: { companyName: '助理新客戶有限公司', customerType: '代理商' } })), '助理：類型不合法被擋');
+  assert.ok(/2～8/.test(bad({ action: 'addCustomer', data: { companyName: '助理新客戶有限公司', level: '1' } })), '助理：等級 1 被擋');
+  assert.strictEqual(bad({ action: 'addCustomer', data: { companyName: '助理新客戶有限公司', customerType: '設備商', level: '4' } }), null, '助理：合法的通過');
+  ctx.botWriteRun_(ctxStaff, { action: 'addCustomer', data: { companyName: '助理新客戶有限公司', customerType: '設備商', level: '4' } });
+  const nc = cust('助理新客戶有限公司');
+  assert.ok(nc && nc.Level === '4' && nc.CustomerType === '設備商', '助理新增客戶：類型與等級寫入');
+  console.log('customers-level assistant checks passed');
+}

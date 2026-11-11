@@ -342,13 +342,13 @@ function writeTools(uid: string, info: StaffInfo, staging: Staging): Tool[] {
   if (writable.has("updateCustomer")) {
     tools.push({
       name: "update_customer",
-      description: "修改客戶資料（聯絡人、電話、Email、公司電話、地址、統編、分類、急迫性、備註）。公司名稱不能用助理修改。只填要改的欄位。",
+      description: "修改客戶資料（聯絡人、電話、Email、公司電話、地址、統編、分類、類型、等級、急迫性、備註）。公司名稱不能用助理修改。只填要改的欄位。客戶等級 2～8：2 有興趣、3 有需求、4 已經拜訪過、5 需要追蹤、6 樣品測試評估、7 成案、8 已經成交（1 陌生開發名單是開發名單庫，不是客戶）。",
       parameters: {
         type: "object",
         properties: {
           company: str("客戶公司名稱（完整）"),
           contact: str("聯絡人"), phone: str("聯繫人電話"), email: str("Email"), company_phone: str("公司電話"), address: str("地址"), tax_id: str("統一編號"),
-          category: str("分類"), urgency: str("急迫性：高 / 中 / 低"), notes: str("客戶備註（會取代原本的備註，修改前先查原本內容）"),
+          category: str("分類"), customer_type: str("類型：一般使用者 / 設備商"), level: str("客戶等級 2～8（數字）"), urgency: str("急迫性：高 / 中 / 低"), notes: str("客戶備註（會取代原本的備註，修改前先查原本內容）"),
         },
         required: ["company"],
       },
@@ -356,7 +356,7 @@ function writeTools(uid: string, info: StaffInfo, staging: Staging): Tool[] {
         propose("updateCustomer", {
           company: a.company,
           fields: Object.fromEntries(
-            Object.entries({ Contact: a.contact, Phone: a.phone, Email: a.email, CompanyPhone: a.company_phone, Address: a.address, TaxId: a.tax_id, Category: a.category, Urgency: a.urgency, Notes: a.notes }).filter(([, v]) => v !== undefined && v !== ""),
+            Object.entries({ Contact: a.contact, Phone: a.phone, Email: a.email, CompanyPhone: a.company_phone, Address: a.address, TaxId: a.tax_id, Category: a.category, CustomerType: a.customer_type, Level: a.level, Urgency: a.urgency, Notes: a.notes }).filter(([, v]) => v !== undefined && v !== ""),
           ),
         })(),
     });
@@ -365,8 +365,8 @@ function writeTools(uid: string, info: StaffInfo, staging: Staging): Tool[] {
     tools.push({
       name: "add_customer",
       description: "新增客戶（公司名稱不能跟現有的重複，先用 search_customers 確認沒有）",
-      parameters: { type: "object", properties: { company_name: str("公司名稱"), contact: str("聯絡人"), phone: str("電話"), email: str("Email"), category: str("分類，預設一般客戶"), urgency: str("急迫性：高 / 中 / 低"), notes: str("備註") }, required: ["company_name"] },
-      handler: (a) => propose("addCustomer", { companyName: a.company_name, contact: a.contact, phone: a.phone, email: a.email, category: a.category, urgency: a.urgency, notes: a.notes })(),
+      parameters: { type: "object", properties: { company_name: str("公司名稱"), contact: str("聯絡人"), phone: str("電話"), email: str("Email"), category: str("分類，預設一般客戶"), customer_type: str("類型：一般使用者 / 設備商"), level: str("客戶等級 2～8，預設 2 有興趣"), urgency: str("急迫性：高 / 中 / 低"), notes: str("備註") }, required: ["company_name"] },
+      handler: (a) => propose("addCustomer", { companyName: a.company_name, contact: a.contact, phone: a.phone, email: a.email, category: a.category, customerType: a.customer_type, level: a.level, urgency: a.urgency, notes: a.notes })(),
     });
   }
   if (writable.has("createCase")) {

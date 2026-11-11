@@ -9953,6 +9953,8 @@ function botWriteCheck_(ctx, w) {
     if (!s('companyName')) throw new Error('公司名稱不能空白');
     var dup = findDuplicateCustomerRow_(s('companyName'), 0);
     if (dup) throw new Error('已經有「' + s('companyName') + '」這間客戶了');
+    if (s('customerType') && CUST_TYPES.indexOf(s('customerType')) < 0) throw new Error('類型只能是：' + CUST_TYPES.join('、'));
+    if (s('level') && custLevelNum_(s('level')) < 2) throw new Error('客戶等級要是 2～8');
     return { line: '🏢 新增客戶：' + s('companyName') + (s('contact') ? '（聯絡人 ' + s('contact') + (s('phone') ? ' ' + s('phone') : '') + '）' : '') };
   }
   if (w.action === 'createCase') {
@@ -10216,7 +10218,7 @@ function botWriteRun_(ctx, w) {
     return { action: w.action, ok: true };
   }
   if (w.action === 'addCustomer') {
-    var r3 = handleAddCustomer({ _user: user, companyName: s('companyName'), contact: s('contact'), phone: s('phone'), email: s('email'), category: s('category') || '一般客戶', urgency: s('urgency') || '中', notes: s('notes') });
+    var r3 = handleAddCustomer({ _user: user, companyName: s('companyName'), contact: s('contact'), phone: s('phone'), email: s('email'), category: s('category') || '一般客戶', customerType: s('customerType'), level: s('level'), urgency: s('urgency') || '中', notes: s('notes') });
     if (!r3.success) throw new Error(r3.message);
     return { action: w.action, ok: true };
   }
