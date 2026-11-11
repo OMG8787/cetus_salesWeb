@@ -125,10 +125,10 @@
       '.wrap.tip-on:not(.open) .tip{opacity:1;transform:none;}' +
 
       /* 機器人按鈕 */
-      '.bot{position:relative;width:64px;height:64px;border:none;border-radius:50%;padding:0;cursor:pointer;' +
+      '.bot{position:relative;width:90px;height:90px;border:none;border-radius:50%;padding:0;cursor:pointer;' +
       'display:flex;align-items:center;justify-content:center;' +
       'background:linear-gradient(145deg,' + CONFIG.color + ',#1e3a8a);' +
-      'box-shadow:0 6px 20px rgba(0,0,0,.28);animation:float 3s ease-in-out infinite;transition:transform .2s;}' +
+      'box-shadow:0 8px 26px rgba(0,0,0,.30);animation:float 3s ease-in-out infinite;transition:transform .2s;}' +
       '.bot:hover,.bot:focus-visible{transform:scale(1.08);outline:none;}' +
       '.wrap.open .bot{animation-play-state:paused;}' +
       '.eyes{transform-origin:32px 31px;animation:blink 4s infinite;}' +
