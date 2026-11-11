@@ -35,8 +35,8 @@
     //   若想執行自訂動作，可改用 onClick: function () { ... }
     items: [
       { icon: '💬', label: '智能客服', action: 'chat' },
-      { icon: '✉️', label: '聯繫我',   action: 'contact', fallbackUrl: 'mailto:YOUR_MAIL@example.com' },
-      { icon: '🎧', label: '專員客服', action: 'human',   fallbackUrl: 'https://line.me/R/ti/p/@your_line_id', target: '_blank' },
+      { icon: '✉️', label: '聯繫我', action: 'contact', fallbackUrl: 'mailto:YOUR_MAIL@example.com' },
+      { icon: '🎧', label: '專員客服', action: 'human', fallbackUrl: 'https://line.me/R/ti/p/@your_line_id', target: '_blank' },
       { icon: '🧭', label: '選型工具', url: 'index.html', target: '_self' }
     ],
 
@@ -87,7 +87,7 @@
     var root = host.attachShadow({ mode: 'open' });
 
     var robotSvg =
-      '<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true">' +
+      '<svg viewBox="0 0 64 64" width="56" height="56" aria-hidden="true">' +
       '<line x1="32" y1="6" x2="32" y2="14" stroke="#fff" stroke-width="3" stroke-linecap="round"/>' +
       '<circle cx="32" cy="5" r="3.5" fill="#fde047"/>' +
       '<rect x="10" y="14" width="44" height="34" rx="12" fill="#fff"/>' +
@@ -119,7 +119,7 @@
       '.item .ic{font-size:18px;}' +
 
       /* 氣泡 */
-      '.tip{position:absolute;right:76px;bottom:14px;background:#fff;color:#1f2937;padding:8px 14px;' +
+      '.tip{position:absolute;right:102px;bottom:24px;background:#fff;color:#1f2937;padding:8px 14px;' +
       'border-radius:14px 14px 4px 14px;font-size:14px;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.15);' +
       'opacity:0;transform:translateX(8px);pointer-events:none;transition:opacity .25s,transform .25s;}' +
       '.wrap.tip-on:not(.open) .tip{opacity:1;transform:none;}' +
