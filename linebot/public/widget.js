@@ -282,7 +282,7 @@
       (d.messages || []).forEach(function (m) { show(m, false); });
       if (!d.messages || !d.messages.length) welcome(); else welcomed = true;
       if (d.paused) humanWait = true;
-      if (d.paused || (d.messages && d.messages.length)) startPolling();
+      if (d.paused) startPolling(); // 只有轉真人後（小編接手中）才輪詢
     }).catch(function () { loaded = false; });
   }
 
@@ -320,7 +320,7 @@
         if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false, quick: d.reply.quickActions === true, more: d.reply.seeMore === true });
         else if (d.paused) note("客服人員處理中，請稍候，回覆會顯示在這裡");
         humanWait = !!d.paused;
-        startPolling(); // 訪客說過話後一直輪詢：小編不用按「轉真人」也能直接回覆
+        if (isHuman === true || d.paused) startPolling(); // 訪客按了「轉真人」之後才開始輪詢小編的回覆
         if (d.askContact && !silent && !store.get(leadKey())) contactCard();
       })
       .catch(function (e) {
@@ -449,7 +449,7 @@
       api("/messages?visitorId=" + encodeURIComponent(visitor) + "&after=" + lastId).then(function (d) {
         var fresh = (d.messages || []).filter(function (m) { return m.role === "human" && m.id > lastId; }); // 只顯示專人的回覆（機器人的回覆已經在畫面上了）
         fresh.forEach(function (m) { show(m, true); pollSince = Date.now(); if (!isOpen()) { unread++; badge.textContent = unread; badge.classList.add("on"); } });
-        humanWait = !!d.paused; // 沒有接手中也繼續輪詢：小編隨時可以直接插話
+        humanWait = !!d.paused;
       }).catch(function () { /* 下次再試 */ });
     }, POLL_MS);
   }
