@@ -18,6 +18,7 @@
     color: '#2563eb',
 
     // 機器人上方的小提示氣泡（設為 '' 則不顯示）
+    banner: '歡迎詢問、選配等', // 機器人頭上一直閃爍的醒目文字（空字串 = 不顯示）
     greeting: '需要協助嗎？',
     greetingDurationMs: 5000, // 氣泡顯示多久後自動消失（0 = 不自動消失）
 
@@ -124,6 +125,14 @@
       'opacity:0;transform:translateX(8px);pointer-events:none;transition:opacity .25s,transform .25s;}' +
       '.wrap.tip-on:not(.open) .tip{opacity:1;transform:none;}' +
 
+      /* 頭上閃爍的醒目文字 */
+      '.banner{position:absolute;right:0;bottom:104px;background:' + CONFIG.color + ';color:#fff;padding:7px 14px;' +
+      'border-radius:999px;font-size:15px;font-weight:700;white-space:nowrap;letter-spacing:1px;' +
+      'box-shadow:0 4px 14px rgba(0,0,0,.28);animation:flash 1.4s ease-in-out infinite;pointer-events:none;transition:opacity .2s;}' +
+      '.banner:after{content:"";position:absolute;right:38px;bottom:-6px;border:7px solid transparent;border-top-color:' + CONFIG.color + ';border-bottom:0;}' +
+      '.wrap.open .banner{opacity:0;animation:none;}' +
+      '@keyframes flash{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,255,255,.0),0 4px 14px rgba(0,0,0,.28)}50%{opacity:.55;box-shadow:0 0 14px 4px ' + CONFIG.color + ',0 4px 14px rgba(0,0,0,.28)}}' +
+
       /* 機器人按鈕 */
       '.bot{position:relative;width:96px;height:96px;border:none;border-radius:50%;padding:0;cursor:pointer;' +
       'display:flex;align-items:center;justify-content:center;' +
@@ -135,7 +144,7 @@
 
       '@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}' +
       '@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}' +
-      '@media (prefers-reduced-motion:reduce){.bot,.eyes{animation:none}}';
+      '@media (prefers-reduced-motion:reduce){.bot,.eyes,.banner{animation:none}}';
 
     var style = document.createElement('style');
     style.textContent = css;
@@ -232,6 +241,12 @@
 
     wrap.appendChild(menu);
     if (CONFIG.greeting) wrap.appendChild(tip);
+    if (CONFIG.banner) {
+      var banner = document.createElement('div');
+      banner.className = 'banner';
+      banner.textContent = CONFIG.banner;
+      wrap.appendChild(banner);
+    }
     wrap.appendChild(bot);
     root.appendChild(wrap);
 
