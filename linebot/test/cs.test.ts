@@ -141,6 +141,7 @@ test("LINE：客人說真人 → 轉真人回覆、通知、暫停（之後不�
   const before = replies().length;
   await handleCsEvent(msg("還在嗎？"));
   assert.equal(replies().length, before, "暫停中不回覆");
+  assert.ok(state.remembered.some((r) => r.turns.length === 1 && r.turns[0].u === true && r.turns[0].t === "還在嗎？"), "暫停中雖然不回覆，客人說的話仍要記進後台");
   await handleCsEvent(msg("重新開始"));
   assert.deepEqual(state.forgot, [U1]);
   assert.match(replyTextOf(before), /好的/);

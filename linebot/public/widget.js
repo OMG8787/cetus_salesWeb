@@ -121,7 +121,7 @@
   var wrap = $(".w"), launch = $(".launch"), panel = $(".panel"), body = $(".body"), input = $("textarea"), sendBtn = $(".send"), badge = $(".badge");
 
   var readyDone, ready = new Promise(function (r) { readyDone = r; });
-  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, welcomed = false, loaded = false, welcomeRow = null, hasChat = false, endedNote = false;
+  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, humanWait = false, welcomed = false, loaded = false, welcomeRow = null, hasChat = false, endedNote = false;
 
   /* ───────── 訊息顯示（一律用 textContent / DOM，不用 innerHTML 塞使用者或 AI 的文字） ───────── */
   function linkify(el, text) {
@@ -281,7 +281,8 @@
       }
       (d.messages || []).forEach(show);
       if (!d.messages || !d.messages.length) welcome(); else welcomed = true;
-      if (d.paused) startPolling();
+      if (d.paused) humanWait = true;
+      if (d.paused || (d.messages && d.messages.length)) startPolling();
     }).catch(function () { loaded = false; });
   }
 
@@ -310,7 +311,8 @@
         if (t) t.remove();
         if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false, quick: d.reply.quickActions === true, more: d.reply.seeMore === true });
         else if (d.paused) note("客服人員處理中，請稍候，回覆會顯示在這裡");
-        if (d.paused) startPolling();
+        humanWait = !!d.paused;
+        startPolling(); // 訪客說過話後一直輪詢：小編不用按「轉真人」也能直接回覆
         if (d.askContact && !silent && !store.get(leadKey())) contactCard();
       })
       .catch(function (e) {
@@ -430,15 +432,15 @@
 
   /* ───────── 小編接手後，輪詢小編的回覆 ───────── */
   function startPolling() {
+    pollSince = Date.now(); // 有新的互動就重新計時
     if (pollTimer) return;
-    pollSince = Date.now();
     pollTimer = setInterval(function () {
       if (Date.now() - pollSince > POLL_MAX_MS) return stopPolling();
       if (document.hidden) return;
       api("/messages?visitorId=" + encodeURIComponent(visitor) + "&after=" + lastId).then(function (d) {
         var fresh = (d.messages || []).filter(function (m) { return m.role === "human" && m.id > lastId; }); // 只顯示專人的回覆（機器人的回覆已經在畫面上了）
-        fresh.forEach(function (m) { show(m); if (!isOpen()) { unread++; badge.textContent = unread; badge.classList.add("on"); } });
-        if (!d.paused && !fresh.length) stopPolling();
+        fresh.forEach(function (m) { show(m); pollSince = Date.now(); if (!isOpen()) { unread++; badge.textContent = unread; badge.classList.add("on"); } });
+        humanWait = !!d.paused; // 沒有接手中也繼續輪詢：小編隨時可以直接插話
       }).catch(function () { /* 下次再試 */ });
     }, POLL_MS);
   }
@@ -458,11 +460,12 @@
     panel.setAttribute("aria-hidden", "true"); launch.setAttribute("aria-expanded", "false");
     try { window.dispatchEvent(new CustomEvent("aoichat:close")); } catch (e) { /* 舊瀏覽器略過 */ }
     endChat();
+    if (!humanWait) stopPolling();
   }
   /* 訪客關閉視窗 = 這一段對話結束：通知後台（記一筆「客人關閉聊天室」，之前的紀錄都留著），下次打開是全新的一段。
      沒說過話 / 客服正在回覆 / 專人接手中（還在等專人回覆）時只是收起視窗，不結束對話。 */
   function endChat() {
-    if (!hasChat || busy || pollTimer) return;
+    if (!hasChat || busy || humanWait) return;
     hasChat = false;
     try {
       fetch(API + "/close", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor }) }).catch(function () { /* 關閉通知失敗不影響訪客 */ });

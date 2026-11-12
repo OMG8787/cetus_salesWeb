@@ -455,6 +455,20 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   }
   const tStart = Date.now() - t0;
   const reset = RESET_WORDS.includes(text);
+  /** 小編接手中：不回覆，但訪客說的話一定要記進管理系統（後台才看得到、也才能接著回）。 */
+  const logWhilePaused = async (fresh: CsInfo): Promise<void> => {
+    if (testing || !(text || opts.human)) return;
+    const said = opts.human ? handoffLabel(fresh) : text;
+    const job = (async () => {
+      try {
+        await gas.csRemember(uid, [{ u: true, t: said }], (await opts.displayName?.()) ?? "", "", {});
+      } catch (err) {
+        console.warn("記錄小編接手中的訪客訊息失敗", err);
+      }
+    })();
+    if (opts.defer) opts.defer(job);
+    else await job;
+  };
   /** 熱路徑送出前再核對一次最新狀態：停用 / 傳太快 / 專人服務時間 / 小編接手中 → 回覆作廢；沒問題就換成最新的設定。 */
   const settle = async (): Promise<CsResult | null> => {
     if (!quick) return null;
@@ -463,7 +477,10 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
     if (!testing && (!fresh.enabled || !fresh.ai)) return NO_REPLY(fresh);
     if (fresh.rateLimited) return { ...NO_REPLY(fresh), silent: false, reply: limitText(fresh.limitReason, fresh.guard) };
     if (!testing && fresh.replyWhen === "offHours" && fresh.inHours === true) return NO_REPLY(fresh);
-    if (fresh.paused && !reset && !testing) return NO_REPLY(fresh, true);
+    if (fresh.paused && !reset && !testing) {
+      await logWhilePaused(fresh);
+      return NO_REPLY(fresh, true);
+    }
     const leadState: CsInfo["leadState"] = (LEAD_RANK[fresh.leadState ?? ""] ?? 0) >= (LEAD_RANK[info.leadState ?? ""] ?? 0) ? fresh.leadState : info.leadState;
     info = { ...fresh, history: info.history, turnCount: Math.max(fresh.turnCount ?? 0, info.turnCount ?? 0), leadState, known: fresh.known || info.known };
     return null;
@@ -475,7 +492,10 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   if (info.rateLimited) return { ...NO_REPLY(info), silent: false, reply: limitText(info.limitReason, info.guard) };
   // 設定「只在專人服務時間以外回覆」：服務時間內交給專人（測試聊天不受限）
   if (!testing && info.replyWhen === "offHours" && info.inHours === true) return NO_REPLY(info);
-  if (info.paused && !reset && !testing) return NO_REPLY(info, true);
+  if (info.paused && !reset && !testing) {
+    await logWhilePaused(info);
+    return NO_REPLY(info, true);
+  }
 
   const name = async () => (info.known === false || opts.channel === "web" ? (await opts.displayName?.()) ?? "" : "");
   const said = opts.human ? handoffLabel(info) : text; // 客人按「轉真人」按鈕時，對話紀錄記成按鈕上的字
@@ -501,7 +521,7 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
     if (!testing) await gas.csHandoff(uid, displayName, said, topic);
     const reply = handoffReply(info, topic);
     await remember(reply, topic || "找真人");
-    return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info, images: [], askContact: false, handoffButton: false, quickActions: false };
+    return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info, images: [], askContact: opts.channel === "web" && info.leadState !== "done", handoffButton: false, quickActions: false }; // 網站視窗按轉真人 → 同時跳出填基本資料的表單
   };
 
   const direct = reset || opts.human || hasWord(text, info.handoffWords?.length ? info.handoffWords : DEFAULT_HANDOFF) || !!matchTopic(text, info.topics);
