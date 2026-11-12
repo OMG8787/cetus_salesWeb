@@ -59,6 +59,20 @@ LINE 客人 ──► LINE 官方帳號 ──► /api/cs（驗簽章）─┐
 >
 > 重新產生金鑰後，要到對應的 Vercel 專案更新 `BOT_CS_SECRET` / `BOT_STAFF_SECRET` 並 Redeploy，機器人才會恢復。
 
+## 之後更新：從本機重新發布（CMD / PowerShell）
+
+專案是用資料夾上傳建立的，**不會跟 GitHub 自動同步**，改了 `linebot/` 的程式要手動發布：
+
+```
+cd /d D:\claude\CetusSalesWeb\linebot
+npx.cmd vercel --prod
+```
+
+- 第一次會要求 `npx.cmd vercel login`（開瀏覽器授權），之後不用再登入；`linebot/.vercel` 已記住專案，不要建立新專案。
+- PowerShell 找不到 `vercel` 時，一律用 `npx.cmd vercel --prod`。
+- 發布完成後，網站按 Ctrl+F5，讓新的 `widget.js` 生效。
+- **Vercel 免費版（Hobby）最多 12 支 API**（`api/` 底下每個 .ts 算一支，目前剛好 12：cs、img、line、push、search、test、web、widget/chat、close、config、lead、messages）。新增功能請併進既有檔案（例如網站流量回報就併在 `widget/messages.ts` 的 POST），不要再新增檔案，否則會部署失敗。
+
 ## 資料隔離（客服與員工助理分流）
 
 - **兩把金鑰**：管理系統（Apps Script）每個操作只屬於一個角色。客服金鑰只能呼叫客服的操作（知識庫、對話、轉真人），員工金鑰只能呼叫員工助理的操作。客服金鑰就算外流，也查不到客戶、案件、員工助理的任何東西。

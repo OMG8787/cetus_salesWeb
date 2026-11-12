@@ -323,7 +323,7 @@ cd linebot && npm run typecheck && npm test   # 機器人伺服器：檢索 / �
 
 目前結果：後端 17 個檔案 835 項檢查、機器人伺服器 102 組測試，全部通過；官網小機器人 + 網站客服視窗另用無頭 Chrome 搭配模擬伺服器逐項操作驗證；選型計算另與網站 `calc.js` 逐項比對（`linebot/test/calc-compare.ts`）。畫面部分用無頭 Chrome 在示範模式（`DEMO_MODE = true`）逐頁操作驗證（行事曆 / 工作清單 / 分享 / 群組 / BOT 設定 / 文案 / 助理浮窗，含深色模式）。
 
-**更新到新版的步驟**：① 備份試算表 → ② 把最新 `apps-script/Code.gs` 整份貼進 Apps Script（專案只有這一個檔案）→ ③ 執行 `setup` → ④ 部署 → 管理部署作業 → 新版本 → ⑤ 前端推到 GitHub Pages（自動）→ ⑥ 機器人伺服器（`linebot/`）重新部署到 Vercel（若是用上傳資料夾建立的專案，要重新上傳；用 GitHub 連線的會自動更新）。
+**更新到新版的步驟**：① 備份試算表 → ② 把最新 `apps-script/Code.gs` 整份貼進 Apps Script（專案只有這一個檔案）→ ③ 執行 `setup` → ④ 部署 → 管理部署作業 → 新版本 → ⑤ 前端推到 GitHub Pages（自動）→ ⑥ 機器人伺服器（`linebot/`）重新部署到 Vercel：`cd linebot` 後執行 `npx.cmd vercel --prod`（詳見 linebot/README.md；API 上限 12 支）（若是用上傳資料夾建立的專案，要重新上傳；用 GitHub 連線的會自動更新）。
 
 ## 疑難排解
 
@@ -332,3 +332,9 @@ cd linebot && npm run typecheck && npm test   # 機器人伺服器：檢索 / �
 - **選 PDF/Word 格式產生失敗，訊息是找不到範本**：檢查 Config 分頁的 `TemplateDocId_Requirement` / `TemplateDocId_Evaluation` / `TemplateDocId_Quote` 是否為正確的 Google 文件 ID；如果不想處理範本，選 **HTML** 格式即可，不需要範本
 - **登入後跳轉某一頁變成空白/功能不動**：確認 GitHub repo 裡 `frontend` 資料夾**所有檔案**都有上傳，尤其 `common.js`、`demo.js`、`config.js` 這三個是每一頁都要用到的共用檔案，漏傳的話該頁會整個失效
 - **切換分頁後要重新登入**：登入狀態存在瀏覽器的 sessionStorage，正常情況下同一個瀏覽器分頁切換不會登出；如果每次都要重登，檢查是不是用無痕視窗或瀏覽器設定封鎖了網站資料儲存
+
+## 客服視窗：手動發表單與網站流量
+
+- **手動發表單**：BOT 設定 → 對話與小編接手，選一位網站訪客後，回覆欄旁有「📇 填基本資料 / 📷 找相機 / 🔍 找鏡頭」按鈕，訪客視窗會立刻跳出對應表單（再發一次會關掉舊的、開新的）。只能發給網站訪客，LINE 客人不行。
+- **小編與訪客即時對話**：訪客視窗每 2 秒、後台開著對話時每 3 秒更新一次；小編不按「轉真人」也能直接插話。
+- **網站流量**：BOT 設定 → 📈 網站流量。每個載入客服視窗的頁面回報一次、之後每 30 秒回報停留（頁面在背景分頁不計時），同一個瀏覽器算一位訪客，不記個資；資料存在試算表 `BotVisits` 分頁（超過 2 萬筆自動刪最舊的 2000 筆）。部署後才開始記錄。

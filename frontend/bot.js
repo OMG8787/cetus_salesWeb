@@ -8,6 +8,7 @@ let kbLoaded = false;
 let kbEmbed = null;
 let kbPending = 0;
 let curTab = 'overview';
+let talkTimer2 = null;
 let selectedConv = null; // 後台對話列表選到的客人
 let talkTimer = null;
 let keyShown = {};
@@ -44,7 +45,12 @@ function showTab(tab) {
   } catch (e) {}
   if (TAB_LOADERS[tab]) TAB_LOADERS[tab]();
   clearInterval(talkTimer);
-  if (tab === 'talk') talkTimer = setInterval(() => !document.hidden && loadTalk(true), 20000);
+  clearInterval(talkTimer2);
+  if (tab === 'talk') {
+    talkTimer = setInterval(() => !document.hidden && loadTalk(true), 20000);
+    // 開著某位客人的對話時，每 3 秒只更新這段對話，客人說的話很快就看得到
+    talkTimer2 = setInterval(() => !document.hidden && selectedConv && curTab === 'talk' && openThread(selectedConv, true), 3000);
+  }
 }
 
 function applyReadOnly() {

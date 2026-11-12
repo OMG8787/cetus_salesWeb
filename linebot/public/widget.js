@@ -20,7 +20,7 @@
   var BOT = "aoi";
   var NO_LAUNCHER = script.dataset.launcher === "false";
   var API = (script.dataset.api || new URL(script.src, location.href).origin).replace(/\/$/, "") + "/api/widget";
-  var POLL_MS = 5000;
+  var POLL_MS = 2000;
   var POLL_MAX_MS = 30 * 60 * 1000;
 
   /* ───────── 訪客編號與狀態（存在瀏覽器；無痕模式等拿不到 storage 時退回記憶體） ───────── */
@@ -394,9 +394,10 @@
 
   /* ───────── 聊了幾段後，請訪客留下聯繫資料（段數在後台「客服設定」；0 = 不問）───────── */
   function leadKey() { return "aoi_lead_" + BOT + "_" + visitor; }
-  var cardOpen = false;
+  var cardOpen = false, cardRow = null;
   function contactCard(opt) {
     opt = opt || {};
+    if (cardOpen && cardRow) { cardRow.remove(); cardOpen = false; } // 客服又發了新表單：關掉前一張，開新的
     if (cardOpen) return;
     if (opt.more && store.get(leadKey())) { add("ai", "您已經留下聯繫資料了，專人會依您的需求提供更多適合的方案 🙏", { noHand: true }); return; }
     cardOpen = true;
@@ -418,7 +419,7 @@
       '<textarea name="note" rows="2" maxlength="300" placeholder="想了解什麼（選填）"></textarea>' +
       '<div class="cerr" role="alert"></div>' +
       '<div class="acts"><button type="submit" class="go">送出</button><button type="button" class="skip">稍後再說</button></div>';
-    col.appendChild(card); row.appendChild(col); body.appendChild(row); scrollDown();
+    col.appendChild(card); row.appendChild(col); body.appendChild(row); cardRow = row; scrollDown();
     var err = card.querySelector(".cerr"), go = card.querySelector(".go");
     // 「看更多」：備註前面自動帶上剛才的選型結果摘要，專人不用再問一次需求（後端備註上限 300 字）
     var leadNote = function (n) {
@@ -531,7 +532,7 @@
       if (!av || !/^[A-Za-z0-9_-]{16,64}$/.test(av)) { av = uuid(); store.set(akey, av); }
       var vid = uuid().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 24);
       var send = function () {
-        fetch(API + "/visit", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: av, visitId: vid, page: location.pathname + (location.hash || ""), ref: document.referrer ? new URL(document.referrer).hostname : "" }) }).catch(function () { /* 流量回報失敗不影響訪客 */ });
+        fetch(API + "/messages", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: av, visitId: vid, page: location.pathname + (location.hash || ""), ref: document.referrer ? new URL(document.referrer).hostname : "" }) }).catch(function () { /* 流量回報失敗不影響訪客 */ });
       };
       send();
       setInterval(function () { if (!document.hidden) send(); }, 30000);
