@@ -282,6 +282,10 @@ export const gas = {
   csForget(lineUserId: string): Promise<boolean> {
     return post<boolean>({ op: "csForget", lineUserId });
   },
+  /** 網站流量：頁面載入 / 每 30 秒停留回報 */
+  csVisit(lineUserId: string, visitId: string, page: string, ref: string): Promise<boolean> {
+    return post<boolean>({ op: "csVisit", lineUserId, visitId, page, ref });
+  },
   /** 客人關閉了網站客服視窗：這一段對話結束（後台記一筆標記，之前的紀錄都還在） */
   csEnd(lineUserId: string): Promise<boolean> {
     return post<boolean>({ op: "csEnd", lineUserId });

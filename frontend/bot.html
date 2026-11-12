@@ -79,6 +79,7 @@
     <button type="button" class="bot-tab" data-tab="web">🌐 網站客服視窗</button>
     <button type="button" class="bot-tab" data-tab="talk">💬 對話與小編接手</button>
     <button type="button" class="bot-tab" data-tab="leads">🧾 聯繫名單</button>
+    <button type="button" class="bot-tab" data-tab="traffic">📈 網站流量</button>
     <button type="button" class="bot-tab" data-tab="test">🧪 測試聊天</button>
     <button type="button" class="bot-tab" data-tab="staff">🧑‍💼 員工助理</button>
     <button type="button" class="bot-tab" data-tab="ai">🧠 AI 模型</button>
@@ -340,6 +341,20 @@
   </div>
 
   <!-- ===================== 對話與小編接手 ===================== -->
+  <div class="bot-panel" data-panel="traffic" style="display:none;">
+    <div class="panel">
+      <h3 style="margin-top:0;">📈 網站流量</h3>
+      <div class="calc-hint">客服視窗載入的每個網頁都會回報：幾個人進站、看了哪些頁、每頁停留多久（頁面在背景分頁時不計時）。<b>同一個瀏覽器算一位訪客</b>，不會記錄姓名或個資。</div>
+      <label>統計最近 <select id="traffic-days" onchange="loadTraffic()"><option value="7">7 天</option><option value="14" selected>14 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label>
+      <div id="traffic-sum" class="bot-row" style="margin:10px 0;"></div>
+      <div class="nc-scroll"><table class="nc-table"><thead><tr><th>日期</th><th>訪客數</th><th>瀏覽次數</th><th>每次平均停留</th><th>每位訪客平均停留</th></tr></thead><tbody id="traffic-daily"></tbody></table></div>
+      <h4>最常瀏覽的頁面</h4>
+      <div class="nc-scroll"><table class="nc-table"><thead><tr><th>頁面</th><th>瀏覽次數</th><th>平均停留</th></tr></thead><tbody id="traffic-pages"></tbody></table></div>
+      <h4>最近的訪問</h4>
+      <div class="nc-scroll"><table class="nc-table"><thead><tr><th>時間</th><th>訪客</th><th>頁面</th><th>來源</th><th>停留</th></tr></thead><tbody id="traffic-recent"></tbody></table></div>
+    </div>
+  </div>
+
   <div class="bot-panel" data-panel="leads" style="display:none;">
     <div class="panel">
       <div class="bot-row" style="justify-content:space-between;">
@@ -369,6 +384,7 @@
         <div id="thread-reply" style="display:none;">
           <textarea id="thread-text" rows="2" maxlength="1500" placeholder="用真人身分回覆這位網站訪客（客人視窗會自動顯示）"></textarea>
           <button type="button" class="bot-write" onclick="sendHumanReply()">送出回覆</button>
+          <span class="bot-forms">　發送表單給客人：<button type="button" class="btn-mini bot-write" onclick="sendForm('lead')">📇 填基本資料</button> <button type="button" class="btn-mini bot-write" onclick="sendForm('camera')">📷 找相機</button> <button type="button" class="btn-mini bot-write" onclick="sendForm('lens')">🔍 找鏡頭</button></span>
         </div>
         <div id="thread-line-hint" class="calc-hint" style="display:none;">LINE 客人請到 LINE 官方帳號後台（Official Account Manager）回覆，處理完回到首頁把「客人找真人」備忘錄刪除。</div>
       </div>

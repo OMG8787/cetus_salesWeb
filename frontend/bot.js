@@ -14,7 +14,7 @@ let keyShown = {};
 let revealedKey = '';
 
 const DAY_NAMES = '日一二三四五六';
-const TAB_LOADERS = { kb: () => loadKb(), leads: () => loadLeads(), talk: () => loadTalk(), conn: () => fillConn(), web: () => fillWeb(), ai: () => fillAi() };
+const TAB_LOADERS = { traffic: () => loadTraffic(), kb: () => loadKb(), leads: () => loadLeads(), talk: () => loadTalk(), conn: () => fillConn(), web: () => fillWeb(), ai: () => fillAi() };
 
 function $(id) {
   return document.getElementById(id);
@@ -941,7 +941,7 @@ async function openThread(id, keepScroll) {
         seg++;
         return html;
       }
-      return `<div class="bot-msg ${m.role} ${i < lastReset ? 'old' : ''}"><div class="bot-who">${m.role === 'user' ? '客人' : m.role === 'human' ? '專人' : '機器人'}・${htmlEsc(m.time.slice(5, 16))}${m.topic ? '・' + htmlEsc(m.topic) : ''}</div><div class="bot-bub">${htmlEsc(String(m.text).replace(/\[\[img:([^|\]]*)\|?([^\]]*)\]\]/g, (_, u, c) => '🖼️ 附圖：' + (c || '圖片')))}</div></div>`;
+      return `<div class="bot-msg ${m.role} ${i < lastReset ? 'old' : ''}"><div class="bot-who">${m.role === 'user' ? '客人' : m.role === 'human' ? '專人' : '機器人'}・${htmlEsc(m.time.slice(5, 16))}${m.topic ? '・' + htmlEsc(m.topic) : ''}</div><div class="bot-bub">${htmlEsc(String(m.text).replace(/^\[\[form:(lead|camera|lens)\]\]$/, (_, k) => '📨 已發送表單：' + { lead: '填基本資料', camera: '找相機', lens: '找鏡頭' }[k]).replace(/\[\[img:([^|\]]*)\|?([^\]]*)\]\]/g, (_, u, c) => '🖼️ 附圖：' + (c || '圖片')))}</div></div>`;
     })
     .join('');
   if (!keepScroll || bottom) box.scrollTop = box.scrollHeight;
@@ -949,6 +949,25 @@ async function openThread(id, keepScroll) {
   $('thread-reply').style.display = id.charAt(0) === 'V' ? '' : 'none';
   $('thread-line-hint').style.display = id.charAt(0) === 'U' ? '' : 'none';
   applyReadOnly();
+}
+
+async function sendForm(kind) {
+  if (!selectedConv) return;
+  const r = await callApi('botSendForm', { userId: selectedConv, kind });
+  if (!r.success) return alert(r.message);
+  await loadTalk(true);
+  openThread(selectedConv);
+}
+
+const fmtSecs = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' 時 ' + Math.round((s % 3600) / 60) + ' 分' : s >= 60 ? Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒' : s + ' 秒');
+
+async function loadTraffic() {
+  const r = await callApi('botVisits', { days: Number($('traffic-days').value) || 14 }, { silent: true });
+  if (!r || !r.success) return;
+  $('traffic-sum').innerHTML = [['訪客數', r.total.visitors], ['瀏覽次數', r.total.views], ['每次平均停留', fmtSecs(r.total.avgViewSecs)]].map(([k, v]) => `<div class="sch-chip"><b>${htmlEsc(String(v))}</b> ${k}</div>`).join('');
+  $('traffic-daily').innerHTML = r.daily.map((d) => `<tr><td>${htmlEsc(d.date)}</td><td>${d.visitors}</td><td>${d.views}</td><td>${fmtSecs(d.avgViewSecs)}</td><td>${fmtSecs(d.avgVisitorSecs)}</td></tr>`).join('') || '<tr><td colspan="5">還沒有資料（視窗更新後才開始記錄）</td></tr>';
+  $('traffic-pages').innerHTML = r.pages.map((p) => `<tr><td>${htmlEsc(p.page)}</td><td>${p.views}</td><td>${fmtSecs(p.avgSecs)}</td></tr>`).join('');
+  $('traffic-recent').innerHTML = r.recent.map((v) => `<tr><td>${htmlEsc(v.time)}</td><td>${htmlEsc(v.visitor)}</td><td>${htmlEsc(v.page)}</td><td>${htmlEsc(v.ref || '直接進入')}</td><td>${fmtSecs(v.secs)}</td></tr>`).join('');
 }
 
 async function resumeSelected() {

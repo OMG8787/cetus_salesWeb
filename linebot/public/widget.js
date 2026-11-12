@@ -279,16 +279,24 @@
         if (welcomeRow.parentNode) welcomeRow.parentNode.removeChild(welcomeRow);
         welcomeRow = null;
       }
-      (d.messages || []).forEach(show);
+      (d.messages || []).forEach(function (m) { show(m, false); });
       if (!d.messages || !d.messages.length) welcome(); else welcomed = true;
       if (d.paused) humanWait = true;
       if (d.paused || (d.messages && d.messages.length)) startPolling();
     }).catch(function () { loaded = false; });
   }
 
-  function show(m) {
+  function show(m, live) {
     if (m.id && m.id <= lastId) return;
     if (m.id) lastId = m.id;
+    var form = m.role === "human" ? /^\[\[form:(lead|camera|lens)\]\]$/.exec(String(m.text).trim()) : null;
+    if (form) { // 小編在後台手動發送的表單
+      if (live === true) {
+        add("ai", "客服人員請您填寫以下資料，方便為您服務 👇", { who: "客服人員", noHand: true });
+        if (form[1] === "lead") contactCard(); else findForm(form[1]);
+      }
+      return;
+    }
     if (m.role === "user") add("me", m.text);
     else add("ai", m.text, { who: m.role === "human" ? "客服人員" : "", choices: m.choices });
   }
@@ -439,7 +447,7 @@
       if (document.hidden) return;
       api("/messages?visitorId=" + encodeURIComponent(visitor) + "&after=" + lastId).then(function (d) {
         var fresh = (d.messages || []).filter(function (m) { return m.role === "human" && m.id > lastId; }); // 只顯示專人的回覆（機器人的回覆已經在畫面上了）
-        fresh.forEach(function (m) { show(m); pollSince = Date.now(); if (!isOpen()) { unread++; badge.textContent = unread; badge.classList.add("on"); } });
+        fresh.forEach(function (m) { show(m, true); pollSince = Date.now(); if (!isOpen()) { unread++; badge.textContent = unread; badge.classList.add("on"); } });
         humanWait = !!d.paused; // 沒有接手中也繼續輪詢：小編隨時可以直接插話
       }).catch(function () { /* 下次再試 */ });
     }, POLL_MS);
@@ -515,10 +523,27 @@
     } catch (e) { return false; }
   }
 
+  /* ───────── 網站流量：每個頁面載入回報一次，之後每 30 秒回報停留（頁面看不到時不計） ───────── */
+  function trackVisit() {
+    try {
+      var akey = "aoi_av_" + BOT;
+      var av = store.get(akey);
+      if (!av || !/^[A-Za-z0-9_-]{16,64}$/.test(av)) { av = uuid(); store.set(akey, av); }
+      var vid = uuid().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 24);
+      var send = function () {
+        fetch(API + "/visit", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: av, visitId: vid, page: location.pathname + (location.hash || ""), ref: document.referrer ? new URL(document.referrer).hostname : "" }) }).catch(function () { /* 流量回報失敗不影響訪客 */ });
+      };
+      send();
+      setInterval(function () { if (!document.hidden) send(); }, 30000);
+      document.addEventListener("visibilitychange", function () { if (document.hidden) send(); });
+    } catch (e) { /* 略過 */ }
+  }
+
   api("/config").then(function (c) {
     // 後台勾選「F5 重新整理就重新開始」（預設開）：這次載入是重新整理 → 換一組新的訪客編號 = 全新對話
     if (c.resetOnReload !== false && isReload()) { visitor = uuid(); store.set(vkey, visitor); }
     applyConfig(c);
+    trackVisit();
     (document.body || document.documentElement).appendChild(host);
     readyDone(true);
     if (script.dataset.open === "true") open();

@@ -6886,11 +6886,12 @@ var SHEET_BOT_CONFIG = 'BotConfig';
 var SHEET_BOT_KB = 'BotKnowledge';
 var SHEET_BOT_MSG = 'BotMessages';
 var SHEET_BOT_LEADS = 'BotLeads';
+var SHEET_BOT_VISITS = 'BotVisits';
 
 var BOT_SECRET_PROP = 'BOT_SECRET'; // 舊版共用金鑰（只讀，重新產生金鑰時會自動拆成下面兩把）
 var BOT_CS_SECRET_PROP = 'BOT_CS_SECRET'; // 客服機器人專用：只能呼叫客服的操作
 var BOT_STAFF_SECRET_PROP = 'BOT_STAFF_SECRET'; // 員工助理專用：只能呼叫員工助理的操作
-var BOT_CS_OPS = ['csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget', 'csLead', 'csEnd'];
+var BOT_CS_OPS = ['csVisit', 'csStart', 'csRemember', 'csForget', 'csHandoff', 'csMessages', 'csThread', 'csKnowledge', 'csVectors', 'csCalcCatalog', 'csWidget', 'csLead', 'csEnd'];
 var SHEET_BOT_VEC = 'BotVectors';
 var BOT_KB_VER_PROP = 'BOT_KB_VER';
 var BOT_VEC_DIM = 256; // 向量維度（Gemini / OpenAI 都支援縮小維度；256 維兼顧準確度與試算表容量）
@@ -6937,9 +6938,10 @@ function botSchema_() {
       BotKnowledge: ['ID', 'Type', 'Title', 'Question', 'Content', 'Tags', 'Source', 'IsActive', 'UpdatedAt', 'BigCategory', 'Topic', 'Notes', 'Audience', 'Overlap', 'ChunkSize', 'SortOrder', 'FileName', 'Images'],
       BotVectors: ['ID', 'Model', 'Vec'],
       BotLeads: ['ID', 'Time', 'Channel', 'UserId', 'Name', 'Company', 'Phone', 'Email', 'Note', 'Source'],
+      BotVisits: ['VisitId', 'VisitorId', 'Date', 'StartMs', 'LastMs', 'Page', 'Ref'],
       BotMessages: ['ID', 'Time', 'Channel', 'UserId', 'Name', 'Role', 'Text', 'Topic'],
     },
-    text: { BotMessages: ['Time', 'UserId'], BotKnowledge: [], BotVectors: [], BotLeads: ['Time', 'UserId', 'Phone'] },
+    text: { BotMessages: ['Time', 'UserId'], BotKnowledge: [], BotVectors: [], BotLeads: ['Time', 'UserId', 'Phone'], BotVisits: ['VisitId', 'VisitorId', 'Date', 'StartMs', 'LastMs'] },
   };
   return botMerge_(base, typeof botStaffSchema_ === 'function' ? botStaffSchema_() : null);
 }
@@ -6960,7 +6962,7 @@ function botPerms_() {
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
     botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
     botKbImageUpload: ['bot', 'w'], botLeads: ['bot', 'r'], botLeadDelete: ['bot', 'd'],
-    botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'],
+    botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'], botSendForm: ['bot', 'w'], botVisits: ['bot', 'r'],
     getNameCards: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardToProspect: ['customers', 'w'], cardDelete: ['customers', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
@@ -7000,6 +7002,8 @@ function botRoutes_() {
     botLeadDelete: { auth: true, fn: handleBotLeadDelete },
     botAlerts: { auth: true, fn: handleBotAlerts },
     botAlertAck: { auth: true, fn: handleBotAlertAck },
+    botSendForm: { auth: true, fn: handleBotSendForm },
+    botVisits: { auth: true, fn: handleBotVisits },
     getNameCards: { auth: true, fn: handleGetNameCards },
     cardUpdate: { auth: true, fn: handleCardUpdate },
     cardToCustomer: { auth: true, fn: handleCardToCustomer },
@@ -7513,6 +7517,7 @@ function handleBotApi(body) {
       else if (op === 'csRemember') data = csRemember_(id, body);
       else if (op === 'csForget') data = csForget_(id);
       else if (op === 'csEnd') data = csEnd_(id);
+      else if (op === 'csVisit') data = csVisit_(id, body);
       else if (op === 'csHandoff') data = csHandoff_(id, body);
       else if (op === 'csLead') data = csLead_(id, body);
       else if (op === 'csMessages') data = csMessages_(id, body);
@@ -8948,6 +8953,82 @@ function handleBotThread(body) {
     });
   }
   return { success: true, messages: out.slice(-150), paused: !!botCache_().get('cspause:' + id), lead: botLeadMap_()[id] || null };
+}
+
+/** 小編手動發送表單給網站訪客：kind = lead 基本資料 / camera 找相機 / lens 找鏡頭。存成一則「真人」訊息，訪客視窗輪詢到就跳出對應表單。 */
+function handleBotSendForm(body) {
+  var id = String(body.userId || '');
+  var kind = String(body.kind || '');
+  if (id.charAt(0) !== 'V') return { success: false, message: '只能發送給網站訪客（LINE 客人沒辦法跳出表單）' };
+  if (['lead', 'camera', 'lens'].indexOf(kind) < 0) return { success: false, message: '表單種類不正確' };
+  botLogTurns_('web', id, '', [{ role: 'human', text: '[[form:' + kind + ']]' }], '');
+  botAlertAck_('csHandoff', id, botAlertWho_(body));
+  return { success: true };
+}
+
+// ---- 網站流量：視窗在每個頁面載入時回報一次、之後每 30 秒回報一次停留 ----
+var BOT_VISIT_MAX = 20000;
+
+function csVisit_(id, req) {
+  var visitId = String(req.visitId || '');
+  if (!/^[A-Za-z0-9_-]{8,40}$/.test(visitId)) throw new Error('訪客紀錄編號不正確');
+  var now = Date.now();
+  var key = 'csvr:' + visitId;
+  var sheet = getSheet(SHEET_BOT_VISITS);
+  var row = Number(botCacheGet_(key) || 0);
+  if (row >= 2 && row <= sheet.getLastRow() && String(sheet.getRange(row, 1).getValue()) === visitId) {
+    sheet.getRange(row, 5).setValue(String(now));
+    return true;
+  }
+  var rowNum = appendObjectRow(SHEET_BOT_VISITS, { VisitId: visitId, VisitorId: id.slice(1, 13), Date: botNow_().slice(0, 10), StartMs: String(now), LastMs: String(now), Page: botClip_(req.page, 200), Ref: botClip_(req.ref, 200) });
+  botCachePut_(key, rowNum, 21600);
+  if (sheet.getLastRow() > BOT_VISIT_MAX + 2000) sheet.deleteRows(2, 2000); // 太多就刪最舊的
+  return true;
+}
+
+/** 流量統計：每天的訪客數 / 瀏覽次數 / 平均停留，最常瀏覽的頁面，最近的訪問。 */
+function handleBotVisits(body) {
+  var days = botInt_(body.days, 1, 90, 14);
+  var from = Utilities.formatDate(new Date(Date.now() - (days - 1) * 86400000), 'GMT+8', 'yyyy-MM-dd');
+  var sheet = getSheet(SHEET_BOT_VISITS);
+  var last = sheet.getLastRow();
+  var byDay = {};
+  var pages = {};
+  var recent = [];
+  var visitors = {};
+  var all = { views: 0, secs: 0 };
+  if (last >= 2) {
+    sheet.getRange(2, 1, last - 1, 7).getValues().forEach(function (r) {
+      var date = String(r[2]);
+      if (date < from) return;
+      var secs = Math.max(0, Math.round((Number(r[4]) - Number(r[3])) / 1000));
+      var d = byDay[date] || (byDay[date] = { date: date, views: 0, secs: 0, visitors: {} });
+      var vid = String(r[1]);
+      d.views++;
+      d.secs += secs;
+      d.visitors[vid] = true;
+      visitors[vid] = true;
+      all.views++;
+      all.secs += secs;
+      var pg = String(r[5] || '/');
+      pages[pg] = pages[pg] || { page: pg, views: 0, secs: 0 };
+      pages[pg].views++;
+      pages[pg].secs += secs;
+      recent.push({ start: Number(r[3]), visitor: vid, page: pg, ref: String(r[6] || ''), secs: secs });
+    });
+  }
+  var list = Object.keys(byDay).sort().reverse().map(function (k) {
+    var d = byDay[k];
+    var n = Object.keys(d.visitors).length;
+    return { date: d.date, visitors: n, views: d.views, avgViewSecs: d.views ? Math.round(d.secs / d.views) : 0, avgVisitorSecs: n ? Math.round(d.secs / n) : 0 };
+  });
+  recent.sort(function (a, b) { return b.start - a.start; });
+  return {
+    success: true, days: days, daily: list,
+    total: { visitors: Object.keys(visitors).length, views: all.views, avgViewSecs: all.views ? Math.round(all.secs / all.views) : 0 },
+    pages: Object.keys(pages).map(function (k) { return pages[k]; }).sort(function (a, b) { return b.views - a.views; }).slice(0, 15).map(function (p) { return { page: p.page, views: p.views, avgSecs: Math.round(p.secs / p.views) }; }),
+    recent: recent.slice(0, 40).map(function (r) { return { time: Utilities.formatDate(new Date(r.start), 'GMT+8', 'MM-dd HH:mm'), visitor: r.visitor, page: r.page, ref: r.ref, secs: r.secs }; }),
+  };
 }
 
 /** 小編在後台回覆網站訪客：存成「真人」訊息，訪客視窗輪詢時會看到；LINE 客人請到官方帳號後台回覆。 */
