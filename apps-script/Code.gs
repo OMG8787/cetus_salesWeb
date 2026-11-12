@@ -6962,7 +6962,7 @@ function botPerms_() {
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
     botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
     botKbImageUpload: ['bot', 'w'], botLeads: ['bot', 'r'], botLeadDelete: ['bot', 'd'],
-    botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'], botSendForm: ['bot', 'w'], botVisits: ['bot', 'r'],
+    botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'], botSendForm: ['bot', 'w'], botVisits: ['bot', 'r'], botTakeover: ['bot', 'w'],
     getNameCards: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardToProspect: ['customers', 'w'], cardDelete: ['customers', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
@@ -7004,6 +7004,7 @@ function botRoutes_() {
     botAlertAck: { auth: true, fn: handleBotAlertAck },
     botSendForm: { auth: true, fn: handleBotSendForm },
     botVisits: { auth: true, fn: handleBotVisits },
+    botTakeover: { auth: true, fn: handleBotTakeover },
     getNameCards: { auth: true, fn: handleGetNameCards },
     cardUpdate: { auth: true, fn: handleCardUpdate },
     cardToCustomer: { auth: true, fn: handleCardToCustomer },
@@ -7887,8 +7888,28 @@ function csRemember_(id, req) {
   if (req.askedContact === true && !botCache_().get('cslead:' + id)) botCachePut_('cslead:' + id, 'asked', 21600);
   // 對話紀錄：機器人這則附了圖片，在文字後面加上圖片標記（網站視窗還原對話時會顯示成圖片）
   var imgs = (Array.isArray(req.images) ? req.images : []).slice(0, 5).map(function (im) { return '[[img:' + String((im && im.url) || '').slice(0, 300) + '|' + String((im && im.caption) || '').replace(/[\]|\[]/g, ' ').slice(0, 60) + ']]'; });
+  if (channel !== 'test' && add.some(function (x) { return x.u; })) csChatNotify_(channel, id, name, add);
   if (channel !== 'test') botLogTurns_(channel, id, name || String(botCacheGet_('csname:' + id) || ''), add.map(function (x) { return { role: x.u ? 'user' : 'bot', text: String(x.t) + (!x.u && imgs.length ? '\n' + imgs.join('\n') : '') }; }), String(req.topic || ''));
   return list.length;
+}
+
+/** 有人開始使用機器人（30 分鐘內同一位只通知一次）：後台右下角提醒，小編可以按「轉真人」直接接手。 */
+function csChatNotify_(channel, id, name, add) {
+  if (botCache_().get('cscn:' + id)) return;
+  botCachePut_('cscn:' + id, 1, 1800);
+  try {
+    var first = add.filter(function (x) { return x.u; })[0];
+    var today = todayStr();
+    appendObjectRow(SHEET_MEMOS, {
+      Owner: 'SYSTEM', OwnerName: '客服機器人',
+      Title: '💬 有人正在使用機器人：' + (name || (channel === 'web' ? '網站訪客' : 'LINE 客人')),
+      Content: '客人說：' + String(first.t).slice(0, 300) + '\n\n想親自回覆可以到「BOT 設定 → 對話與小編接手」按「🙋 轉真人（接手）」；不用處理就讓它自己消失。',
+      Shared: '是', CreatedDate: today, LastUpdated: today, LinkType: 'csChat', LinkId: id, NeedBlock: 'bot', CreatedAt: Date.now(),
+    });
+    botAlertsBust_();
+  } catch (e) {
+    // 通知失敗不影響機器人回覆
+  }
 }
 
 function csForget_(id) {
@@ -8016,6 +8037,7 @@ function csHandoff_(id, req) {
   var pause = botSettings_().pauseMinutes;
   var name = botClip_(req.displayName, 40) || String(botCacheGet_('csname:' + id) || '');
   if (pause > 0) csPause_(id, name, pause);
+  botAlertAck_('csChat', id, '轉真人'); // 「有人使用機器人」的通知，改由「找真人」通知接手
   if (botCache_().get('csho:' + id)) return false;
   botCachePut_('csho:' + id, 1, 1800);
 
@@ -8969,8 +8991,18 @@ function handleBotSendForm(body) {
   if (id.charAt(0) !== 'V') return { success: false, message: '只能發送給網站訪客（LINE 客人沒辦法跳出表單）' };
   if (['lead', 'camera', 'lens'].indexOf(kind) < 0) return { success: false, message: '表單種類不正確' };
   botLogTurns_('web', id, '', [{ role: 'human', text: '[[form:' + kind + ']]' }], '');
-  botAlertAck_('csHandoff', id, botAlertWho_(body));
+  botAckChat_(id, botAlertWho_(body));
   return { success: true };
+}
+
+/** 後台直接把某位客人轉真人（接手）：機器人暫停回覆這位客人，小編直接回；不用等客人按「轉真人」。 */
+function handleBotTakeover(body) {
+  var id = String(body.userId || '');
+  if (!/^[UV][0-9a-f]{32}$/.test(id)) return { success: false, message: '客人編號不正確' };
+  var pause = botSettings_().pauseMinutes || 30;
+  csPause_(id, String(botCacheGet_('csname:' + id) || ''), pause);
+  botAckChat_(id, botAlertWho_(body));
+  return { success: true, paused: true, minutes: pause, pauses: csPauseList_() };
 }
 
 // ---- 網站流量：視窗在每個頁面載入時回報一次、之後每 30 秒回報一次停留 ----
@@ -9049,21 +9081,21 @@ function handleBotHumanReply(body) {
   var m = botGeneral_().memory;
   var list = (botCacheGet_(csHistKey_(id)) || []).concat([{ u: false, t: '（小編）' + text.slice(0, m.chars) }]).slice(-m.turns);
   botCachePut_(csHistKey_(id), list, m.hours * 3600);
-  botAlertAck_('csHandoff', id, botAlertWho_(body)); // 有人回覆了 → 這位訪客的右下角提醒停止
+  botAckChat_(id, botAlertWho_(body)); // 有人回覆了 → 這位訪客的右下角提醒停止
   return { success: true };
 }
 
 function handleBotResume(body) {
   var id = String(body.userId || '');
   csResume_(id);
-  botAlertAck_('csHandoff', id, botAlertWho_(body)); // 按「恢復機器人」= 已經處理
+  botAckChat_(id, botAlertWho_(body)); // 按「恢復機器人」= 已經處理
   return { success: true, pauses: csPauseList_() };
 }
 
 // ---- 待回覆提醒：每頁右下角持續跳通知，直到有人回覆 / 處理 ----
 // 通知來源 = 首頁備忘錄裡的機器人通知（客人找真人 csHandoff、新的聯繫名單 csLead）；備忘錄的 AckAt 有值 = 已經有人處理，不再提醒。
 // 網站訪客：小編在「BOT 設定」回覆（botHumanReply）或按「恢復機器人」就自動停止；LINE 客人是在 LINE 官方帳號後台回覆，系統看不到，所以由同事按「我已處理」。
-var BOT_ALERT_TYPES = ['csHandoff', 'csLead'];
+var BOT_ALERT_TYPES = ['csHandoff', 'csLead', 'csChat'];
 
 function botAlertWho_(body) {
   var u = (body && body._user) || {};
@@ -9107,6 +9139,12 @@ function botAlertAck_(type, id, who) {
   });
   if (n) botAlertsBust_();
   return n;
+}
+
+/** 這位客人的「找真人」與「有人使用機器人」通知都算處理了（聯繫名單通知不受影響）。 */
+function botAckChat_(id, who) {
+  botAlertAck_('csHandoff', id, who);
+  botAlertAck_('csChat', id, who);
 }
 
 function botAlertCanAck_(body) {

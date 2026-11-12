@@ -87,6 +87,7 @@
 
   function hint(a) {
     if (a.type === 'csLead') return '聯繫完請按「我已處理」';
+    if (a.type === 'csChat') return '機器人正在回覆；要親自回請到後台按「轉真人（接手）」';
     return a.channel === 'web' ? '在「BOT 設定」回覆後會自動消失' : '在 LINE 後台回覆完，請按「我已處理」';
   }
 

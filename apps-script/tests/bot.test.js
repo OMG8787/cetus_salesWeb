@@ -150,14 +150,28 @@ ok(call('handleBotConversations', {}).conversations.length === 1, '測試對話�
 // 轉真人
 r = bot('csHandoff', { lineUserId: U1, displayName: '王小明', text: '我要找真人', topic: '價格 / 報價' });
 ok(r.success && r.data === true, '轉真人');
-let memos = ctx.sheetToObjects('Memos').rows;
+let memos = ctx.sheetToObjects('Memos').rows.filter((m) => m.LinkType === 'csHandoff'); // csChat（有人使用機器人）通知另外測
 ok(memos.length === 1 && memos[0].Owner === 'SYSTEM' && memos[0].NeedBlock === 'bot' && memos[0].LinkType === 'csHandoff' && memos[0].LinkId === U1 && /價格/.test(memos[0].Title) && memos[0].Content.indexOf('之前的對話') > -1, '備忘錄通知');
 ok(bot('csStart', { lineUserId: U1 }).data.paused === true && call('handleBotGetSettings', {}).pauses.length === 1, '暫停中');
-ok(bot('csHandoff', { lineUserId: U1, displayName: '王小明', text: '再說一次' }).data === false && ctx.sheetToObjects('Memos').rows.length === 1, '30 分鐘內不重複通知');
+ok(bot('csHandoff', { lineUserId: U1, displayName: '王小明', text: '再說一次' }).data === false && ctx.sheetToObjects('Memos').rows.filter((m) => m.LinkType === 'csHandoff').length === 1, '30 分鐘內不重複通知');
+// 有人使用機器人 → 通知；後台直接轉真人（接手）
+{
+  const V9 = 'V' + '9'.repeat(32);
+  bot('csRemember', { lineUserId: V9, turns: [{ u: true, t: '請問相機規格' }, { u: false, t: '好的' }] });
+  const chat = () => ctx.sheetToObjects('Memos').rows.filter((m) => m.LinkType === 'csChat' && m.LinkId === V9);
+  ok(chat().length === 1, '有人使用機器人 → 產生通知');
+  bot('csRemember', { lineUserId: V9, turns: [{ u: true, t: '再問一題' }] });
+  ok(chat().length === 1, '30 分鐘內同一位不重複通知');
+  const tk = call('handleBotTakeover', { userId: V9 }, 'botlim');
+  ok(tk.success && bot('csStart', { lineUserId: V9 }).data.paused === true, '後台轉真人 → 機器人暫停');
+  ok(chat()[0].AckAt, '轉真人後通知算已處理');
+  ctx.sheetToObjects('Memos').rows.map((m, i) => (m.LinkId === V9 ? i + 2 : 0)).filter(Boolean).reverse().forEach((r) => ctx.getSheet('Memos').deleteRow(r)); // 清掉，不影響後面的備忘錄筆數檢查
+  ctx.botCache_().remove('cspause:' + V9);
+}
 // 備忘錄可見度
-ok(call('handleGetMemos', {}, 'botlim').memos.length === 1 && call('handleGetMemos', {}, 'admin1').memos.length === 1, '有 BOT 權限的人看得到通知');
-ok(call('handleGetMemos', {}, 'ed').memos.length === 1 && call('handleGetMemos', {}, 'sal').memos.length === 0 && call('handleGetMemos', {}, 'vw').memos.length === 1, '編輯者 / 查看看得到，舊角色看不到（沒有 BOT 區塊）');
-const memoRow = call('handleGetMemos', {}, 'botlim').memos[0];
+ok(call('handleGetMemos', {}, 'botlim').memos.length === 2 && call('handleGetMemos', {}, 'admin1').memos.length === 2, '有 BOT 權限的人看得到通知');
+ok(call('handleGetMemos', {}, 'ed').memos.length === 2 && call('handleGetMemos', {}, 'sal').memos.length === 0 && call('handleGetMemos', {}, 'vw').memos.length === 2, '編輯者 / 查看看得到，舊角色看不到（沒有 BOT 區塊）');
+const memoRow = call('handleGetMemos', {}, 'botlim').memos.find((m) => m.LinkType === 'csHandoff');
 ok(memoRow.CanManage === true && call('handleGetMemos', {}, 'vw').memos[0].CanManage === false, 'CanManage');
 let denied = false;
 try {
@@ -167,7 +181,7 @@ try {
 }
 ok(denied, '查看角色不能處理通知');
 r = call('handleDeleteMemo', { rowIndex: memoRow.RowIndex }, 'botlim');
-ok(r.success && ctx.sheetToObjects('Memos').rows.length === 0 && bot('csStart', { lineUserId: U1 }).data.paused === false, '刪除通知 = 恢復機器人');
+ok(r.success && ctx.sheetToObjects('Memos').rows.filter((m) => m.LinkType === 'csHandoff').length === 0 && bot('csStart', { lineUserId: U1 }).data.paused === false, '刪除通知 = 恢復機器人');
 // 重新開始 = csForget
 bot('csHandoff', { lineUserId: U2, displayName: 'B', text: '真人' });
 ok(bot('csStart', { lineUserId: U2 }).data.paused, 'U2 暫停');

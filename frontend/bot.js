@@ -912,6 +912,7 @@ async function deleteConversation(id) {
     $('thread-box').innerHTML = '';
     $('thread-lead').style.display = 'none';
     $('thread-resume').style.display = 'none';
+    $('thread-takeover').style.display = 'none';
     $('thread-delete').style.display = 'none';
   }
   await loadTalk(true);
@@ -952,6 +953,7 @@ async function openThread(id, keepScroll) {
     .join('');
   if (!keepScroll || bottom) box.scrollTop = box.scrollHeight;
   $('thread-resume').style.display = r.paused ? '' : 'none';
+  $('thread-takeover').style.display = r.paused ? 'none' : '';
   $('thread-reply').style.display = id.charAt(0) === 'V' ? '' : 'none';
   $('thread-line-hint').style.display = id.charAt(0) === 'U' ? '' : 'none';
   applyReadOnly();
@@ -974,6 +976,13 @@ async function loadTraffic() {
   $('traffic-daily').innerHTML = r.daily.map((d) => `<tr><td>${htmlEsc(d.date)}</td><td>${d.visitors}</td><td>${d.views}</td><td>${fmtSecs(d.avgViewSecs)}</td><td>${fmtSecs(d.avgVisitorSecs)}</td></tr>`).join('') || '<tr><td colspan="5">還沒有資料（視窗更新後才開始記錄）</td></tr>';
   $('traffic-pages').innerHTML = r.pages.map((p) => `<tr><td>${htmlEsc(p.page)}</td><td>${p.views}</td><td>${fmtSecs(p.avgSecs)}</td></tr>`).join('');
   $('traffic-recent').innerHTML = r.recent.map((v) => `<tr><td>${htmlEsc(v.time)}</td><td>${htmlEsc(v.visitor)}</td><td>${htmlEsc(v.page)}</td><td>${htmlEsc(v.ref || '直接進入')}</td><td>${fmtSecs(v.secs)}</td></tr>`).join('');
+}
+
+async function takeoverSelected() {
+  if (!selectedConv) return;
+  const r = await callApi('botTakeover', { userId: selectedConv });
+  if (!r.success) return alert(r.message);
+  openThread(selectedConv);
 }
 
 async function resumeSelected() {
