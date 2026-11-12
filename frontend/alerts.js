@@ -78,15 +78,18 @@
   }
 
   function goUrl(a) {
+    if (a.type === 'csLimit') return 'bot.html';
     return a.type === 'csLead' ? 'bot.html#leads' : a.channel === 'web' ? 'bot.html#talk:' + a.id : 'https://manager.line.biz/';
   }
 
   function goLabel(a) {
+    if (a.type === 'csLimit') return '前往 BOT 設定';
     return a.type === 'csLead' ? '看聯繫名單' : a.channel === 'web' ? '前往回覆' : '開啟 LINE 後台';
   }
 
   function hint(a) {
     if (a.type === 'csLead') return '聯繫完請按「我已處理」';
+    if (a.type === 'csLimit') return '調整「防濫用」上限後，按「我已處理」';
     if (a.type === 'csChat') return '機器人正在回覆；要親自回請到後台按「轉真人（接手）」';
     return a.channel === 'web' ? '在「BOT 設定」回覆後會自動消失' : '在 LINE 後台回覆完，請按「我已處理」';
   }

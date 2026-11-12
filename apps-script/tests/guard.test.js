@@ -87,3 +87,17 @@ const saved = ctx.sheetToObjects('BotLeads').rows[0];
 ok(String(saved.Name).indexOf('=HYPERLINK') === 0, '內容照存（顯示時由後台跳脫）');
 
 console.log('guard checks passed:', pass);
+
+// 用到上限的 80% 先提醒
+{
+  ctx.handleBotSaveSettings({ _user: admin, cs: { guard: { globalPerHour: 10, globalPerDay: 0, ipPerMin: 0, ipPerHour: 0, visitorPerMin: 50, alert: false } } });
+  const hb = Math.floor(Date.now() / 3600000);
+  ctx.botCache_().remove('csg:gh:' + hb);
+  ctx.botCache_().remove('csg:warn:hour:' + hb);
+  const warns = () => ctx.sheetToObjects('Memos').rows.filter((m) => m.LinkType === 'csLimit').length;
+  const before = warns();
+  for (let i = 0; i < 7; i++) start(900 + i, '7.7.7.' + i);
+  ok(warns() === before, '還沒到 80% 不提醒');
+  for (let i = 7; i < 10; i++) start(900 + i, '7.7.7.' + i);
+  ok(warns() === before + 1, '到 80% 提醒一次，不重複');
+}

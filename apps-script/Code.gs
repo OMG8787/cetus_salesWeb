@@ -7091,10 +7091,45 @@ function botGuardCheck_(id, ip, cfg) {
     if (!reason && cfg.ipPerHour && perHour > cfg.ipPerHour) reason = 'ip';
   }
   // 全站計數只算沒被擋下的訊息：單一來源狂灌不會把全站額度吃光
-  if (!reason && cfg.globalPerHour && botGuardBump_('csg:gh:' + h, 7200) > cfg.globalPerHour) reason = 'global';
-  if (!reason && cfg.globalPerDay && botGuardDayBump_() > cfg.globalPerDay) reason = 'global';
+  if (!reason && cfg.globalPerHour) {
+    var gh = botGuardBump_('csg:gh:' + h, 7200);
+    if (gh > cfg.globalPerHour) reason = 'global';
+    else botGuardWarn_(cfg, 'hour', gh, cfg.globalPerHour, String(h));
+  }
+  if (!reason && cfg.globalPerDay) {
+    var gd = botGuardDayBump_();
+    if (gd > cfg.globalPerDay) reason = 'global';
+    else botGuardWarn_(cfg, 'day', gd, cfg.globalPerDay, botNow_().slice(0, 10));
+  }
   if (reason === 'global') botGuardAlert_(cfg, h);
   return reason;
+}
+
+/** 用到上限的 80%：後台右下角跳提醒 + 寄信（每個小時 / 每天各一次），讓你在客人被擋下之前先調整。 */
+function botGuardWarn_(cfg, kind, n, limit, bucket) {
+  if (n < Math.ceil(limit * 0.8)) return;
+  var flag = 'csg:warn:' + kind + ':' + bucket;
+  if (botCache_().get(flag)) return;
+  botCachePut_(flag, 1, kind === 'hour' ? 3600 : 21600);
+  var label = kind === 'hour' ? '每小時' : '每天';
+  try {
+    var today = todayStr();
+    appendObjectRow(SHEET_MEMOS, {
+      Owner: 'SYSTEM', OwnerName: '客服機器人',
+      Title: '⚠️ 客服機器人流量快到上限：' + label + ' ' + n + ' / ' + limit + ' 則',
+      Content: '網站客服視窗的全站「' + label + '」上限是 ' + limit + ' 則，目前已用 ' + n + ' 則（超過 80%）。用完之後客人會看到「請稍後再試或轉真人」。\n\n要調高請到「BOT 設定 → 客服設定 → 防濫用」。',
+      Shared: '是', CreatedDate: today, LastUpdated: today, LinkType: 'csLimit', LinkId: 'limit-' + kind + '-' + bucket, NeedBlock: 'bot', CreatedAt: Date.now(),
+    });
+    botAlertsBust_();
+    if (cfg.alert) {
+      resetNotifyAdmins_().forEach(function (u) {
+        var email = String(u['Email'] || '').trim();
+        if (validEmail_(email)) sendResetMail_(email, '【AOI】客服機器人流量快到上限', '網站客服視窗全站「' + label + '」上限 ' + limit + ' 則，目前已用 ' + n + ' 則（超過 80%）。\n要調高請到「BOT 設定 → 客服設定 → 防濫用」。\n時間：' + botNow_());
+      });
+    }
+  } catch (e) {
+    // 通知失敗不影響客服
+  }
 }
 
 /** 全站上限被用完：寄信給管理員（通知對象跟忘記密碼通知同一份設定），每小時最多一封。 */
@@ -9095,7 +9130,7 @@ function handleBotResume(body) {
 // ---- 待回覆提醒：每頁右下角持續跳通知，直到有人回覆 / 處理 ----
 // 通知來源 = 首頁備忘錄裡的機器人通知（客人找真人 csHandoff、新的聯繫名單 csLead）；備忘錄的 AckAt 有值 = 已經有人處理，不再提醒。
 // 網站訪客：小編在「BOT 設定」回覆（botHumanReply）或按「恢復機器人」就自動停止；LINE 客人是在 LINE 官方帳號後台回覆，系統看不到，所以由同事按「我已處理」。
-var BOT_ALERT_TYPES = ['csHandoff', 'csLead', 'csChat'];
+var BOT_ALERT_TYPES = ['csHandoff', 'csLead', 'csChat', 'csLimit'];
 
 function botAlertWho_(body) {
   var u = (body && body._user) || {};
