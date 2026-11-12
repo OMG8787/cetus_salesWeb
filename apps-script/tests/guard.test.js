@@ -62,6 +62,7 @@ ok(mails.length === 1, '同一小時不重複寄');
 
 ctx.handleBotSaveSettings({ _user: admin, cs: { guard: { globalPerHour: 0, globalPerDay: 2, ipPerMin: 0, visitorPerMin: 50 } } });
 ctx.PropertiesService.getScriptProperties().deleteProperty('CS_GUARD_DAY'); // 每日計數先歸零
+ctx.botCache_().remove('csg:gd:' + ctx.botNow_().slice(0, 10));
 reasons = [];
 for (let i = 0; i < 4; i++) reasons.push(start(500 + i, '3.3.3.' + i).limitReason);
 ok(reasons.join() === ',,global,global', '全站每天上限：' + reasons.join('|'));

@@ -524,7 +524,7 @@
     } catch (e) { return false; }
   }
 
-  /* ───────── 網站流量：每個頁面載入回報一次，之後每 30 秒回報停留（頁面看不到時不計） ───────── */
+  /* ───────── 網站流量：每個頁面載入回報一次，之後每 60 秒回報停留（頁面看不到時不計） ───────── */
   function trackVisit() {
     try {
       var akey = "aoi_av_" + BOT;
@@ -535,7 +535,7 @@
         fetch(API + "/messages", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: av, visitId: vid, page: location.pathname + (location.hash || ""), ref: document.referrer ? new URL(document.referrer).hostname : "" }) }).catch(function () { /* 流量回報失敗不影響訪客 */ });
       };
       send();
-      setInterval(function () { if (!document.hidden) send(); }, 30000);
+      setInterval(function () { if (!document.hidden) send(); }, 60000);
       document.addEventListener("visibilitychange", function () { if (document.hidden) send(); });
     } catch (e) { /* 略過 */ }
   }

@@ -7058,11 +7058,18 @@ function botGuardBump_(key, seconds) {
 /** 全站每日計數（快取最久只能存 6 小時，所以放在指令碼屬性；沒有鎖，高併發時會略少算，可接受）。 */
 function botGuardDayBump_() {
   try {
-    var props = PropertiesService.getScriptProperties();
     var today = botNow_().slice(0, 10);
-    var raw = String(props.getProperty('CS_GUARD_DAY') || '').split('|');
-    var n = (raw[0] === today ? Number(raw[1]) || 0 : 0) + 1;
-    props.setProperty('CS_GUARD_DAY', today + '|' + n);
+    var key = 'csg:gd:' + today;
+    var cache = botCache_();
+    var n = Number(cache.get(key) || 0);
+    var props = PropertiesService.getScriptProperties();
+    if (!n) {
+      var raw = String(props.getProperty('CS_GUARD_DAY') || '').split('|');
+      n = raw[0] === today ? Number(raw[1]) || 0 : 0;
+    }
+    n++;
+    botCachePut_(key, n, 21600);
+    if (n % 10 === 1) props.setProperty('CS_GUARD_DAY', today + '|' + n); // 每 10 則才寫一次指令碼屬性，省每日讀寫額度（快取被清掉時最多少算 9 則）
     return n;
   } catch (e) {
     return 0;
