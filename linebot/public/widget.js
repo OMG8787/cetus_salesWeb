@@ -546,7 +546,7 @@
     // 後台勾選「F5 重新整理就重新開始」（預設開）：這次載入是重新整理 → 換一組新的訪客編號 = 全新對話
     if (c.resetOnReload !== false && isReload()) { visitor = uuid(); store.set(vkey, visitor); }
     applyConfig(c);
-    trackVisit();
+    if (c.trackTraffic === true) trackVisit(); // 網站流量擷取：後台「網站客服視窗」勾選才開始（預設關閉）
     (document.body || document.documentElement).appendChild(host);
     readyDone(true);
     if (script.dataset.open === "true") open();

@@ -286,6 +286,7 @@ function fillWeb() {
   setVal('web-position', w.position);
   $('web-auto-open').checked = w.autoOpen;
   $('web-reset-reload').checked = w.resetOnReload !== false;
+  $('web-track').checked = w.trackTraffic === true;
   setVal('web-origins', w.allowedOrigins);
   $('web-self-origin').textContent = location.origin;
   const url = (botData.general || {}).botUrl;
@@ -301,6 +302,7 @@ function readWeb(old) {
     position: val('web-position'),
     autoOpen: $('web-auto-open').checked,
     resetOnReload: $('web-reset-reload').checked,
+    trackTraffic: $('web-track').checked,
     allowedOrigins: val('web-origins'),
   };
 }
@@ -1065,6 +1067,8 @@ async function sendForm(kind) {
 const fmtSecs = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' 時 ' + Math.round((s % 3600) / 60) + ' 分' : s >= 60 ? Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒' : s + ' 秒');
 
 async function loadTraffic() {
+  const off = botData && botData.cs && botData.cs.web && botData.cs.web.trackTraffic !== true;
+  $('traffic-off').style.display = off ? '' : 'none';
   const r = await callApi('botVisits', { days: Number($('traffic-days').value) || 14 }, { silent: true });
   if (!r || !r.success) return;
   $('traffic-sum').innerHTML = [['訪客數', r.total.visitors], ['瀏覽次數', r.total.views], ['每次平均停留', fmtSecs(r.total.avgViewSecs)]].map(([k, v]) => `<div class="sch-chip"><b>${htmlEsc(String(v))}</b> ${k}</div>`).join('');

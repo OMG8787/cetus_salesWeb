@@ -303,6 +303,7 @@
           <label>位置
             <select id="web-position"><option value="right">右下角</option><option value="left">左下角</option></select></label>
           <label class="bot-check"><input type="checkbox" id="web-auto-open" /> 訪客第一次進來時自動展開（只展開一次）</label>
+          <label class="bot-check"><input type="checkbox" id="web-track" /> <b>開啟網站流量擷取</b>（預設關閉；開了之後，每個載入客服視窗的頁面會記錄進站與離開，結果看「📈 網站流量」分頁，不記個資）</label>
           <label class="bot-check"><input type="checkbox" id="web-reset-reload" checked /> 訪客按 F5 重新整理網頁時，客服視窗重新開始（清空對話、重新顯示歡迎詞；切換頁面不受影響）</label>
         </div>
       </div>
@@ -370,6 +371,7 @@
     <div class="panel">
       <h3 style="margin-top:0;">📈 網站流量</h3>
       <div class="calc-hint">客服視窗載入的每個網頁都會回報：幾個人進站、看了哪些頁、每頁停留多久（頁面在背景分頁時不計時）。<b>同一個瀏覽器算一位訪客</b>，不會記錄姓名或個資。</div>
+      <div id="traffic-off" class="calc-hint" style="display:none;color:#b45309;">⚠️ 網站流量擷取目前是<b>關閉</b>的，不會有新資料。要開始記錄，請到「🌐 網站客服視窗」勾選「開啟網站流量擷取」並儲存。</div>
       <label>統計最近 <select id="traffic-days" onchange="loadTraffic()"><option value="7">7 天</option><option value="14" selected>14 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label>
       <div id="traffic-sum" class="bot-row" style="margin:10px 0;"></div>
       <div class="nc-scroll"><table class="nc-table"><thead><tr><th>日期</th><th>訪客數</th><th>瀏覽次數</th><th>每次平均停留</th><th>每位訪客平均停留</th></tr></thead><tbody id="traffic-daily"></tbody></table></div>
@@ -691,7 +693,7 @@
 <script src="common.js?v=20261111d"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
-<script src="bot.js?v=20261113a"></script>
+<script src="bot.js?v=20261113b"></script>
 <script src="botstaff.js?v=20261109b"></script>
 </body>
 </html>

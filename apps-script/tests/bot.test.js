@@ -252,3 +252,15 @@ console.log('通過 ' + pass + ' 項');
   ok(g.items.length === 2 && g.items[1].url === 'https://line.me/R/ti/p/@abc' && g.items[1].target === '_blank', 'javascript: 網址與沒有名稱的項目被丟掉，LINE 連結保留');
   ok(call('handleBotGetSettings', {}, 'botlim').robot.items.length === 2, '後台讀得到');
 }
+
+// 網站流量擷取：預設關閉，後台勾選才記
+{
+  const V = 'V' + 'a'.repeat(32);
+  const rows = () => ctx.sheetToObjects('BotVisits').rows.length;
+  ok(ctx.csWidgetConfig_().trackTraffic === false, '流量擷取預設關閉');
+  const before = rows();
+  ok(ctx.csVisit_(V, { visitId: 'visit-test-001', page: '/', ref: '' }) === false && rows() === before, '關閉時不寫入');
+  ok(call('handleBotSaveSettings', { cs: { web: { enabled: true, trackTraffic: true } } }, 'botlim').success, '後台勾選開啟');
+  ok(ctx.csWidgetConfig_().trackTraffic === true, '開啟後視窗會收到');
+  ok(ctx.csVisit_(V, { visitId: 'visit-test-001', page: '/', ref: '' }) === true && rows() === before + 1, '開啟後才寫入');
+}

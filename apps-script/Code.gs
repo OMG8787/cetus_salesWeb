@@ -7349,6 +7349,7 @@ function botCsConfig_(cs) {
       position: web.position === 'left' ? 'left' : 'right',
       autoOpen: web.autoOpen === true,
       resetOnReload: web.resetOnReload !== false, // 預設：訪客按 F5 重新整理網頁就重新開始對話
+      trackTraffic: web.trackTraffic === true, // 網站流量擷取：預設關閉，後台勾選才開始記錄
       allowedOrigins: String(web.allowedOrigins || ''),
     },
   };
@@ -8448,6 +8449,7 @@ function csWidgetConfig_() {
     position: cs.web.position,
     autoOpen: cs.web.autoOpen,
     resetOnReload: cs.web.resetOnReload,
+    trackTraffic: cs.web.trackTraffic === true,
     allowedOrigins: cs.web.allowedOrigins,
     guard: cs.guard,
     welcome: cs.welcome || '👋 您好，我是' + csBrand_() + '的線上客服，有任何問題都可以直接問我；需要專人協助請輸入「' + (botWords_(cs.handoffWords)[0] || '真人') + '」。',
@@ -9084,6 +9086,7 @@ function handleBotTakeover(body) {
 var BOT_VISIT_MAX = 20000;
 
 function csVisit_(id, req) {
+  if (!botSettings_().web.trackTraffic) return false; // 後台沒開「網站流量擷取」就不記（舊版視窗或有人亂送也不會寫試算表）
   var visitId = String(req.visitId || '');
   if (!/^[A-Za-z0-9_-]{8,40}$/.test(visitId)) throw new Error('訪客紀錄編號不正確');
   var now = Date.now();

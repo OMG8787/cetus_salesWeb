@@ -147,6 +147,8 @@ export interface WidgetConfig {
   autoOpen: boolean;
   /** 訪客按 F5 重新整理網頁時，視窗重新開始（沒設定視為開） */
   resetOnReload?: boolean;
+  /** 網站流量擷取（預設關閉，後台勾選才開） */
+  trackTraffic?: boolean;
   /** 允許嵌入的網站（一行一個；空白 = 不限制） */
   allowedOrigins: string;
   /** 防濫用流量上限（沒帶 = 用預設值） */

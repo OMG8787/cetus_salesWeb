@@ -45,6 +45,7 @@ export async function POST(request: Request): Promise<Response> {
     const widget = await loadWidget();
     cors = corsHeaders(checkOrigin(request, widget));
     enforceRequestLimit(request, widget);
+    if (widget.trackTraffic !== true) return Response.json({ ok: true, skipped: true }, { headers: cors }); // 後台沒開流量擷取：直接略過，連管理系統都不打
     const body = (await request.json().catch(() => null)) as { visitorId?: unknown; visitId?: unknown; page?: unknown; ref?: unknown } | null;
     const visitorId = typeof body?.visitorId === "string" ? body.visitorId : "";
     const visitId = typeof body?.visitId === "string" ? body.visitId : "";

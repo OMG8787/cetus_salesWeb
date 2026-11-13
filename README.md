@@ -346,3 +346,5 @@ cd linebot && npm run typecheck && npm test   # 機器人伺服器：檢索 / �
 - 選項類型：💬 智能客服、✉️ 留下聯繫資料、🎧 呼叫專員（轉真人）、🔗 連結（https / mailto / tel）；要加官方 LINE 按「加入 LINE 官方帳號」貼上加好友網址即可。
 - 運作：設定存在 `BotConfig` 的 `robot`，由 `/api/widget/config` 的 `robot` 欄位提供；官網的 `robot-app.js` 載入時讀取（2 秒內讀不到就用上次的設定或程式內預設值），所以官網只要裝好 `robot-loader.js`，之後改文字、加選項都不用再動程式。官網網址要在「允許嵌入的網站」裡。
 - 更新：貼 `Code.gs`、`npx.cmd vercel --prod` 重新發布 linebot、前端推 GitHub 後生效。
+
+- **網站流量擷取預設關閉**：BOT 設定 → 🌐 網站客服視窗 → 勾選「開啟網站流量擷取」並儲存才開始記錄；沒開時，視窗不會回報、linebot 與 Apps Script 也都不寫入（📈 網站流量分頁會提示目前是關閉的）。
