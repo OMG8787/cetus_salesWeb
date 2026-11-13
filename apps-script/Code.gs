@@ -8400,6 +8400,43 @@ function botStaffKnowledge_() {
   return out;
 }
 
+var ROBOT_ITEM_TYPES = ['chat', 'contact', 'human', 'url'];
+var ROBOT_DEFAULT_ITEMS = [
+  { icon: '💬', label: '專屬智能客服', type: 'chat', url: '', target: '_self', on: true },
+  { icon: '✉️', label: '聯繫我', type: 'contact', url: '', target: '_self', on: true },
+  { icon: '🧭', label: '選型工具', type: 'url', url: 'https://austincetus-maker.github.io/cetustool/', target: '_self', on: true },
+];
+
+/** 官網小機器人（右下角那隻）的設定：大小、文字、泡泡、滑過去出現的選項。沒設定的用預設值；網址只收 http / https / mailto / tel。 */
+function botRobotCfg_(r) {
+  r = r || {};
+  var color = /^#[0-9a-fA-F]{6}$/.test(String(r.color || '')) ? String(r.color) : '#2563eb';
+  var str = function (v, d, n) { return v === undefined || v === null ? d : botClip_(v, n); };
+  var items = Array.isArray(r.items) ? r.items : ROBOT_DEFAULT_ITEMS;
+  var clean = [];
+  items.slice(0, 8).forEach(function (it) {
+    it = it || {};
+    var type = ROBOT_ITEM_TYPES.indexOf(it.type) > -1 ? it.type : 'url';
+    var label = botClip_(it.label, 16);
+    if (!label) return;
+    var url = String(it.url || '').trim().slice(0, 300);
+    if (type === 'url' && !/^(https?:\/\/|mailto:|tel:)/i.test(url)) return; // 沒有正確網址的連結項目略過
+    if (type !== 'url') url = '';
+    clean.push({ icon: botClip_(it.icon, 4), label: label, type: type, url: url, target: it.target === '_blank' ? '_blank' : '_self', on: it.on !== false });
+  });
+  return {
+    enabled: r.enabled !== false,
+    size: botInt_(r.size, 56, 160, 96),
+    color: color,
+    right: botInt_(r.right, 0, 400, 80),
+    bottom: botInt_(r.bottom, 0, 400, 24),
+    banner: str(r.banner, '歡迎詢問、選配等', 30),
+    greeting: str(r.greeting, '需要協助嗎？', 30),
+    greetingSeconds: botInt_(r.greetingSeconds, 0, 60, 5),
+    items: clean,
+  };
+}
+
 /** 網站嵌入視窗的公開設定（外觀、歡迎詞、按鈕、允許嵌入的網站）；沒有任何金鑰。 */
 function csWidgetConfig_() {
   var cs = botSettings_();
@@ -8418,6 +8455,7 @@ function csWidgetConfig_() {
     replyDelay: botGeneral_().replyDelay,
     handoffButton: cs.handoffButton,
     handoffWord: botWords_(cs.handoffWords)[0] || '真人',
+    robot: botRobotCfg_(botCfg_('robot', {})),
   };
 }
 
@@ -8480,6 +8518,7 @@ function handleBotGetSettings(body) {
       cs: { has: !!botKey_('cs'), hint: botKeyHint_('cs'), shared: botKeyShared_('cs') },
       staff: { has: !!botKey_('staff'), hint: botKeyHint_('staff'), shared: botKeyShared_('staff') },
     },
+    robot: botRobotCfg_(botCfg_('robot', {})),
     csProductFields: BOT_CS_PRODUCT_FIELDS,
     search: botSearchCfg_(),
     embed: (function () { var c = botEmbedCfg_(); return c ? { provider: c.provider, model: c.model, dim: c.dim } : null; })(),
@@ -8508,6 +8547,7 @@ function handleBotSaveSettings(body) {
       var clean = botCsConfig_(stored);
       botCfgSet_('cs', botCsStored_(clean));
     }
+    if (body.robot) botCfgSet_('robot', botRobotCfg_(body.robot));
     if (body.groundCheck !== undefined && !body.cs) {
       var curCs = botCfg_('cs', {}) || {};
       curCs.groundCheck = body.groundCheck === true;

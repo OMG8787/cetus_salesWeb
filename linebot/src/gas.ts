@@ -158,6 +158,8 @@ export interface WidgetConfig {
   handoffButton?: boolean;
   /** 轉真人按鈕上的稱呼（第一個轉真人關鍵字） */
   handoffWord?: string;
+  /** 官網小機器人（右下角）的設定：大小、文字、泡泡、選單項目 */
+  robot?: unknown;
 }
 
 export interface ThreadMessage {

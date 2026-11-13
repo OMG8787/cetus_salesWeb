@@ -105,6 +105,7 @@ export function publicConfig(widget: WidgetConfig) {
     welcome: widget.welcome ? { text: widget.welcome, choices: widget.buttons ?? [] } : null,
     handoffButton: widget.handoffButton !== false,
     handoffLabel: `🙋 轉${widget.handoffWord || "真人"}`,
+    robot: widget.robot ?? null,
   };
 }
 

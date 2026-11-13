@@ -310,6 +310,31 @@
       <textarea id="web-origins" rows="3" placeholder="https://www.cetus.tw&#10;https://cetus.tw"></textarea>
       <div id="cs-save-bar2"><button type="button" onclick="saveCs()">💾 儲存</button> <span id="web-save-msg" class="calc-hint"></span></div>
     </div>
+    <div class="panel" id="robot-panel">
+      <h3 class="bot-h">🤖 官網小機器人（官網右下角那隻）</h3>
+      <div class="calc-hint">官網右下角的小機器人：頭上閃爍的文字、旁邊的泡泡訊息、滑鼠移上去（手機是點一下）跳出的選項，都在這裡設定，儲存後約 1～5 分鐘內套用到官網（官網要先裝好 robot-loader.js）。選項日後想加幾個都可以，最多 8 個；要加官方 LINE，按「➕ 加入 LINE 官方帳號」。</div>
+      <label class="bot-check"><input type="checkbox" id="rb-enabled" /> <b>在官網顯示小機器人</b></label>
+      <div class="bot-grid">
+        <div>
+          <label>機器人大小 <input type="number" id="rb-size" min="56" max="160" style="width:80px;display:inline-block;" /> px（預設 96，建議 64～140）</label>
+          <label>主題顏色 <input type="color" id="rb-color" style="width:60px;height:30px;padding:0;display:inline-block;margin:0 6px;" /></label>
+          <label>距離右邊 <input type="number" id="rb-right" min="0" max="400" style="width:70px;display:inline-block;" /> px　距離下方 <input type="number" id="rb-bottom" min="0" max="400" style="width:70px;display:inline-block;" /> px</label>
+        </div>
+        <div>
+          <label>頭上閃爍的文字（留空 = 不顯示）</label><input id="rb-banner" maxlength="30" placeholder="歡迎詢問、選配等" />
+          <label>泡泡訊息（機器人左邊，留空 = 不顯示）</label><input id="rb-greeting" maxlength="30" placeholder="需要協助嗎？" />
+          <label>泡泡顯示幾秒後消失 <input type="number" id="rb-seconds" min="0" max="60" style="width:70px;display:inline-block;" /> 秒（0 = 不消失）</label>
+        </div>
+      </div>
+      <label style="margin-top:8px;">滑鼠移上去出現的選項（由上到下顯示）</label>
+      <div id="rb-items"></div>
+      <div class="bot-row" style="margin-top:6px;">
+        <button type="button" class="btn-secondary bot-write" onclick="robotAddItem()">➕ 新增選項</button>
+        <button type="button" class="btn-secondary bot-write" onclick="robotAddLine()">➕ 加入 LINE 官方帳號</button>
+      </div>
+      <div class="calc-hint">類型說明：💬 智能客服 = 開客服視窗；✉️ 留下聯繫資料 = 開客服視窗並跳出表單（進「聯繫名單」）；🎧 呼叫專員 = 直接轉真人；🔗 連結 = 前往網址（可填 https://…、mailto:…、tel:…）。</div>
+      <div class="bot-row" style="margin-top:8px;"><button type="button" class="bot-write" onclick="saveRobot()">💾 儲存小機器人設定</button> <button type="button" class="btn-secondary" onclick="robotReset()">還原預設</button> <span id="rb-msg" class="calc-hint"></span></div>
+    </div>
     <div class="panel">
       <h3 class="bot-h">🛡️ 防濫用與流量上限</h3>
       <div class="calc-hint">網站客服視窗是公開的，任何人都能呼叫。有人用腳本大量灌訊息，會白白消耗 AI 費用，也會占用管理系統（同一份 Apps Script）的額度、拖慢業務同仁。超過上限的訊息直接擋下，<b>不會呼叫 AI</b>，客人會看到下面設定的那句話。欄位填 <b>0 = 不限制</b>。</div>
@@ -666,7 +691,7 @@
 <script src="common.js?v=20261111d"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
-<script src="bot.js?v=20261112c"></script>
+<script src="bot.js?v=20261113a"></script>
 <script src="botstaff.js?v=20261109b"></script>
 </body>
 </html>

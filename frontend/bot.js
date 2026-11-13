@@ -279,6 +279,7 @@ function fillWeb() {
   if (!botData) return;
   const w = botData.cs.web;
   $('web-enabled').checked = w.enabled;
+  fillRobot();
   setVal('web-title', w.title);
   setVal('web-subtitle', w.subtitle);
   setVal('web-color', w.color);
@@ -302,6 +303,100 @@ function readWeb(old) {
     resetOnReload: $('web-reset-reload').checked,
     allowedOrigins: val('web-origins'),
   };
+}
+
+// ------------------------------------------------------------
+// 官網小機器人（右下角）：大小、文字、泡泡、選項
+// ------------------------------------------------------------
+const ROBOT_DEFAULT = { enabled: true, size: 96, color: '#2563eb', right: 80, bottom: 24, banner: '歡迎詢問、選配等', greeting: '需要協助嗎？', greetingSeconds: 5, items: [{ icon: '💬', label: '專屬智能客服', type: 'chat', url: '', target: '_self', on: true }, { icon: '✉️', label: '聯繫我', type: 'contact', url: '', target: '_self', on: true }, { icon: '🧭', label: '選型工具', type: 'url', url: 'https://austincetus-maker.github.io/cetustool/', target: '_self', on: true }] };
+const ROBOT_TYPES = [['chat', '💬 智能客服'], ['contact', '✉️ 留下聯繫資料'], ['human', '🎧 呼叫專員'], ['url', '🔗 連結']];
+let robotItems = [];
+
+function fillRobot(r) {
+  r = r || (botData && botData.robot) || ROBOT_DEFAULT;
+  $('rb-enabled').checked = r.enabled !== false;
+  setVal('rb-size', r.size);
+  setVal('rb-color', r.color);
+  setVal('rb-right', r.right);
+  setVal('rb-bottom', r.bottom);
+  setVal('rb-banner', r.banner);
+  setVal('rb-greeting', r.greeting);
+  setVal('rb-seconds', r.greetingSeconds);
+  robotItems = (r.items || []).map((i) => Object.assign({}, i));
+  renderRobotItems();
+}
+
+function renderRobotItems() {
+  const ro = readOnly();
+  const dis = ro ? 'disabled' : '';
+  $('rb-items').innerHTML = robotItems.length
+    ? robotItems
+        .map(
+          (it, i) => `<div class="bot-row" style="gap:6px;align-items:center;margin:4px 0;flex-wrap:wrap;">
+      <input type="checkbox" ${it.on !== false ? 'checked' : ''} title="顯示這個選項" onchange="robotItemSet(${i},'on',this.checked)" ${dis} />
+      <input value="${htmlEsc(it.icon || '')}" maxlength="4" placeholder="圖示" style="width:56px;margin:0;" oninput="robotItemSet(${i},'icon',this.value)" ${dis} />
+      <input value="${htmlEsc(it.label || '')}" maxlength="16" placeholder="顯示文字" style="width:150px;margin:0;" oninput="robotItemSet(${i},'label',this.value)" ${dis} />
+      <select style="margin:0;" onchange="robotItemSet(${i},'type',this.value,true)" ${dis}>${ROBOT_TYPES.map(([v, n]) => `<option value="${v}" ${it.type === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      ${it.type === 'url' ? `<input value="${htmlEsc(it.url || '')}" placeholder="https://…" style="flex:1;min-width:200px;margin:0;" oninput="robotItemSet(${i},'url',this.value)" ${dis} /><select style="margin:0;" onchange="robotItemSet(${i},'target',this.value)" ${dis}><option value="_self" ${it.target !== '_blank' ? 'selected' : ''}>同一頁開啟</option><option value="_blank" ${it.target === '_blank' ? 'selected' : ''}>新分頁開啟</option></select>` : ''}
+      <button type="button" class="btn-mini" onclick="robotMove(${i},-1)" ${ro || i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn-mini" onclick="robotMove(${i},1)" ${ro || i === robotItems.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="btn-mini" onclick="robotDel(${i})" ${dis}>🗑</button>
+    </div>`
+        )
+        .join('')
+    : '<div class="calc-hint">還沒有選項（機器人展開時會是空的）</div>';
+}
+
+function robotItemSet(i, k, v, rerender) {
+  if (!robotItems[i]) return;
+  robotItems[i][k] = v;
+  if (rerender) renderRobotItems();
+}
+function robotMove(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= robotItems.length) return;
+  [robotItems[i], robotItems[j]] = [robotItems[j], robotItems[i]];
+  renderRobotItems();
+}
+function robotDel(i) {
+  robotItems.splice(i, 1);
+  renderRobotItems();
+}
+function robotAddItem() {
+  if (robotItems.length >= 8) return alert('最多 8 個選項');
+  robotItems.push({ icon: '🔗', label: '', type: 'url', url: '', target: '_blank', on: true });
+  renderRobotItems();
+}
+function robotAddLine() {
+  if (robotItems.length >= 8) return alert('最多 8 個選項');
+  const url = prompt('請貼上官方 LINE 的加好友網址（例如 https://line.me/R/ti/p/@你的帳號）');
+  if (!url) return;
+  robotItems.push({ icon: '💚', label: '加入官方 LINE', type: 'url', url: url.trim(), target: '_blank', on: true });
+  renderRobotItems();
+}
+function robotReset() {
+  if (confirm('還原成預設的大小、文字與 3 個選項？（要按「儲存」才會套用）')) fillRobot(ROBOT_DEFAULT);
+}
+
+async function saveRobot() {
+  const robot = {
+    enabled: $('rb-enabled').checked,
+    size: Number(val('rb-size')) || 96,
+    color: val('rb-color'),
+    right: Number(val('rb-right')) || 0,
+    bottom: Number(val('rb-bottom')) || 0,
+    banner: val('rb-banner'),
+    greeting: val('rb-greeting'),
+    greetingSeconds: Number(val('rb-seconds')) || 0,
+    items: robotItems,
+  };
+  const bad = robot.items.find((i) => i.on !== false && i.type === 'url' && !/^(https?:\/\/|mailto:|tel:)/i.test(String(i.url || '').trim()));
+  if (bad) return alert('「' + (bad.label || '連結') + '」的網址要以 https://、mailto: 或 tel: 開頭');
+  if (robot.items.some((i) => !String(i.label || '').trim())) return alert('每個選項都要填顯示文字（不要的請按 🗑 刪除）');
+  const r = await callApi('botSaveSettings', { robot });
+  if (!r.success) return alert(r.message);
+  await loadAll(true);
+  fillRobot();
+  $('rb-msg').textContent = '✓ 已儲存（官網約 1～5 分鐘內套用）';
+  setTimeout(() => ($('rb-msg').textContent = ''), 5000);
 }
 
 function previewWidget() {

@@ -67,6 +67,45 @@
   }
   // =====================================================
 
+  // ===== 後台設定（BOT 設定 → 🌐 網站客服視窗 → 🤖 官網小機器人）=====
+  // 先用上面的預設值，再用後台設定蓋過去；後台讀不到（沒網路 / 沒啟用 / 網站沒在允許清單）就維持預設值
+  var REMOTE_KEY = 'aoi_robot_cfg';
+  function applyRemote(r) {
+    if (!r || typeof r !== 'object') return;
+    if (r.enabled === false) CONFIG.disabled = true;
+    if (r.size) CONFIG.size = r.size;
+    if (r.color) CONFIG.color = r.color;
+    if (typeof r.right === 'number') CONFIG.position.right = r.right;
+    if (typeof r.bottom === 'number') CONFIG.position.bottom = r.bottom;
+    if (typeof r.banner === 'string') CONFIG.banner = r.banner;
+    if (typeof r.greeting === 'string') CONFIG.greeting = r.greeting;
+    if (typeof r.greetingSeconds === 'number') CONFIG.greetingDurationMs = r.greetingSeconds * 1000;
+    if (Array.isArray(r.items)) {
+      CONFIG.items = r.items.filter(function (it) { return it && it.on !== false && it.label; }).map(function (it) {
+        var o = { icon: it.icon || '', label: it.label };
+        if (it.type === 'url') { o.url = it.url; o.target = it.target || '_self'; } else o.action = it.type;
+        return o;
+      });
+    }
+  }
+  function loadRemote() {
+    return new Promise(function (resolve) {
+      var base = String(CONFIG.chatUrl || '').replace(/\/+$/, '');
+      var cached = null;
+      try { cached = JSON.parse(localStorage.getItem(REMOTE_KEY) || 'null'); } catch (e) { cached = null; }
+      if (!base || !window.fetch) { applyRemote(cached); return resolve(); }
+      var finished = false;
+      var finish = function (r) { if (finished) return; finished = true; applyRemote(r || cached); resolve(); };
+      var timer = setTimeout(function () { finish(null); }, 2000); // 讀不到就用上次的設定（或預設值），不讓官網機器人等太久
+      fetch(base + '/api/widget/config').then(function (res) { return res.ok ? res.json() : null; }).then(function (d) {
+        clearTimeout(timer);
+        var r = d && d.robot;
+        if (r) { try { localStorage.setItem(REMOTE_KEY, JSON.stringify(r)); } catch (e) { /* 略過 */ } }
+        finish(r);
+      }).catch(function () { clearTimeout(timer); finish(null); });
+    });
+  }
+
   var HOST_ID = 'robot-widget-host';
 
   // 避免重複建立
@@ -78,6 +117,8 @@
   }
 
   function init() {
+    if (CONFIG.disabled) return;
+    var S = Math.max(56, Math.min(160, Number(CONFIG.size) || 96)); // 機器人大小（px）
     var host = document.createElement('div');
     host.id = HOST_ID;
     // 用極高的 z-index 確保浮在官網最上方
@@ -88,7 +129,7 @@
     var root = host.attachShadow({ mode: 'open' });
 
     var robotSvg =
-      '<svg viewBox="0 0 64 64" width="57" height="57" aria-hidden="true">' +
+      '<svg viewBox="0 0 64 64" width="' + Math.round(S * 0.59) + '" height="' + Math.round(S * 0.59) + '" aria-hidden="true">' +
       '<line x1="32" y1="6" x2="32" y2="14" stroke="#fff" stroke-width="3" stroke-linecap="round"/>' +
       '<circle cx="32" cy="5" r="3.5" fill="#fde047"/>' +
       '<rect x="10" y="14" width="44" height="34" rx="12" fill="#fff"/>' +
@@ -120,13 +161,13 @@
       '.item .ic{font-size:18px;}' +
 
       /* 氣泡 */
-      '.tip{position:absolute;right:108px;bottom:34px;background:#fff;color:#1f2937;padding:8px 14px;' +
+      '.tip{position:absolute;right:' + (S + 12) + 'px;bottom:' + Math.round(S * 0.35) + 'px;background:#fff;color:#1f2937;padding:8px 14px;' +
       'border-radius:14px 14px 4px 14px;font-size:14px;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.15);' +
       'opacity:0;transform:translateX(8px);pointer-events:none;transition:opacity .25s,transform .25s;}' +
       '.wrap.tip-on:not(.open) .tip{opacity:1;transform:none;}' +
 
       /* 頭上閃爍的醒目文字 */
-      '.banner{position:absolute;right:0;bottom:104px;background:' + CONFIG.color + ';color:#fff;padding:7px 14px;' +
+      '.banner{position:absolute;right:0;bottom:' + (S + 8) + 'px;background:' + CONFIG.color + ';color:#fff;padding:7px 14px;' +
       'border-radius:999px;font-size:15px;font-weight:700;white-space:nowrap;letter-spacing:1px;' +
       'box-shadow:0 4px 14px rgba(0,0,0,.28);animation:flash 1.4s ease-in-out infinite;pointer-events:none;transition:opacity .2s;}' +
       '.banner:after{content:"";position:absolute;right:38px;bottom:-6px;border:7px solid transparent;border-top-color:' + CONFIG.color + ';border-bottom:0;}' +
@@ -134,7 +175,7 @@
       '@keyframes flash{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,255,255,.0),0 4px 14px rgba(0,0,0,.28)}50%{opacity:.55;box-shadow:0 0 14px 4px ' + CONFIG.color + ',0 4px 14px rgba(0,0,0,.28)}}' +
 
       /* 機器人按鈕 */
-      '.bot{position:relative;width:96px;height:96px;border:none;border-radius:50%;padding:0;cursor:pointer;' +
+      '.bot{position:relative;width:' + S + 'px;height:' + S + 'px;border:none;border-radius:50%;padding:0;cursor:pointer;' +
       'display:flex;align-items:center;justify-content:center;' +
       'background:linear-gradient(145deg,' + CONFIG.color + ',#1e3a8a);' +
       'box-shadow:0 8px 26px rgba(0,0,0,.32);animation:float 3s ease-in-out infinite;transition:transform .2s;}' +
@@ -307,9 +348,10 @@
     };
   }
 
+  function start() { loadRemote().then(init); }
   if (document.body) {
-    init();
+    start();
   } else {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', start);
   }
 })();

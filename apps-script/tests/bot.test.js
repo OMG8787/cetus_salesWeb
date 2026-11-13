@@ -235,3 +235,20 @@ ok(KEY2 !== KEY && !bot('csStart', { lineUserId: U1 }).success && ctx.handleBotA
 const all = ctx.allSchemas_();
 ok(all.schema.BotKnowledge && all.schema.BotMessages && all.schema.BotConfig && all.text.BotMessages.indexOf('UserId') > -1, 'allSchemas_ 含模組');
 console.log('通過 ' + pass + ' 項');
+
+// 官網小機器人設定
+{
+  const d0 = ctx.csWidgetConfig_().robot;
+  ok(d0.enabled === true && d0.size === 96 && d0.items.length === 3 && d0.banner === '歡迎詢問、選配等', '小機器人預設值');
+  const r = call('handleBotSaveSettings', { robot: { size: 999, color: 'red', banner: '你好', greeting: '', greetingSeconds: 8, items: [
+    { icon: '💬', label: '客服', type: 'chat' },
+    { icon: '💚', label: 'LINE', type: 'url', url: 'https://line.me/R/ti/p/@abc', target: '_blank' },
+    { icon: 'x', label: '壞連結', type: 'url', url: 'javascript:alert(1)' },
+    { icon: 'x', label: '', type: 'chat' },
+  ] } }, 'botlim');
+  ok(r.success, '儲存小機器人設定');
+  const g = ctx.csWidgetConfig_().robot;
+  ok(g.size === 160 && g.color === '#2563eb' && g.banner === '你好' && g.greeting === '' && g.greetingSeconds === 8, '大小夾在範圍內、顏色不合法用預設、文字可清空');
+  ok(g.items.length === 2 && g.items[1].url === 'https://line.me/R/ti/p/@abc' && g.items[1].target === '_blank', 'javascript: 網址與沒有名稱的項目被丟掉，LINE 連結保留');
+  ok(call('handleBotGetSettings', {}, 'botlim').robot.items.length === 2, '後台讀得到');
+}
