@@ -1,0 +1,1429 @@
+{
+ "version": 2,
+ "root": "D:\\claude\\CetusSalesWeb",
+ "generatedAt": "2026-11-13T09:23:26",
+ "maxLines": 800,
+ "counts": {
+  "source": 66,
+  "test": 49,
+  "script": 0,
+  "config": 9,
+  "doc": 5,
+  "other": 30,
+  "asset": 6
+ },
+ "languages": {
+  ".js": 74,
+  ".ts": 41
+ },
+ "entryPoints": [],
+ "files": {
+  ".gitignore": {
+   "sha256": "99c01674b28b03895ed939615c7a567764d81cce4e17c5f859243bedadced10c",
+   "size": 358,
+   "mtime": 1791181024580320400,
+   "lines": 20,
+   "kind": "config",
+   "ext": ""
+  },
+  "README.md": {
+   "sha256": "934966a90ee9feefc77a8f86369a766ae8a601f0f6cf231eb5647662df0cab22",
+   "size": 84496,
+   "mtime": 1794486318838110500,
+   "lines": 340,
+   "kind": "doc",
+   "ext": ".md"
+  },
+  "REPORT_GENERATOR_GUIDE.md": {
+   "sha256": "b96d0491c62e85c5026e6868b37814ceca2011184d0f90f6543da2b06b4e7097",
+   "size": 14575,
+   "mtime": 1790757548641530400,
+   "lines": 241,
+   "kind": "doc",
+   "ext": ".md"
+  },
+  "robot-loader.js": {
+   "sha256": "39e2623cf70620cdab28d95fef7167abf8f058c3cf3a8c17425b56534c68568f",
+   "size": 1370,
+   "mtime": 1793863919719081000,
+   "lines": 41,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "robot-widget.js": {
+   "sha256": "0f362ced0b7c1c1a9ec6e4cac34caaf0077c03452465aa385ac1057fd4e04727",
+   "size": 14192,
+   "mtime": 1794495213625930100,
+   "lines": 315,
+   "kind": "source",
+   "ext": ".js"
+  },
+  ".github/workflows/pages.yml": {
+   "sha256": "7978b2488f28ab8af788d3a7351690b9a60746531cb7b1add9a0d747ed2f547d",
+   "size": 812,
+   "mtime": 1790652702139500600,
+   "lines": 33,
+   "kind": "config",
+   "ext": ".yml"
+  },
+  "apps-script/appsscript.json": {
+   "sha256": "68559cff7c82eda2fbcc9b2427ba67a767631016415e55b4321fb7c36506a885",
+   "size": 701,
+   "mtime": 1790667716221055600,
+   "lines": 21,
+   "kind": "config",
+   "ext": ".json"
+  },
+  "apps-script/Code.gs": {
+   "sha256": "ee7db08f09557d55de8895ffd769f833be577684ecc4151454e1d731ddc49181",
+   "size": 646570,
+   "mtime": 1794489323947436200,
+   "lines": null,
+   "kind": "other",
+   "ext": ".gs"
+  },
+  "apps-script/tests/access.test.js": {
+   "sha256": "d2b6f36c915f512b39eb08ea7026b3c654a676da0ffabb5e2c3519bf2879d168",
+   "size": 5992,
+   "mtime": 1793801163266967300,
+   "lines": 80,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/ai-models.test.js": {
+   "sha256": "7f64762ca0e9c8d5134411d66daf3262aa3d8404112a517e2fac5ea5e5278f8f",
+   "size": 8102,
+   "mtime": 1793808763040442200,
+   "lines": 111,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/alerts.test.js": {
+   "sha256": "aa0df635b72892ed57a0bf538b823a09a08e22fc9b2a7e770943510c0b470572",
+   "size": 5160,
+   "mtime": 1793878857901874800,
+   "lines": 84,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/assistant-delete-audit.test.js": {
+   "sha256": "54acbb4d5c43ce6a56c39c959149fd0c750ced1043c630e8f3d994be6dc10b97",
+   "size": 16082,
+   "mtime": 1793843911251109000,
+   "lines": 191,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/assistant-tools.test.js": {
+   "sha256": "8e8d8c3898cb5b8093f1a1ef7bc1bd1c5083440985fe709d4e62dff71fa3fadb",
+   "size": 15292,
+   "mtime": 1793801163353144900,
+   "lines": 182,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/bot-talk.test.js": {
+   "sha256": "adc74a0bc25ab7218619c621c7c82f970700a95bdf46dd96aab70f23a07e196a",
+   "size": 3691,
+   "mtime": 1793948350329643900,
+   "lines": 59,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/bot.test.js": {
+   "sha256": "2e8eeca347234db7fcb072025bebdc377c310ad98528c949913d725ed41f525a",
+   "size": 17550,
+   "mtime": 1794487015382033700,
+   "lines": 237,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/calc-catalog.test.js": {
+   "sha256": "03b3ee918d6e1b948ded959ae27074b53718a42f8d24bdba853d5f2a18529c0e",
+   "size": 7840,
+   "mtime": 1793946966310359600,
+   "lines": 88,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/calc-reply.test.js": {
+   "sha256": "9a7866ece33bf09dfbf90d9af3926b245831be24c9cebbe3764035b5eac99544",
+   "size": 2201,
+   "mtime": 1794134352883023000,
+   "lines": 34,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/cards.test.js": {
+   "sha256": "00834225a19b3b31cf018e91fc98897f7237d7cd4af26f97514a1c4c8b43b47a",
+   "size": 9308,
+   "mtime": 1793862925473835300,
+   "lines": 117,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/cetus-import.test.js": {
+   "sha256": "7179acc82f7e6eeb9f35c2c6cd8b03b8d58947d1b85995dfb56048b7d04548b0",
+   "size": 5201,
+   "mtime": 1793945259084891000,
+   "lines": 62,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/chat-close.test.js": {
+   "sha256": "62abda46d1cbcfdf7c087dfcd6a0aefd3b0c5e205e76259d8d3208b398242233",
+   "size": 2724,
+   "mtime": 1794117363203234400,
+   "lines": 46,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/closecase.test.js": {
+   "sha256": "1a020d1c3a3cf0e51c5b7d90d8505373cc90e473ab95af5bd0f40ab7f28fc178",
+   "size": 4802,
+   "mtime": 1793928445509681300,
+   "lines": 70,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/copy.test.js": {
+   "sha256": "3182c0577b0621b1bda97319682d9ef69d3f58516ea3d157bf1a2000123bf60e",
+   "size": 10297,
+   "mtime": 1793801163323831400,
+   "lines": 143,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/customers-level.test.js": {
+   "sha256": "cdbdc23c902a730fc15d3502fb376516d72bebb9d23f09faa118c6c879beb041",
+   "size": 10123,
+   "mtime": 1794368346898940200,
+   "lines": 129,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/gasmock.js": {
+   "sha256": "9c8e81973cabe0c2377761ae2faae2de32cb50e4feb580da695eed4ae5133726",
+   "size": 11932,
+   "mtime": 1794291588652934600,
+   "lines": 267,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/guard.test.js": {
+   "sha256": "f06aee7a27738d3b36ae7c35ff67bb6ba8bf2272fb633d61cb2ff82543e6defb",
+   "size": 7073,
+   "mtime": 1794489348166165400,
+   "lines": 103,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/isolation.test.js": {
+   "sha256": "4bbad99130603def3dd794acc1405dea8ef45bdc064f53f35890772f51d2619c",
+   "size": 10951,
+   "mtime": 1793801163347139000,
+   "lines": 140,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/kb-access.test.js": {
+   "sha256": "84a324b3ee3a84a50e65b0652cae7e1188b1de9db3bc5df76ba7fa4666a49a35",
+   "size": 6179,
+   "mtime": 1793843380474379000,
+   "lines": 75,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/kb-audience.test.js": {
+   "sha256": "fc6319c161104aac1780444226226fa38239799f9e1ad42179db5219b01775fc",
+   "size": 7267,
+   "mtime": 1793843833187330300,
+   "lines": 102,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/kb-docs.test.js": {
+   "sha256": "300106ad09d91c9e61c94d8527d1c6f645fa1abc1ef8257152a0ff7aeae90620",
+   "size": 8156,
+   "mtime": 1793846579732438800,
+   "lines": 98,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/kb-version.test.js": {
+   "sha256": "f60e7445c4ee55d03eacdd9d31750e768c01becdec04538dcfb205df84094323",
+   "size": 5675,
+   "mtime": 1793858670323917700,
+   "lines": 90,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/leads-images.test.js": {
+   "sha256": "7fd7df22a25cef4f4b3d46ebb36602aadc2918027ccc8283fb7ef6ea63eed397",
+   "size": 9862,
+   "mtime": 1793862381213318600,
+   "lines": 128,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/namecards-web.test.js": {
+   "sha256": "7984d05d444fa7ab5e716a83c9da67e84122dfada30c6721392bf33e5c1bce9f",
+   "size": 5634,
+   "mtime": 1793882693773189900,
+   "lines": 82,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/product-export.test.js": {
+   "sha256": "dcc8f4f4021acedbdad5ea2571a480601e1340a2cf2986b51c5701222fc93945",
+   "size": 7391,
+   "mtime": 1794202985266013100,
+   "lines": 85,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/prospects-convert.test.js": {
+   "sha256": "f4803f99cd76c7468a3812c4c6acac006d1ca996a367bbd36a0d961ead94872c",
+   "size": 11350,
+   "mtime": 1794365811829547000,
+   "lines": 142,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/prospects-dedupe.test.js": {
+   "sha256": "41c26ff389e0608d85811727432d4034dde0ec6b29d71e9720133b1fe6e2b1a3",
+   "size": 5957,
+   "mtime": 1794317872889416400,
+   "lines": 80,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/prospects-enrich.test.js": {
+   "sha256": "37de315cc1b015cc9b0317c4666de3a5eaf082c4f7dfb3dfb880d6d840f29a61",
+   "size": 19437,
+   "mtime": 1794293008090433800,
+   "lines": 214,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/prospects-lib.test.js": {
+   "sha256": "98cd5f170199c656f1d4f79942ef86d3bfce2b733025723674e28a2923910755",
+   "size": 8480,
+   "mtime": 1794213450543081500,
+   "lines": 124,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/prospects-logs.test.js": {
+   "sha256": "cf3ce1032fe18ac3eec1d528267d6e7f63d0924a71192765e9e022cc8b5e350a",
+   "size": 10140,
+   "mtime": 1794317371594444900,
+   "lines": 116,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/prospects.test.js": {
+   "sha256": "50bbf2e93bc80c18a77757fd20885f3555befe507bd504ce8488044ff914dbbf",
+   "size": 17387,
+   "mtime": 1794291588786865500,
+   "lines": 212,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/reset-password.test.js": {
+   "sha256": "9c569430e1a8be90b8e7fb2bfa1fa9db0fec5de923f1964d3cc4de0f27f721d7",
+   "size": 7456,
+   "mtime": 1794117891911288500,
+   "lines": 119,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/run-all.js": {
+   "sha256": "de28dd90a1286240908f14d0504ab470d9be564bc07f6330d93da3eecbb780d2",
+   "size": 935,
+   "mtime": 1793801163373139300,
+   "lines": 20,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/staff.test.js": {
+   "sha256": "4bb5bb8753c56766a7c72492cbb4ed9442800f2bf515040ef6339dcda88bd9f9",
+   "size": 18411,
+   "mtime": 1793801163300745800,
+   "lines": 256,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/vector.test.js": {
+   "sha256": "0f39d4a9a1ab61e4f145e1760121c450c4591ae74d4d6f6ba56d2a0f14e5d844",
+   "size": 9573,
+   "mtime": 1793801163349177500,
+   "lines": 138,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/workspace.test.js": {
+   "sha256": "ad9ba427c8daef70a8a170f0186d4221348ecf799c08c416f1b58aba95213890",
+   "size": 25669,
+   "mtime": 1794117554137436900,
+   "lines": 277,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "docs/待辦-個人工作區與知識庫分流.md": {
+   "sha256": "bc23376c28b7597a1d6326da0d9f65430781895bdb5b93725934660463898aa5",
+   "size": 6643,
+   "mtime": 1793801242014907600,
+   "lines": 86,
+   "kind": "doc",
+   "ext": ".md"
+  },
+  "frontend/alerts.js": {
+   "sha256": "a32b41b4b61a13259d29ef31e678ab88ec31bbfb6dd3c171630f644ca9f7d5ef",
+   "size": 12100,
+   "mtime": 1794489303607340200,
+   "lines": 306,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/assistant.js": {
+   "sha256": "f6b8de5d5f5dd0ff72fc2496415f953824550b87be421c73b6004906d875e001",
+   "size": 7389,
+   "mtime": 1793844206948936700,
+   "lines": 160,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/bot.html": {
+   "sha256": "88e64fd52a6d86131a6a820ea98fb26482bcfd69827b618e8ff8ea9d4c23ce73",
+   "size": 58740,
+   "mtime": 1794489303838322100,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/bot.js": {
+   "sha256": "3df967dbe1d23b3299062d2a0d268ffa6e0258ea727a7023e7ddb6a9d8b927d7",
+   "size": 77096,
+   "mtime": 1794486756745119900,
+   "lines": 1431,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/botstaff.js": {
+   "sha256": "ca4881b49fd9d9c11f2407d41ef9d1168398be32e4d0d19dc5a7c8a9ef5b4fbc",
+   "size": 13188,
+   "mtime": 1793844028840965900,
+   "lines": 252,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/calc-quote.js": {
+   "sha256": "4e332b0d5fe6fb7bd1d9036c72814f1d1196b7107b690eabcc81db0c3b25d836",
+   "size": 13088,
+   "mtime": 1790918293631967300,
+   "lines": 317,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/calc.html": {
+   "sha256": "69565c777b1077a98c4831569d46046f4d2f494ab6a80b55d1cc0c07548e5e98",
+   "size": 19474,
+   "mtime": 1794489303874069600,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/calc.js": {
+   "sha256": "aba3cb3eefab64eb6bfe6de017a2b7c7c6f55beddb242c22b6c48acf4006df44",
+   "size": 68536,
+   "mtime": 1791352648917448100,
+   "lines": 1393,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/caseclose.js": {
+   "sha256": "7254969554d3165408482a5e317b15fc3e5c5b3ddcd5811bdb8e4ee456812520",
+   "size": 10231,
+   "mtime": 1794367501634899100,
+   "lines": 230,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/cases.html": {
+   "sha256": "171bd99db6288c8261896c846ab7a61c11a21ba593801efae76dd6ecdccc112e",
+   "size": 19120,
+   "mtime": 1794489303899973800,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/cases.js": {
+   "sha256": "1d57bde2f70e26a5c01ef43ed6f8a6f19a1b7261dc35d11af308a2204ed2f8a4",
+   "size": 39274,
+   "mtime": 1794367501623153600,
+   "lines": 869,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/common.js": {
+   "sha256": "2f84cdc5ec1590c103de1dc6c6d80cc8aa2c9481dd36787e6f44ce406305a5fb",
+   "size": 67553,
+   "mtime": 1794367448134797800,
+   "lines": 1366,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/config.js": {
+   "sha256": "29f18e48ee1806ab43c8dcf9445d353f2ca48f70571dcb86236492b6c2e323fa",
+   "size": 643,
+   "mtime": 1790731299362007300,
+   "lines": 10,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/copy-prompts.js": {
+   "sha256": "107ca419f4a5bdc8465cc583e84f581e1832d0b353a4b7937ce9707e5f7bc9ab",
+   "size": 12973,
+   "mtime": 1793773233679421800,
+   "lines": 196,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/copy.html": {
+   "sha256": "5ad62c75343fd5f8dacd7e0421cb77b29032ea905331db1cd4a75ef96cca57f7",
+   "size": 14130,
+   "mtime": 1794489303921738500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/copy.js": {
+   "sha256": "ca6036605729dec502cee0b8ef3f6c00943b71b26b3d09b6049ed0dbc9a8da2b",
+   "size": 28815,
+   "mtime": 1793780048777464000,
+   "lines": 672,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/customers.html": {
+   "sha256": "6985141f7ab81750908f69921f6abcd9fee83b33fb94ae90f6db17d77cf15a22",
+   "size": 16896,
+   "mtime": 1794489303942444500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/customers.js": {
+   "sha256": "543041aa4dd073ed7ca11ee20cae5c3a675db5762b3b5429cb2ea4bcbdcd60f0",
+   "size": 34950,
+   "mtime": 1794367501621061300,
+   "lines": 701,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/dark.css": {
+   "sha256": "2d87be3d805566eb6b3494512a12a75ede8f4dd7c469ceea3a922dfb486f7b88",
+   "size": 24838,
+   "mtime": 1794317969493647000,
+   "lines": null,
+   "kind": "other",
+   "ext": ".css"
+  },
+  "frontend/dbadmin.js": {
+   "sha256": "e21ff27d13070f4b7587e96a76f66dd50b893e50a883a1841ec6ff8ed5826f90",
+   "size": 2852,
+   "mtime": 1791943937597073100,
+   "lines": 54,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/demo.js": {
+   "sha256": "c85bb5ab931df77eaa50d60a5ae8179bbee4c77e031732a1de74e04856eedda4",
+   "size": 84771,
+   "mtime": 1794117961482920100,
+   "lines": 1490,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/devices.html": {
+   "sha256": "d40447dbd778875214acb55e51423ae6ba578cc96b8ea5aae7a4e09bafe4f337",
+   "size": 7447,
+   "mtime": 1794489303965411900,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/devices.js": {
+   "sha256": "4e3863413a188cfe795f7fd7f483a16c6e07730ba0fec30716a1ac57d62263fd",
+   "size": 5965,
+   "mtime": 1790838434529839500,
+   "lines": 140,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/evalreport-render.js": {
+   "sha256": "0bd4d1025f16c0786c5fc7f0199bd44fc56bf3e98a6c7ff2d837ac5e825a05d5",
+   "size": 21948,
+   "mtime": 1791164750067310600,
+   "lines": 399,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/evalreport.html": {
+   "sha256": "96b059e833b0bd5d25481ade7b694e27015578571f58f2dd82d53976e1d91d7f",
+   "size": 12251,
+   "mtime": 1794489303986329500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/evalreport.js": {
+   "sha256": "52f9e18948bef75634671f576e88fa2fcfd02c0d437832af16d34dacc427663e",
+   "size": 69109,
+   "mtime": 1791351616149755400,
+   "lines": 1542,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/home.html": {
+   "sha256": "c6881568d55a62ad3fe7b894e6904a590ba94b8e7b48af71481112c6755e2466",
+   "size": 7949,
+   "mtime": 1794489304013931700,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/home.js": {
+   "sha256": "0d27fced920ffa7f99b2bab46c14696602bc98566734acb88030e274720602a0",
+   "size": 14800,
+   "mtime": 1793800690256943800,
+   "lines": 342,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/index.html": {
+   "sha256": "0434df55a2c9465fdcb8607139f97eab0e589c275a08c7cce5ba040cf6fa4e1f",
+   "size": 1928,
+   "mtime": 1794489304042170900,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/login.js": {
+   "sha256": "696ae42c47ef58f9806703528316c6a332fd659e83c5b9d19f71fa3cccdd4da6",
+   "size": 4588,
+   "mtime": 1794117983082159300,
+   "lines": 101,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/marketing.html": {
+   "sha256": "c2ccc73112931bbf9a426cadc6451cd5b2f2b8c1e4ad19895cb2b4adfc00f689",
+   "size": 9638,
+   "mtime": 1794489304061701500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/marketing.js": {
+   "sha256": "6c664cc683dca6aa35e420a65b5633ee912975a36c1f6cf0bf186fc68d552f5d",
+   "size": 22338,
+   "mtime": 1793241090548884900,
+   "lines": 627,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/namecards.html": {
+   "sha256": "f71c3b1e1b61c1234069fe0e4080ee481b40f0894f9e90c9663ecd3760d7e155",
+   "size": 7535,
+   "mtime": 1794489304088973800,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/namecards.js": {
+   "sha256": "5fa90917fb73435643147346f084fd7851227061b76f9bca7ddc251bb826690f",
+   "size": 12179,
+   "mtime": 1794367579210996200,
+   "lines": 264,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/product-export.js": {
+   "sha256": "a18048dfe9d45092000410277233824232680788258478e15eb272b268bae6d6",
+   "size": 13786,
+   "mtime": 1794202956550681800,
+   "lines": 293,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/products.html": {
+   "sha256": "a45af15c82b1f7df9b10ad99304ecb95ef2577a45f64f7b0cbb1b0bac45f0dab",
+   "size": 22627,
+   "mtime": 1794489304117597000,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/products.js": {
+   "sha256": "d5696d3822c03bf3f85ac6992984dc4731d70e0a23ebf884cd3bcc644a85345d",
+   "size": 56316,
+   "mtime": 1794202956562796300,
+   "lines": 1124,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/profile.html": {
+   "sha256": "8d8c970c96e4ac375214a1c2b3e0bc4e742bd23f288c1346fca5c32714baf452",
+   "size": 5698,
+   "mtime": 1794489304151125500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/profile.js": {
+   "sha256": "63dd0cf3f62eebe86a35c3156907b93dcfa96a9ad48d8bffe48d299a854e52e8",
+   "size": 3163,
+   "mtime": 1794117937918658700,
+   "lines": 83,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/prospects-lib.js": {
+   "sha256": "2a59fba80cee88cd8e4610be1f6fabafe9c4995c35e41c33e992edd224d0e785",
+   "size": 11693,
+   "mtime": 1794367565894968900,
+   "lines": 269,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/prospects.html": {
+   "sha256": "d0083f04214d7794ea7da051f6fc2de6d94d6712529c8866a08e9ec9038e29f0",
+   "size": 19884,
+   "mtime": 1794489304172478300,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/prospects.js": {
+   "sha256": "8bc9472938928962e0f972c244117c1cbc516e3fda3854eabb2fb216a2f15f12",
+   "size": 68276,
+   "mtime": 1794367565898162600,
+   "lines": 1257,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/quote.html": {
+   "sha256": "146fbee5d39ebc5b59e78fe3a4044124ac59e721fb74d6036781b6696a9a0ac9",
+   "size": 11903,
+   "mtime": 1794489304201002500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/quote.js": {
+   "sha256": "b03cf573958b86d43ffe3b37eedf43282b482e3f73b32fb3159f5fbe4aee1bee",
+   "size": 26056,
+   "mtime": 1793241033843230800,
+   "lines": 583,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/quotedoc.js": {
+   "sha256": "640def93bdd7f23e4f59af7b7aebdb934b680f5392d9b5a4ef8c933bc31afcd3",
+   "size": 15611,
+   "mtime": 1793241081372588800,
+   "lines": 436,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/schedule.html": {
+   "sha256": "1de121e7681e7e1e327d8303c25180a711cbe7df8eec1a63415f85db7dbf527e",
+   "size": 14694,
+   "mtime": 1794489304234343600,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/schedule.js": {
+   "sha256": "2bd6779cce65c6a7ff7cb15167f60d8978404fd0422b078ef6524f12e02fc935",
+   "size": 36229,
+   "mtime": 1794368298131491100,
+   "lines": 734,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/share.js": {
+   "sha256": "813a212c2dd78fb59ca7f11703a643d54c8f9fa072a651533d58eb5f59614aaa",
+   "size": 3741,
+   "mtime": 1793800493823367900,
+   "lines": 75,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/staff.html": {
+   "sha256": "d5009215f15c66f44ef524cc03303bead2f302fbf42627893419b3add05be050",
+   "size": 5598,
+   "mtime": 1794489304258741600,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/staff.js": {
+   "sha256": "8696e4764af513f6ef0eb37ed895774f03237de38f65d759437c10e9deb11f6b",
+   "size": 3814,
+   "mtime": 1792064539137812900,
+   "lines": 105,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/style.css": {
+   "sha256": "bc6567531e298011d2cc5b4b2e97da0e15f71877ff960b23af6d44b9b41f832a",
+   "size": 84954,
+   "mtime": 1794367794268667800,
+   "lines": null,
+   "kind": "other",
+   "ext": ".css"
+  },
+  "frontend/theme.js": {
+   "sha256": "0c95634c906c67127d4b57a7c900584fe7c5ba982a98cfb2c450c4f12b944f07",
+   "size": 2925,
+   "mtime": 1793776567554925700,
+   "lines": 88,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/todos.html": {
+   "sha256": "3a83fa92ffedb4073af0e8163835e236c8159a882792f286bf1f2a1bfd18e8e0",
+   "size": 372,
+   "mtime": 1794489304280338200,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/todos.js": {
+   "sha256": "22bc4f3342366a75f58d43488218851eaaff7d3dcef704708fcd003484ae4459",
+   "size": 6321,
+   "mtime": 1794317560545793000,
+   "lines": 141,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/users.html": {
+   "sha256": "f0daf3cf724d5ba232b24f006f481e02d269f362bd6b55809ecc02bc16f7f95a",
+   "size": 11670,
+   "mtime": 1794489304308345200,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/users.js": {
+   "sha256": "e93d32947012eecc200a0625603fc077061ef323ed8217ec6ce9030e685b3a48",
+   "size": 16601,
+   "mtime": 1794117946383194500,
+   "lines": 330,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "frontend/templates/marketing/aoi.html": {
+   "sha256": "010dd68db65f3a58b899cd01bcc1d64cc53218da97df0e8badc3938cfa686e4c",
+   "size": 23804,
+   "mtime": 1791877069752503400,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/templates/marketing/b2b-expo.html": {
+   "sha256": "bc61d0bd1906960d54658eddbcd801d68cbf646f208ec90016d58f3929c7397f",
+   "size": 34294,
+   "mtime": 1791877069883451000,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/templates/marketing/b2b.html": {
+   "sha256": "0c4fca0e701d24f0dcad8d7cbaf1e7beee32d1aa361157df6b9f0ee636c9646e",
+   "size": 29244,
+   "mtime": 1791877069820102500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/templates/marketing/camera-dm.html": {
+   "sha256": "6d3001795278f2efb5ad1347e12d8fe59ba5e9eede09bc4c280062dc651c0dea",
+   "size": 24747,
+   "mtime": 1791877069694040600,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/templates/marketing/camera-lite.html": {
+   "sha256": "8eb7f05e7ddadb2e718dddc63e7901c8393d449867ab7fb4ec02615349e83779",
+   "size": 12732,
+   "mtime": 1791877069627447200,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/templates/marketing/edm-expo.html": {
+   "sha256": "1752f076505128bf2a3a6c3fce528d022274875306f901be621b53716347ea72",
+   "size": 31586,
+   "mtime": 1791877070042952100,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "frontend/templates/marketing/equipment.html": {
+   "sha256": "5e853af9182a5a61df3ce8de4cfd56d15550399c457b67be4a335dcfb58f9df0",
+   "size": 29779,
+   "mtime": 1791877069952176700,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "kb-source/cetus官網資料.txt": {
+   "sha256": "cfcf4af8bf664a0f446e439e2a13e77d2b068e0a3a2ee1df73b67104718b8dd8",
+   "size": 225118,
+   "mtime": 1793873727714715600,
+   "lines": 3169,
+   "kind": "doc",
+   "ext": ".txt"
+  },
+  "linebot/.env.example": {
+   "sha256": "4c75a3900435331afd90575c6c7827ec99ea89dcbfb6782c0e71fa75f829b9c7",
+   "size": 1195,
+   "mtime": 1793776447010694000,
+   "lines": 26,
+   "kind": "config",
+   "ext": ".example"
+  },
+  "linebot/.gitignore": {
+   "sha256": "1511aacaaa813deba573b15216d348c9cad59a9eee55b441a44e1d4eb328edb6",
+   "size": 71,
+   "mtime": 1793803768492118300,
+   "lines": 8,
+   "kind": "config",
+   "ext": ""
+  },
+  "linebot/package-lock.json": {
+   "sha256": "51a9bbfdf8c97de7f07e09ed9f04142065e7c47aaba3fc91cdedd54ff232ee57",
+   "size": 38890,
+   "mtime": 1793757866236557400,
+   "lines": 1221,
+   "kind": "config",
+   "ext": ".json"
+  },
+  "linebot/package.json": {
+   "sha256": "88cc09031de47cde34b1ee31309cce4307aff597f94f131cb9ae8a4ba7310b80",
+   "size": 367,
+   "mtime": 1793757856570541800,
+   "lines": 20,
+   "kind": "config",
+   "ext": ".json"
+  },
+  "linebot/README.md": {
+   "sha256": "dbf13d7bbaf7d60fa9e6b099901599d649ab38ff7def6cf33eed328675c56809",
+   "size": 12125,
+   "mtime": 1794485114662558200,
+   "lines": 107,
+   "kind": "doc",
+   "ext": ".md"
+  },
+  "linebot/tsconfig.json": {
+   "sha256": "a3208158e91800dbe618dae54d60656fa2fb9da16868386909c0b865a5737fef",
+   "size": 242,
+   "mtime": 1793757727839334800,
+   "lines": 12,
+   "kind": "config",
+   "ext": ".json"
+  },
+  "linebot/vercel.json": {
+   "sha256": "7eb96eccca591642d832a3a4adca86da0bedf648f5b8636724b3d0ca7e04b3a5",
+   "size": 161,
+   "mtime": 1793757727842399600,
+   "lines": 9,
+   "kind": "config",
+   "ext": ".json"
+  },
+  "linebot/api/cs.ts": {
+   "sha256": "4823ae24b7e36eee54679f6c5c231b9d5d2e7d1cdeb70a40184501cb4047d061",
+   "size": 1349,
+   "mtime": 1793776289850685500,
+   "lines": 33,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/img.ts": {
+   "sha256": "ebceb396c447b0422868ce38c356c001bf3246630573b434ae9b7bb1c60312f6",
+   "size": 1402,
+   "mtime": 1793862427690341500,
+   "lines": 27,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/line.ts": {
+   "sha256": "2494e27c03264465ac7487dddf67d6e9563c5663e7ba4aa2625c16ab3db70247",
+   "size": 1363,
+   "mtime": 1793776289853686000,
+   "lines": 33,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/push.ts": {
+   "sha256": "d6f569511eb345ea311109ed51af7fa51ce8a74bd6ddcc6df3e1a247370f7b22",
+   "size": 929,
+   "mtime": 1793776289847682400,
+   "lines": 21,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/search.ts": {
+   "sha256": "1028fca0b86fa7bf2d8e1a0a11f476fe8e71747427bc51e361900badef932131",
+   "size": 2812,
+   "mtime": 1793798741947700700,
+   "lines": 46,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/test.ts": {
+   "sha256": "a1c0b6f752199cc7bc68e7f6c099146b1e3e1935582e1dd366ee2e22f9e79b13",
+   "size": 2080,
+   "mtime": 1793757830381183700,
+   "lines": 37,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/api/web.ts": {
+   "sha256": "74098bb14d45e6cc642c56a41925f730051082156eed04c7fb1fe279c084320b",
+   "size": 2058,
+   "mtime": 1793776289845686000,
+   "lines": 41,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/widget/chat.ts": {
+   "sha256": "eb7da663c830bed0828b2aa492b40d781166ed19474cd174cc1f53b02d636214",
+   "size": 2343,
+   "mtime": 1794194283496658200,
+   "lines": 45,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/widget/close.ts": {
+   "sha256": "c44350d927296bc71d2212ddcd75590de626f8ff24306876a6cff337c0ff27e6",
+   "size": 1320,
+   "mtime": 1794194278473754100,
+   "lines": 27,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/widget/config.ts": {
+   "sha256": "7996fba361844465663c28880f0b1d5293fee6198fa8b920a17440dacc306b34",
+   "size": 949,
+   "mtime": 1793946706438822200,
+   "lines": 22,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/widget/lead.ts": {
+   "sha256": "85645f6009af282357cc8b5ed4a874b84222bbeab69f8b14760f8ab2b36fcab5",
+   "size": 2167,
+   "mtime": 1794194280996658700,
+   "lines": 45,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/api/widget/messages.ts": {
+   "sha256": "d39177e47ba600e32a7f6f9f262caa4fe22d404d45c7c3dbf28820205705627b",
+   "size": 2961,
+   "mtime": 1794485094086566600,
+   "lines": 59,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/public/index.html": {
+   "sha256": "cab9bbc2763a36cfa5ebc6a06c66e2830b0c4ff3aeedd452bd094a4ebd6a8f92",
+   "size": 1199,
+   "mtime": 1793757856969772500,
+   "lines": null,
+   "kind": "other",
+   "ext": ".html"
+  },
+  "linebot/public/widget.js": {
+   "sha256": "3a6cf87cd6fb4c7117863d0b71d5f0367a1738ba258ab04da21707b7e7d8c68d",
+   "size": 36372,
+   "mtime": 1794486756747618100,
+   "lines": 557,
+   "kind": "source",
+   "ext": ".js"
+  },
+  "linebot/src/ai.ts": {
+   "sha256": "239e9a9ffa855706d2d2fe7761c5f6d22b2c28098e35e2655b5ac3515071a25f",
+   "size": 14515,
+   "mtime": 1793946706432911400,
+   "lines": 285,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/calc-tool.ts": {
+   "sha256": "0c1ad3080e674fcdef007db40db5e1b4fd42edca988a142a2d2727e9087a1c5f",
+   "size": 13383,
+   "mtime": 1793957407738353400,
+   "lines": 161,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/calc.ts": {
+   "sha256": "b7b59e046f0e3aef2ba61025098d167baa4aa2548eaad101f891461ddca1f777",
+   "size": 37035,
+   "mtime": 1793957488219497100,
+   "lines": 559,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/cards.ts": {
+   "sha256": "beb95dbb8953274915b2db2946b1baac3cb55e7998e68170af76074d7483b317",
+   "size": 5562,
+   "mtime": 1793882803170390000,
+   "lines": 85,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/common.ts": {
+   "sha256": "bc640908aad3b92a636494b69c86795c8a28e7391e378c0083f67913deb2b0cc",
+   "size": 1623,
+   "mtime": 1793757752005971900,
+   "lines": 39,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/config.ts": {
+   "sha256": "63d7b5155914f87edadeacb5dbe402b5fe1bdb98f1e56a11cb638762d93a3165",
+   "size": 2231,
+   "mtime": 1793776289836164800,
+   "lines": 43,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/cs.ts": {
+   "sha256": "fa3c2fa98d6e542f9b19a0a709cbcbb1816aed6c1e0fae213b1ccbe7ed409772",
+   "size": 38519,
+   "mtime": 1794467000214447500,
+   "lines": 600,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/gas.ts": {
+   "sha256": "d8e0f59c25475eaeca25539e6871f4fefe3349c155efc8882d3f21afb7b338fa",
+   "size": 14803,
+   "mtime": 1794467972408306100,
+   "lines": 363,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/guard.ts": {
+   "sha256": "1dc52db7a153d5fd7774672daaf6c2ee9a26e22c0ec0120ebe62a1d05e2d4f29",
+   "size": 4894,
+   "mtime": 1794194247289430500,
+   "lines": 111,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/human.ts": {
+   "sha256": "00ce9ab2cd6facf56d9f80266684b13c6df58a43a1086e7ca18eb98754f029fa",
+   "size": 2148,
+   "mtime": 1793757727662232500,
+   "lines": 35,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/img.ts": {
+   "sha256": "14bd0525bb8ce2942bc3687c523f6913e07eb724111e6e207cf8c648d180b0ef",
+   "size": 993,
+   "mtime": 1793862426880709400,
+   "lines": 21,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/line.ts": {
+   "sha256": "da7aa35d71869bef69dc850bd390341ea807f23c50823350ab9f7a23cd370673",
+   "size": 9268,
+   "mtime": 1793862961314758800,
+   "lines": 196,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/model.ts": {
+   "sha256": "52228a5e0fe425bcd6e0b479636afdf4df8e6bd7d6179193d2a6a06200b8bf1f",
+   "size": 4405,
+   "mtime": 1793947261460601600,
+   "lines": 76,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/rag.ts": {
+   "sha256": "48cf1032ba0531f10eaf23683e3eae906607bf4c89993bb115567f8e1f531245",
+   "size": 12377,
+   "mtime": 1793946934114723900,
+   "lines": 281,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/staff.ts": {
+   "sha256": "a5b6d700cf0ab8bab18e9880a431ecf31dfa6538422038e5ede43d3cdb0ad494",
+   "size": 61623,
+   "mtime": 1794368327579994800,
+   "lines": 913,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/time.ts": {
+   "sha256": "416ab1945bda372f32f7ba754d6a7c089c74779bf82e3d7fa994fbd760eec903",
+   "size": 2366,
+   "mtime": 1793757727667241000,
+   "lines": 61,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/src/web.ts": {
+   "sha256": "31e122473a8e2a82a0c2d59fb407015c5eb879cd816b6d68352468c0d0e18793",
+   "size": 5681,
+   "mtime": 1794194263026218100,
+   "lines": 126,
+   "kind": "source",
+   "ext": ".ts"
+  },
+  "linebot/test/calc-compare.ts": {
+   "sha256": "85d0423fbd31375820e1b7f75c159965474d5a2f7031e64e5e770fcbbc144cb4",
+   "size": 2453,
+   "mtime": 1793799205725630400,
+   "lines": 42,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/calc.test.ts": {
+   "sha256": "491a1f0ee1cbdd0d60cc65774e97cc1185d8e80630e1a1ef8ba3d59e586b1d46",
+   "size": 18834,
+   "mtime": 1793957529527542000,
+   "lines": 306,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/cards.test.ts": {
+   "sha256": "d55a230f261d327026a634ec9feea93edc718984b9e22c8185d7afee360e4a6a",
+   "size": 13591,
+   "mtime": 1793863084114407100,
+   "lines": 224,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/cs.test.ts": {
+   "sha256": "f207d7a0f388b55ae9553253022fb5e6c27832df86202a19b0dedfcd1467ff6c",
+   "size": 14547,
+   "mtime": 1794467000219077600,
+   "lines": 248,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/ground.test.ts": {
+   "sha256": "eb21396b8b7d403a462244f0d5e08132781f0bd3d9c3922e986ef4e67370457a",
+   "size": 9407,
+   "mtime": 1794117348750608600,
+   "lines": 173,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/guard.test.ts": {
+   "sha256": "19b754045df958328d89998bad2e0ba2d98fdb08657de4ffe02163d4674053af",
+   "size": 10389,
+   "mtime": 1794194370874436600,
+   "lines": 179,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/images-leads.test.ts": {
+   "sha256": "fc800d9459d1fd5b8bef1805ec4b6cd4aeb82dc9cbac0111873b7073c67b50e7",
+   "size": 10683,
+   "mtime": 1794117348752609700,
+   "lines": 190,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/model.test.ts": {
+   "sha256": "0038285de10faf27728d5b40de986ccd0e91cb2a92b836b743adca3b165b472b",
+   "size": 4924,
+   "mtime": 1793947325050261400,
+   "lines": 86,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/quick-actions.test.ts": {
+   "sha256": "96a8edb70389a0367266a6ee24d1419d85dd4c5a53b48d2f3da6c90aa2a1d234",
+   "size": 13401,
+   "mtime": 1794134352403845700,
+   "lines": 255,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/staff.test.ts": {
+   "sha256": "60e473b709885bd14d87be70018a9e3e82e1ba9d73baf2fe6540544dc1b5d4f2",
+   "size": 36284,
+   "mtime": 1793843963997508300,
+   "lines": 580,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/vector.test.ts": {
+   "sha256": "dccc79eee1c123ca18ec7c527aeb746e86647b8ac56dcfee7066c307606dd4cf",
+   "size": 15136,
+   "mtime": 1793946939651530700,
+   "lines": 239,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/web.test.ts": {
+   "sha256": "bfe423c3e025a96568cceb22fc94b05c6d1bc002a656a094e5e95d011f491d4f",
+   "size": 8058,
+   "mtime": 1794194335548606300,
+   "lines": 121,
+   "kind": "test",
+   "ext": ".ts"
+  }
+ },
+ "graphEdges": 165,
+ "cycles": [],
+ "mostDepended": [
+  [
+   "apps-script/tests/gasmock.js",
+   33
+  ],
+  [
+   "linebot/src/gas.ts",
+   21
+  ],
+  [
+   "linebot/src/cs.ts",
+   15
+  ],
+  [
+   "linebot/src/web.ts",
+   11
+  ],
+  [
+   "linebot/src/line.ts",
+   10
+  ],
+  [
+   "linebot/src/config.ts",
+   9
+  ],
+  [
+   "linebot/src/ai.ts",
+   9
+  ],
+  [
+   "linebot/src/rag.ts",
+   7
+  ],
+  [
+   "linebot/src/calc.ts",
+   7
+  ],
+  [
+   "linebot/src/staff.ts",
+   5
+  ]
+ ],
+ "biggest": [
+  [
+   "frontend/evalreport.js",
+   1542
+  ],
+  [
+   "frontend/demo.js",
+   1490
+  ],
+  [
+   "frontend/bot.js",
+   1431
+  ],
+  [
+   "frontend/calc.js",
+   1393
+  ],
+  [
+   "frontend/common.js",
+   1366
+  ],
+  [
+   "frontend/prospects.js",
+   1257
+  ],
+  [
+   "frontend/products.js",
+   1124
+  ],
+  [
+   "linebot/src/staff.ts",
+   913
+  ],
+  [
+   "frontend/cases.js",
+   869
+  ],
+  [
+   "frontend/schedule.js",
+   734
+  ]
+ ],
+ "problems": [
+  {
+   "kind": "big-file",
+   "file": "frontend/evalreport.js",
+   "detail": "1542 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "frontend/demo.js",
+   "detail": "1490 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "frontend/bot.js",
+   "detail": "1431 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "frontend/calc.js",
+   "detail": "1393 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "frontend/common.js",
+   "detail": "1366 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "frontend/prospects.js",
+   "detail": "1257 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "frontend/products.js",
+   "detail": "1124 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "linebot/src/staff.ts",
+   "detail": "913 行 > 800"
+  },
+  {
+   "kind": "big-file",
+   "file": "frontend/cases.js",
+   "detail": "869 行 > 800"
+  }
+ ],
+ "unreadable": [],
+ "refactorDecision": null
+}
