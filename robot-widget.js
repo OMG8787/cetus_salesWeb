@@ -315,8 +315,10 @@
       closeTimer = setTimeout(function () { setOpen(false); }, 250);
     });
 
-    // 手機／鍵盤：點擊切換
+    // 按下機器人圖像：直接開啟智能客服（滑鼠移上去仍會出現選單）。選單裡沒有智能客服項目時，才改成切換選單
     bot.addEventListener('click', function () {
+      var chat = CONFIG.items.filter(function (it) { return it.action === 'chat' && typeof it.onClick === 'function'; })[0];
+      if (chat) { chat.onClick(); setOpen(false); return; }
       setOpen(!wrap.classList.contains('open'));
     });
 
