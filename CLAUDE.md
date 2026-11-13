@@ -4,7 +4,7 @@
 - `frontend/`：純 HTML + JS（無打包），GitHub Pages 發布（`.github/workflows/pages.yml`）。每頁一支 `<頁>.js`；共用只放 `common.js`（callApi、登入檢查）、`config.js`（API_URL／DEMO_MODE）、`demo.js`（示範模式假後端）。
 - `apps-script/Code.gs`：單檔後端（Google Apps Script + 試算表當資料庫）。使用者自己貼上整份、跑 `setup`、發新部署版本。
 - `linebot/`：Node ≥20 + TypeScript，Vercel 部署（資料夾上傳，**不會自動部署**）。`src/` 是邏輯、`api/` 是入口；`src` 不可引用 `api`／`test`。
-- 官網小機器人：根目錄 `robot-loader.js`、`robot-widget.js`。
+- 官網小機器人：根目錄 `robot-loader.js`（官網上已部署、固定不改）→ `robot-widget.js`（固定的跳板，加每小時版本參數避開 7 天快取）→ `robot-app.js`（小機器人本體，常改的是這支）。
 - 依賴方向：frontend → Apps Script（fetch）；linebot → Apps Script（`src/gas.ts`）。frontend 不引用 linebot／apps-script 的檔案。
 
 ## 測試與閘門

@@ -290,9 +290,10 @@ https://docs.google.com/document/d/【這一段就是文件ID】/edit
 | 檔案 | 放哪裡 | 用途 |
 |---|---|---|
 | `robot-loader.js` | 官網每一頁（`<script src="robot-loader.js"></script>`，`index.html` 已加） | 只負責載入 GitHub 上的 `robot-widget.js`，**建好後幾乎不用再改** |
-| `robot-widget.js` | 這個 GitHub 儲存庫根目錄（經由 jsDelivr 載入：`https://cdn.jsdelivr.net/gh/OMG8787/cetus_salesWeb@main/robot-widget.js`） | 小機器人本體與選單設定，**常常改的是這支**。改完 `git push`，**jsDelivr 對 `@main` 最多快取 12 小時**，要馬上生效就開 `https://purge.jsdelivr.net/gh/OMG8787/cetus_salesWeb@main/robot-widget.js` 清快取；或把 `robot-loader.js` 的 `ref` 改成 tag / commit 編號（不會被快取卡住，但每次發版要改一次） |
+| `robot-widget.js` | 這個 GitHub 儲存庫根目錄（jsDelivr） | **固定的跳板，不用改**：負責去抓 `robot-app.js`，並在網址後加「每小時換一次」的版本參數，避開 jsDelivr 讓瀏覽器快取 7 天的問題（官網上的 `robot-loader.js` 是固定的、改不動，所以在這一層處理） |
+| `robot-app.js` | 同上（`https://cdn.jsdelivr.net/gh/OMG8787/cetus_salesWeb@main/robot-app.js`） | 小機器人本體與選單設定，**常常改的是這支**。改完 `git push`，訪客瀏覽器最慢約 1 小時內更新；CDN 端最多快取 12 小時，要馬上生效就開 `https://purge.jsdelivr.net/gh/OMG8787/cetus_salesWeb@main/robot-app.js` 清快取 |
 
-設定一次：`robot-loader.js` 最上面填 `user`（GitHub 帳號）、`repo`（儲存庫）、`ref`（分支，預設 `main`）。`robot-widget.js` 最上面 `CONFIG`：
+設定一次：`robot-loader.js` 最上面填 `user`（GitHub 帳號）、`repo`（儲存庫）、`ref`（分支，預設 `main`）。`robot-app.js` 最上面 `CONFIG`：
 
 - `chatUrl`：**機器人伺服器（Vercel）的網址**，例如 `https://你的專案.vercel.app`。**這不是 LINE 的 Webhook**（LINE 官方帳號的 Webhook 才是 `https://你的專案.vercel.app/api/cs`）；網站客服視窗用的是同一個網域，程式會自己接 `/api/widget/…`，所以只填到網域，不要加路徑。後台「BOT 設定 → 🌐 網站客服視窗」要啟用，並把官網網址（例如 `https://你的官網網域`）填進「允許嵌入的網站」。
 - `items`：選單項目。`action: 'chat'` 開智能客服、`'contact'` 開客服視窗並跳出留聯繫資料表單（資料進「🧾 聯繫名單」）、`'human'` 直接轉專員；`fallbackUrl` 是客服視窗載不到時改去的網址（沒填就自動隱藏那個項目）；也可以用 `url` 直接連到別的頁面，或自己寫 `onClick`。
@@ -343,5 +344,5 @@ cd linebot && npm run typecheck && npm test   # 機器人伺服器：檢索 / �
 
 - 位置：BOT 設定 → 🌐 網站客服視窗 → 🤖 官網小機器人。可設定：要不要顯示、大小（56～160 px）、主題色、距離右 / 下邊、頭上閃爍的文字、泡泡訊息與顯示秒數、滑鼠移上去（手機點一下）出現的選項（最多 8 個，可排序、開關、新增、刪除）。
 - 選項類型：💬 智能客服、✉️ 留下聯繫資料、🎧 呼叫專員（轉真人）、🔗 連結（https / mailto / tel）；要加官方 LINE 按「加入 LINE 官方帳號」貼上加好友網址即可。
-- 運作：設定存在 `BotConfig` 的 `robot`，由 `/api/widget/config` 的 `robot` 欄位提供；官網的 `robot-widget.js` 載入時讀取（2 秒內讀不到就用上次的設定或程式內預設值），所以官網只要裝好 `robot-loader.js`，之後改文字、加選項都不用再動程式。官網網址要在「允許嵌入的網站」裡。
+- 運作：設定存在 `BotConfig` 的 `robot`，由 `/api/widget/config` 的 `robot` 欄位提供；官網的 `robot-app.js` 載入時讀取（2 秒內讀不到就用上次的設定或程式內預設值），所以官網只要裝好 `robot-loader.js`，之後改文字、加選項都不用再動程式。官網網址要在「允許嵌入的網站」裡。
 - 更新：貼 `Code.gs`、`npx.cmd vercel --prod` 重新發布 linebot、前端推 GitHub 後生效。
