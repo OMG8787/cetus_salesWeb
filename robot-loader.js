@@ -12,7 +12,8 @@
     repo: 'cetus_salesWeb',         // 儲存庫名稱
     ref: 'main',                  // 分支名稱，或 tag（如 v1.0.0）、commit hash
     file: 'robot-widget.js',      // 檔案路徑
-    cacheBust: false              // true：每次都附上時間戳記（測試時用，正式上線建議 false）
+    cacheBust: false,             // true：每次都附上時間戳記（測試時用，正式上線建議 false）
+    cacheMinutes: 60              // 瀏覽器最多多久重新抓一次 robot-widget.js（jsDelivr 預設讓瀏覽器快取 7 天，改版會很久才更新；0 = 不處理）
   };
   // ========================
 
@@ -27,6 +28,8 @@
 
   if (CONFIG.cacheBust) {
     src += '?t=' + Date.now();
+  } else if (CONFIG.cacheMinutes > 0) {
+    src += '?v=' + Math.floor(Date.now() / (CONFIG.cacheMinutes * 60000));
   }
 
   var script = document.createElement('script');
