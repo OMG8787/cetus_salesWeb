@@ -59,6 +59,7 @@
       sc.src = base + '/widget.js';
       sc.async = true;
       sc.setAttribute('data-launcher', 'false'); // 不要另外一顆圓形按鈕，由這個小機器人的選單開啟
+      sc.setAttribute('data-bottom', String((Number(CONFIG.position.bottom) || 0) + (Number(CONFIG.size) || 96) + 14)); // 客服視窗抬到機器人上方，不要被蓋住
       sc.onload = done;
       sc.onerror = function () { resolve(false); };
       document.head.appendChild(sc);
@@ -171,7 +172,7 @@
       'border-radius:999px;font-size:15px;font-weight:700;white-space:nowrap;letter-spacing:1px;' +
       'box-shadow:0 4px 14px rgba(0,0,0,.28);animation:flash 1.4s ease-in-out infinite;pointer-events:none;transition:opacity .2s;}' +
       '.banner:after{content:"";position:absolute;right:38px;bottom:-6px;border:7px solid transparent;border-top-color:' + CONFIG.color + ';border-bottom:0;}' +
-      '.wrap.open .banner{opacity:0;animation:none;}' +
+      '.wrap.open .banner,.wrap.chat-open .banner,.wrap.chat-open .tip,.wrap.chat-open .menu{opacity:0;animation:none;pointer-events:none;}' +
       '@keyframes flash{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,255,255,.0),0 4px 14px rgba(0,0,0,.28)}50%{opacity:.55;box-shadow:0 0 14px 4px ' + CONFIG.color + ',0 4px 14px rgba(0,0,0,.28)}}' +
 
       /* 機器人按鈕 */
@@ -263,8 +264,14 @@
     else setTimeout(settle, 1500);
 
     // 客服視窗開啟時機器人讓位，關閉後再出現
-    window.addEventListener('aoichat:open', function () { host.style.display = 'none'; }); // 客服視窗開著時，整隻機器人（含頭上文字）先收起來，不要蓋在視窗上
-    window.addEventListener('aoichat:close', function () { host.style.display = ''; });
+    var chatIsOpen = false;
+    window.addEventListener('aoichat:open', function () {
+      chatIsOpen = true;
+      wrap.classList.add('chat-open'); // 視窗開著：收起頭上文字、泡泡與選單，機器人留著，再按一下就關閉
+      setOpen(false);
+      if (window.innerWidth < 576) host.style.display = 'none'; // 手機視窗是全螢幕，機器人讓位（視窗自己有關閉鈕）
+    });
+    window.addEventListener('aoichat:close', function () { chatIsOpen = false; wrap.classList.remove('chat-open'); host.style.display = ''; });
 
     // 氣泡
     var tip = document.createElement('div');
@@ -318,7 +325,12 @@
     // 按下機器人圖像：直接開啟智能客服（滑鼠移上去仍會出現選單）。選單裡沒有智能客服項目時，才改成切換選單
     bot.addEventListener('click', function () {
       var chat = CONFIG.items.filter(function (it) { return it.action === 'chat' && typeof it.onClick === 'function'; })[0];
-      if (chat) { chat.onClick(); setOpen(false); return; }
+      if (chat) {
+        if (chatIsOpen && window.AoiChat) window.AoiChat.close(); // 視窗開著：再按一下關閉
+        else chat.onClick(); // 視窗關著：按一下打開
+        setOpen(false);
+        return;
+      }
       setOpen(!wrap.classList.contains('open'));
     });
 

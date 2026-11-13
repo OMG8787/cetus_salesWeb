@@ -19,6 +19,7 @@
 
   var BOT = "aoi";
   var NO_LAUNCHER = script.dataset.launcher === "false";
+  var BOTTOM = parseInt(script.dataset.bottom, 10) || 0; // 官網小機器人帶來的：視窗要抬高多少，才不會壓到機器人
   var API = (script.dataset.api || new URL(script.src, location.href).origin).replace(/\/$/, "") + "/api/widget";
   var POLL_MS = 2000;
   var POLL_MAX_MS = 30 * 60 * 1000;
@@ -98,6 +99,7 @@
     ".chips .qa{border-style:dashed}",
     ".chips .more{background:var(--c);border-color:var(--c);color:var(--ci);font-weight:600}.chips .more:hover:not(:disabled){filter:brightness(.92)}",
     ".w.nolaunch .launch{display:none}.w.nolaunch .panel{bottom:100px}",
+    BOTTOM ? "@media(min-width:576px){.w.nolaunch .panel{bottom:" + BOTTOM + "px;height:min(620px,calc(100vh - " + (BOTTOM + 16) + "px))}}" : "",
     "@media(max-width:575px){.panel{inset:0;width:100%;max-width:none;height:100dvh;border-radius:0}.w.open-m .launch{display:none}}",
     "@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}",
   ].join("");
