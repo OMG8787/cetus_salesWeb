@@ -262,8 +262,8 @@
     if (window.requestIdleCallback) requestIdleCallback(settle, { timeout: 3000 });
     else setTimeout(settle, 1500);
 
-    // 手機上客服視窗是全螢幕，機器人先讓位，關閉後再出現
-    window.addEventListener('aoichat:open', function () { if (window.innerWidth < 576) host.style.display = 'none'; });
+    // 客服視窗開啟時機器人讓位，關閉後再出現
+    window.addEventListener('aoichat:open', function () { host.style.display = 'none'; }); // 客服視窗開著時，整隻機器人（含頭上文字）先收起來，不要蓋在視窗上
     window.addEventListener('aoichat:close', function () { host.style.display = ''; });
 
     // 氣泡
