@@ -47,6 +47,8 @@ export interface CsInfo {
   welcome: string;
   prompt: string;
   handoffText: string;
+  /** 按「轉真人」後，先請客人留下聯絡資料的那段話（後台可改） */
+  handoffLeadText?: string;
   /** 回覆最少等待秒數（像真人打字） */
   replyDelay?: number;
   ai: AiConfig | null;
@@ -160,6 +162,8 @@ export interface WidgetConfig {
   handoffButton?: boolean;
   /** 轉真人按鈕上的稱呼（第一個轉真人關鍵字） */
   handoffWord?: string;
+  /** 轉真人後、還沒留資料就要關閉視窗時的再次提醒（文字與兩個按鈕，後台可改） */
+  leave?: { text: string; yes: string; no: string };
   /** 官網小機器人（右下角）的設定：大小、文字、泡泡、選單項目 */
   robot?: unknown;
 }

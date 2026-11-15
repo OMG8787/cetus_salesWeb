@@ -121,7 +121,7 @@
   var wrap = $(".w"), launch = $(".launch"), panel = $(".panel"), body = $(".body"), input = $("textarea"), sendBtn = $(".send"), badge = $(".badge");
 
   var readyDone, ready = new Promise(function (r) { readyDone = r; });
-  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, humanWait = false, welcomed = false, loaded = false, welcomeRow = null, hasChat = false, endedNote = false;
+  var cfg = null, busy = false, lastId = 0, unread = 0, pollTimer = null, pollSince = 0, humanWait = false, welcomed = false, loaded = false, welcomeRow = null, hasChat = false, endedNote = false, handedOff = false, leaveAsked = false;
 
   /* ───────── 訊息顯示（一律用 textContent / DOM，不用 innerHTML 塞使用者或 AI 的文字） ───────── */
   function linkify(el, text) {
@@ -320,6 +320,7 @@
         if (d.reply) add("ai", d.reply.text, { choices: d.reply.choices, images: d.reply.images, noHand: d.reply.handoffButton === false, quick: d.reply.quickActions === true, more: d.reply.seeMore === true });
         else if (d.paused) note("客服人員處理中，請稍候，回覆會顯示在這裡");
         humanWait = !!d.paused;
+        if (isHuman === true || d.paused) handedOff = true; // 轉過真人：關閉視窗前要再提醒一次留資料
         startPolling(); // 訪客說過話後開始輪詢：轉真人後每 2 秒，沒轉則每 10 秒（後台也能直接接手）
         if (d.askContact && !silent && !store.get(leadKey())) contactCard();
       })
@@ -342,6 +343,7 @@
   /* ───────── 轉真人（回覆下方的按鈕）───────── */
   function human() {
     if (busy) return;
+    leaveAsked = false;
     add("me", (cfg && cfg.handoffLabel) || "🙋 轉真人");
     ask("", false, true);
   }
@@ -466,7 +468,21 @@
     try { window.dispatchEvent(new CustomEvent("aoichat:open")); } catch (e) { /* 舊瀏覽器略過 */ }
     restore().then(function () { setTimeout(function () { input.focus(); }, 120); scrollDown(); });
   }
-  function close() {
+  /* 轉真人後、還沒留聯繫資料就要關閉視窗：先再問一次要不要留下資料（文字與按鈕在後台「客服設定」可改；每次轉真人只問一次） */
+  function askLeave() {
+    leaveAsked = true;
+    var L = (cfg && cfg.leave) || {};
+    var row = add("ai", L.text || "您還沒有留下聯絡方式，專員可能無法主動聯繫您。離開前要不要留下資料？", { noHand: true });
+    var box = document.createElement("div");
+    box.className = "chips"; box.style.marginTop = "6px";
+    var mk = function (label, fn) { var b = document.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+    mk(L.yes || "📇 留下資料", function () { box.remove(); contactCard(); });
+    mk(L.no || "不用了，離開", function () { box.remove(); close(true); });
+    row.firstChild.appendChild(box);
+    scrollDown();
+  }
+  function close(force) {
+    if (force !== true && handedOff && !leaveAsked && !store.get(leadKey()) && isOpen()) { askLeave(); return; }
     panel.classList.remove("open"); wrap.classList.remove("open-m");
     panel.setAttribute("aria-hidden", "true"); launch.setAttribute("aria-expanded", "false");
     try { window.dispatchEvent(new CustomEvent("aoichat:close")); } catch (e) { /* 舊瀏覽器略過 */ }
@@ -495,6 +511,8 @@
   }
 
   launch.onclick = toggle;
+  /* 轉真人後還沒留資料就直接關掉整個網頁：瀏覽器會跳出「確定要離開？」的提醒（瀏覽器規定不能自訂文字） */
+  window.addEventListener("beforeunload", function (e) { if (handedOff && !store.get(leadKey()) && isOpen()) { e.preventDefault(); e.returnValue = ""; } });
   $(".x").onclick = close;
   $(".reset").onclick = newChat;
   sendBtn.onclick = function () { send(); };

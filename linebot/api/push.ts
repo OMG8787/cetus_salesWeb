@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { config } from "../src/config.js";
-import { pushBriefings } from "../src/staff.js";
+import { pushAlert, pushBriefings } from "../src/staff.js";
 
 /**
  * 每日早報：管理系統每小時檢查一次，到 BOT 設定的時間就呼叫這裡（header x-bot-secret = Bot 金鑰），
@@ -13,6 +13,12 @@ export async function POST(request: Request): Promise<Response> {
   const b = Buffer.from(secret);
   if (!secret || a.length !== b.length || !timingSafeEqual(a, b)) return Response.json({ error: "未授權" }, { status: 401 });
   try {
+    // 管理系統的即時通知：{ alert: 文字, targets: [LINE 編號] }；沒帶就是每日早報
+    const body = (await request.json().catch(() => ({}))) as { alert?: unknown; targets?: unknown };
+    if (typeof body.alert === "string" && body.alert.trim()) {
+      const targets = Array.isArray(body.targets) ? body.targets.map(String) : [];
+      return Response.json(await pushAlert(targets, body.alert.trim()));
+    }
     return Response.json(await pushBriefings());
   } catch (error) {
     console.error("早報推播失敗", error);

@@ -896,6 +896,21 @@ export function briefingText(name: string, ov: Overview, date = nowLocal().date)
 }
 
 /** 推播早報給管理系統勾選的成員；回傳成功與失敗的人數 */
+/** 管理系統要通知系統管理員（轉真人、留資料、流量上限…）：用員工助理官方帳號推播給指定成員。 */
+export async function pushAlert(targets: string[], text: string): Promise<{ targets: number; sent: number; failed: number }> {
+  let sent = 0, failed = 0;
+  const list = [...new Set(targets)].filter((id) => /^U[0-9a-f]{32}$/.test(id)).slice(0, 20);
+  for (const uid of list) {
+    try {
+      (await pushText(ch(), uid, text.slice(0, 900))) ? sent++ : failed++;
+    } catch (error) {
+      console.warn(`通知推播失敗 ${uid.slice(0, 6)}…`, error);
+      failed++;
+    }
+  }
+  return { targets: list.length, sent, failed };
+}
+
 export async function pushBriefings(): Promise<{ targets: number; sent: number; failed: number }> {
   const targets = await gas.staffPushTargets();
   let sent = 0, failed = 0;

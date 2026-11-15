@@ -131,6 +131,10 @@ function fillCs(cs) {
   setVal('cs-off-text', cs.hours.offText);
   setVal('cs-handoff-words', cs.handoffWords);
   setVal('cs-handoff-text', cs.handoffText);
+  setVal('cs-handoff-lead', cs.handoffLeadText);
+  setVal('cs-leave-text', cs.leaveText);
+  setVal('cs-leave-yes', cs.leaveYes);
+  setVal('cs-leave-no', cs.leaveNo);
   setVal('cs-pause', cs.pauseMinutes);
   setVal('cs-tone', cs.style.tone);
   setVal('cs-address', cs.style.address);
@@ -202,6 +206,10 @@ function readCs() {
     welcome: val('cs-welcome'),
     prompt: val('cs-prompt'),
     handoffText: val('cs-handoff-text'),
+    handoffLeadText: val('cs-handoff-lead'),
+    leaveText: val('cs-leave-text'),
+    leaveYes: val('cs-leave-yes'),
+    leaveNo: val('cs-leave-no'),
     sources: {
       qa: $('cs-src-qa').checked,
       docs: $('cs-src-docs').checked,
@@ -280,6 +288,7 @@ function fillWeb() {
   const w = botData.cs.web;
   $('web-enabled').checked = w.enabled;
   fillRobot();
+  fillNotify();
   setVal('web-title', w.title);
   setVal('web-subtitle', w.subtitle);
   setVal('web-color', w.color);
@@ -313,6 +322,56 @@ function readWeb(old) {
 const ROBOT_DEFAULT = { enabled: true, size: 96, color: '#2563eb', right: 80, bottom: 24, banner: '歡迎詢問、選配等', greeting: '需要協助嗎？', greetingSeconds: 5, items: [{ icon: '💬', label: '專屬智能客服', type: 'chat', url: '', target: '_self', on: true }, { icon: '✉️', label: '聯繫我', type: 'contact', url: '', target: '_self', on: true }, { icon: '🧭', label: '選型工具', type: 'url', url: 'https://austincetus-maker.github.io/cetustool/', target: '_self', on: true }] };
 const ROBOT_TYPES = [['chat', '💬 智能客服'], ['contact', '✉️ 留下聯繫資料'], ['human', '🎧 呼叫專員'], ['url', '🔗 連結']];
 let robotItems = [];
+
+// ------------------------------------------------------------
+// LINE 通知系統管理員（排程時段）
+// ------------------------------------------------------------
+const NOTIFY_DEFAULT = { enabled: true, weekday: { on: true, start: '17:30', end: '23:00' }, weekend: { on: true, start: '08:00', end: '23:00' }, events: { handoff: true, lead: true, limit: true, chat: true }, chatEvery: 30 };
+const NOTIFY_EVENTS = [['handoff', '🛎️ 客人按「轉真人」'], ['lead', '📇 客人留下聯繫資料'], ['limit', '⚠️ 流量快到上限 / 已達上限'], ['chat', '💬 有人開始使用機器人（彙整通知）']];
+
+function fillNotify() {
+  const n = (botData && botData.notify) || NOTIFY_DEFAULT;
+  $('nt-enabled').checked = n.enabled !== false;
+  $('nt-wd-on').checked = n.weekday.on !== false;
+  setVal('nt-wd-start', n.weekday.start);
+  setVal('nt-wd-end', n.weekday.end);
+  $('nt-we-on').checked = n.weekend.on !== false;
+  setVal('nt-we-start', n.weekend.start);
+  setVal('nt-we-end', n.weekend.end);
+  $('nt-events').innerHTML = NOTIFY_EVENTS.map(([k, label]) => `<label class="bot-check"><input type="checkbox" class="nt-ev" value="${k}" ${n.events[k] !== false ? 'checked' : ''} /> ${label}</label>`).join('');
+  setVal('nt-chat-every', n.chatEvery);
+  const t = (botData && botData.notifyTargets) || 0;
+  $('nt-targets').textContent = t ? `目前會推播給 ${t} 位管理員（員工助理已開通、綁定管理員網站帳號、還在追蹤官方帳號的成員）。` : '⚠️ 目前沒有可通知的管理員：請到「員工助理」把管理員的 LINE 開通，並綁定他的網站帳號。';
+}
+
+function readNotify() {
+  const events = {};
+  document.querySelectorAll('.nt-ev').forEach((c) => (events[c.value] = c.checked));
+  return {
+    enabled: $('nt-enabled').checked,
+    weekday: { on: $('nt-wd-on').checked, start: val('nt-wd-start'), end: val('nt-wd-end') },
+    weekend: { on: $('nt-we-on').checked, start: val('nt-we-start'), end: val('nt-we-end') },
+    events,
+    chatEvery: Number(val('nt-chat-every')) || 30,
+  };
+}
+
+async function saveNotify() {
+  const n = readNotify();
+  if ((n.weekday.on && (!n.weekday.start || !n.weekday.end)) || (n.weekend.on && (!n.weekend.start || !n.weekend.end))) return alert('請把推播時段的開始與結束時間填好');
+  const r = await callApi('botSaveSettings', { notify: n });
+  if (!r.success) return alert(r.message);
+  await loadAll(true);
+  fillNotify();
+  $('nt-msg').textContent = '✓ 已儲存';
+  setTimeout(() => ($('nt-msg').textContent = ''), 4000);
+}
+
+async function testNotify() {
+  $('nt-msg').textContent = '發送中…';
+  const r = await callApi('botNotifyTest', {});
+  $('nt-msg').textContent = r.success ? `✓ 已推播給 ${r.targets} 位管理員，請看 LINE` : '✗ ' + r.message;
+}
 
 function fillRobot(r) {
   r = r || (botData && botData.robot) || ROBOT_DEFAULT;
@@ -397,6 +456,7 @@ async function saveRobot() {
   if (!r.success) return alert(r.message);
   await loadAll(true);
   fillRobot();
+  fillNotify();
   $('rb-msg').textContent = '✓ 已儲存（官網約 1～5 分鐘內套用）';
   setTimeout(() => ($('rb-msg').textContent = ''), 5000);
 }

@@ -151,6 +151,11 @@
         <input id="cs-handoff-words" maxlength="300" />
         <label>轉真人時的回覆（留空使用預設）</label>
         <textarea id="cs-handoff-text" rows="2" maxlength="500" placeholder="例如：已通知專人，營業時間內會盡快回覆您 🙏"></textarea>
+        <label>按「轉真人」後，先請客人留下資料的話（接在上面那段回覆後面；留空使用預設）</label>
+        <textarea id="cs-handoff-lead" rows="2" maxlength="300"></textarea>
+        <label>客人轉真人後、還沒留資料就要關閉視窗時，再提醒一次的話（留空使用預設）</label>
+        <textarea id="cs-leave-text" rows="2" maxlength="200"></textarea>
+        <div class="bot-row"><label>「留資料」按鈕文字 <input id="cs-leave-yes" maxlength="12" style="width:150px;display:inline-block;" /></label> <label>「不留、離開」按鈕文字 <input id="cs-leave-no" maxlength="12" style="width:150px;display:inline-block;" /></label></div>
         <div class="bot-row">
           <label>轉真人後，機器人暫停 <input type="number" id="cs-pause" min="0" max="360" style="width:90px;display:inline-block;" /> 分鐘不回這位客人</label>
         </div>
@@ -310,6 +315,26 @@
       <label>允許嵌入的網站（一行一個，例如 https://www.cetus.tw；留空 = 任何網站都能嵌入，不建議）</label>
       <textarea id="web-origins" rows="3" placeholder="https://www.cetus.tw&#10;https://cetus.tw"></textarea>
       <div id="cs-save-bar2"><button type="button" onclick="saveCs()">💾 儲存</button> <span id="web-save-msg" class="calc-hint"></span></div>
+    </div>
+    <div class="panel" id="notify-panel">
+      <h3 class="bot-h">📣 LINE 通知系統管理員（排程）</h3>
+      <div class="calc-hint">有人按「轉真人」、留下聯繫資料、流量快到上限，或有人開始使用機器人時，用「員工助理」官方帳號的 LINE 推播給系統管理員（要先在「員工助理」把管理員的 LINE 開通，並綁定他的網站帳號）。LINE 官方帳號每月推播則數有限，所以只在下面設定的時段推播；時段外仍會在後台右下角跳提醒，不會漏掉。</div>
+      <label class="bot-check"><input type="checkbox" id="nt-enabled" /> <b>開啟 LINE 通知</b>（關閉 = 完全不推播）</label>
+      <div class="bot-grid">
+        <div>
+          <label class="bot-check"><input type="checkbox" id="nt-wd-on" /> 週一～週五推播時段</label>
+          <label><input type="time" id="nt-wd-start" style="width:130px;display:inline-block;" /> ～ <input type="time" id="nt-wd-end" style="width:130px;display:inline-block;" />（預設 17:30～23:00，下班後）</label>
+        </div>
+        <div>
+          <label class="bot-check"><input type="checkbox" id="nt-we-on" /> 週六、週日推播時段</label>
+          <label><input type="time" id="nt-we-start" style="width:130px;display:inline-block;" /> ～ <input type="time" id="nt-we-end" style="width:130px;display:inline-block;" />（預設 08:00～23:00）</label>
+        </div>
+      </div>
+      <label style="margin-top:8px;">要推播的事件</label>
+      <div id="nt-events"></div>
+      <label>「有人開始使用機器人」每 <input type="number" id="nt-chat-every" min="5" max="720" style="width:80px;display:inline-block;" /> 分鐘最多推播一則（期間的人數合併成一則，省推播則數）</label>
+      <div class="calc-hint" id="nt-targets"></div>
+      <div class="bot-row" style="margin-top:8px;"><button type="button" class="bot-write" onclick="saveNotify()">💾 儲存通知設定</button> <button type="button" class="btn-secondary bot-write" onclick="testNotify()">📲 發送測試通知</button> <span id="nt-msg" class="calc-hint"></span></div>
     </div>
     <div class="panel" id="robot-panel">
       <h3 class="bot-h">🤖 官網小機器人（官網右下角那隻）</h3>
@@ -693,7 +718,7 @@
 <script src="common.js?v=20261111d"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
-<script src="bot.js?v=20261113b"></script>
+<script src="bot.js?v=20261116a"></script>
 <script src="botstaff.js?v=20261109b"></script>
 </body>
 </html>

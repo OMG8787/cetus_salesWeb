@@ -216,6 +216,8 @@ function demoBotApi(action, params, db) {
         aiUsing: b.ai.length ? { source: 'bot', name: b.ai[0].provider, model: b.ai[0].model || 'default', count: b.ai.length } : null,
         search: b.search || { mode: 'vector', threshold: 0.6, topK: 6, embedProvider: 'auto' }, keys: { cs: { has: !!b.key, hint: b.key ? '••••' + b.key.slice(-4) : '', shared: false }, staff: { has: !!b.staffKey, hint: b.staffKey ? '••••' + b.staffKey.slice(-4) : '', shared: false } }, csProductFields: DEMO_CS_FIELDS, gasUrl: '', kbCount: b.kb.length, pauses: b.pauses, topicDefaults: DEMO_BOT_TOPICS,
       };
+    case 'botNotifyTest':
+      return { success: false, message: '示範模式不會真的推播 LINE' };
     case 'botSaveSettings': {
       if (params.groundCheck !== undefined && !params.cs) b.cs = Object.assign({}, b.cs, { groundCheck: params.groundCheck === true });
       if (params.cs) {

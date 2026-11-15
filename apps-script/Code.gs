@@ -6928,6 +6928,13 @@ var BOT_CS_TOPICS = [
 ];
 var BOT_STAFF_OPS = ['start', 'call', 'stage', 'commit', 'cancel', 'remember', 'forget', 'unfollow', 'memory', 'audit', 'cards'];
 var BOT_HANDOFF_WORDS = '真人 客服人員 小編 專人 人工 業務';
+/** 預設訊息（BOT 設定 → 客服設定 → 轉真人訊息 可以改；清空 = 用這裡的預設）。 */
+var BOT_DEFAULT_TEXTS = {
+  handoffLeadText: '📇 為了方便專員與您聯繫，請先留下您的姓名，以及電話或 Email，專員會盡快回覆您。',
+  leaveText: '您還沒有留下聯絡方式，專員可能無法主動聯繫您。離開前要不要留下資料？',
+  leaveYes: '📇 留下資料',
+  leaveNo: '不用了，離開',
+};
 var BOT_TONES = ['friendly', 'formal', 'concise'];
 var BOT_EMOJI = ['many', 'some', 'none'];
 
@@ -6962,7 +6969,7 @@ function botPerms_() {
     botGenKey: ['bot', 'w'], botRevealKey: ['bot', 'w'], botHumanReply: ['bot', 'w'], botResume: ['bot', 'w'], botTestToken: ['bot', 'w'],
     botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
     botKbImageUpload: ['bot', 'w'], botLeads: ['bot', 'r'], botLeadDelete: ['bot', 'd'],
-    botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'], botSendForm: ['bot', 'w'], botVisits: ['bot', 'r'], botTakeover: ['bot', 'w'],
+    botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'], botSendForm: ['bot', 'w'], botVisits: ['bot', 'r'], botTakeover: ['bot', 'w'], botNotifyTest: ['bot', 'w'],
     getNameCards: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardToProspect: ['customers', 'w'], cardDelete: ['customers', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
@@ -7005,6 +7012,7 @@ function botRoutes_() {
     botSendForm: { auth: true, fn: handleBotSendForm },
     botVisits: { auth: true, fn: handleBotVisits },
     botTakeover: { auth: true, fn: handleBotTakeover },
+    botNotifyTest: { auth: true, fn: handleBotNotifyTest },
     getNameCards: { auth: true, fn: handleGetNameCards },
     cardUpdate: { auth: true, fn: handleCardUpdate },
     cardToCustomer: { auth: true, fn: handleCardToCustomer },
@@ -7121,6 +7129,7 @@ function botGuardWarn_(cfg, kind, n, limit, bucket) {
       Shared: '是', CreatedDate: today, LastUpdated: today, LinkType: 'csLimit', LinkId: 'limit-' + kind + '-' + bucket, NeedBlock: 'bot', CreatedAt: Date.now(),
     });
     botAlertsBust_();
+    botAdminLine_('limit', '⚠️ 客服機器人流量快到上限：' + label + ' ' + n + ' / ' + limit + ' 則。要調高請到「BOT 設定 → 客服設定 → 防濫用」。');
     if (cfg.alert) {
       resetNotifyAdmins_().forEach(function (u) {
         var email = String(u['Email'] || '').trim();
@@ -7134,6 +7143,11 @@ function botGuardWarn_(cfg, kind, n, limit, bucket) {
 
 /** 全站上限被用完：寄信給管理員（通知對象跟忘記密碼通知同一份設定），每小時最多一封。 */
 function botGuardAlert_(cfg, hourBucket) {
+  var lineFlag = 'csg:alertL:' + hourBucket;
+  if (!botCache_().get(lineFlag)) {
+    botCachePut_(lineFlag, 1, 3600);
+    botAdminLine_('limit', '🚫 客服機器人流量已達全站上限，超過的訊息被擋下（客人會看到請稍後再試或轉真人）。要調高請到「BOT 設定 → 客服設定 → 防濫用」。');
+  }
   if (!cfg.alert) return;
   var flag = 'csg:alert:' + hourBucket;
   if (botCache_().get(flag)) return;
@@ -7285,6 +7299,10 @@ function botCsConfig_(cs) {
     welcome: String(cs.welcome || ''),
     prompt: String(cs.prompt || ''),
     handoffText: String(cs.handoffText || ''),
+    handoffLeadText: String(cs.handoffLeadText || '').trim() || BOT_DEFAULT_TEXTS.handoffLeadText, // 按「轉真人」後，先請客人留下資料
+    leaveText: String(cs.leaveText || '').trim().slice(0, 200) || BOT_DEFAULT_TEXTS.leaveText, // 轉真人後、還沒留資料就要關閉視窗時的再次提醒
+    leaveYes: String(cs.leaveYes || '').trim().slice(0, 12) || BOT_DEFAULT_TEXTS.leaveYes,
+    leaveNo: String(cs.leaveNo || '').trim().slice(0, 12) || BOT_DEFAULT_TEXTS.leaveNo,
     sources: {
       qa: on(src.qa),
       products: src.products === true,
@@ -7875,6 +7893,7 @@ function csStart_(id, req) {
     replyDelay: gen.replyDelay,
     prompt: cs.prompt,
     handoffText: cs.handoffText,
+    handoffLeadText: cs.handoffLeadText,
     ai: ais.length ? ais[0] : null,
     aiFallback: ais.slice(1),
     search: botSearchCfg_(),
@@ -7943,6 +7962,7 @@ function csChatNotify_(channel, id, name, add) {
       Shared: '是', CreatedDate: today, LastUpdated: today, LinkType: 'csChat', LinkId: id, NeedBlock: 'bot', CreatedAt: Date.now(),
     });
     botAlertsBust_();
+    botNotifyChat_(channel, name, first.t);
   } catch (e) {
     // 通知失敗不影響機器人回覆
   }
@@ -8100,6 +8120,7 @@ function csHandoff_(id, req) {
     CreatedAt: Date.now(),
   });
   botAlertsBust_();
+  botAdminLine_('handoff', '🛎️ 客人找真人：' + (name || channelText) + (topic ? '（' + topic + '）' : '') + '\n客人說：' + String(req.text || '').slice(0, 100) + '\n請到「BOT 設定 → 對話與小編接手」回覆' + (id.charAt(0) === 'V' ? '。' : '（LINE 客人請到官方帳號後台）。'));
   return true;
 }
 
@@ -8147,6 +8168,7 @@ function csLead_(id, req) {
       CreatedAt: Date.now(),
     });
     botAlertsBust_();
+    botAdminLine_('lead', '📇 新的聯繫名單：' + who + (phone ? '\n電話：' + phone : '') + (email ? '\nEmail：' + email : '') + (note ? '\n備註：' + note.slice(0, 80) : '') + '\n完整名單在「BOT 設定 → 聯繫名單」。');
   }
   return true;
 }
@@ -8457,6 +8479,7 @@ function csWidgetConfig_() {
     replyDelay: botGeneral_().replyDelay,
     handoffButton: cs.handoffButton,
     handoffWord: botWords_(cs.handoffWords)[0] || '真人',
+    leave: { text: cs.leaveText, yes: cs.leaveYes, no: cs.leaveNo },
     robot: botRobotCfg_(botCfg_('robot', {})),
   };
 }
@@ -8521,6 +8544,10 @@ function handleBotGetSettings(body) {
       staff: { has: !!botKey_('staff'), hint: botKeyHint_('staff'), shared: botKeyShared_('staff') },
     },
     robot: botRobotCfg_(botCfg_('robot', {})),
+    notify: botNotifyCfg_(),
+    notifyEvents: BOT_NOTIFY_EVENTS,
+    notifyTargets: botAdminTargets_().length,
+    defaultTexts: BOT_DEFAULT_TEXTS,
     csProductFields: BOT_CS_PRODUCT_FIELDS,
     search: botSearchCfg_(),
     embed: (function () { var c = botEmbedCfg_(); return c ? { provider: c.provider, model: c.model, dim: c.dim } : null; })(),
@@ -8550,6 +8577,7 @@ function handleBotSaveSettings(body) {
       botCfgSet_('cs', botCsStored_(clean));
     }
     if (body.robot) botCfgSet_('robot', botRobotCfg_(body.robot));
+    if (body.notify) botCfgSet_('notify', botNotifyCfg_(body.notify));
     if (body.groundCheck !== undefined && !body.cs) {
       var curCs = botCfg_('cs', {}) || {};
       curCs.groundCheck = body.groundCheck === true;
@@ -9168,6 +9196,103 @@ function handleBotResume(body) {
   csResume_(id);
   botAckChat_(id, botAlertWho_(body)); // 按「恢復機器人」= 已經處理
   return { success: true, pauses: csPauseList_() };
+}
+
+// ---- LINE 官方助手通知系統管理員（只在設定的時段推播，避免用光每月推播則數；時段外只在後台右下角提醒）----
+var BOT_NOTIFY_EVENTS = [['handoff', '客人按「轉真人」'], ['lead', '客人留下聯繫資料'], ['limit', '流量快到上限 / 已達上限'], ['chat', '有人開始使用機器人（每 N 分鐘彙整一則）']];
+
+/** 通知設定：enabled 總開關；weekday = 週一～五、weekend = 週六日，各有 on / start / end；events 勾選哪些事件要推播。 */
+function botNotifyCfg_(raw) {
+  raw = (raw === undefined ? botCfg_('notify', {}) : raw) || {};
+  var hm = function (v, d) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v || '')) ? String(v) : d; };
+  var win = function (w, s, e) {
+    w = w || {};
+    return { on: w.on !== false, start: hm(w.start, s), end: hm(w.end, e) };
+  };
+  var ev = raw.events || {};
+  var events = {};
+  BOT_NOTIFY_EVENTS.forEach(function (x) { events[x[0]] = ev[x[0]] !== false; });
+  return {
+    enabled: raw.enabled !== false,
+    weekday: win(raw.weekday, '17:30', '23:00'),
+    weekend: win(raw.weekend, '08:00', '23:00'),
+    events: events,
+    chatEvery: botInt_(raw.chatEvery, 5, 720, 30),
+  };
+}
+
+/** 這個時間點在不在通知時段內（台灣時間；週六、週日用 weekend 設定）。 */
+function botNotifyInWindow_(n, at) {
+  var d = at || new Date();
+  var u = Number(Utilities.formatDate(d, 'GMT+8', 'u')); // 1 = 週一 … 7 = 週日
+  var w = u >= 6 ? n.weekend : n.weekday;
+  if (!w.on) return false;
+  var t = Utilities.formatDate(d, 'GMT+8', 'HH:mm');
+  return w.start <= w.end ? t >= w.start && t < w.end : t >= w.start || t < w.end;
+}
+
+/** 要收到通知的人：已開通、還在追蹤官方帳號、而且綁定的網站帳號是系統管理員的員工助理成員。 */
+function botAdminTargets_() {
+  if (typeof botMemberRows_ !== 'function') return [];
+  var admins = {};
+  sheetToObjects(SHEET_USERS).rows.forEach(function (u) { if (u['Role'] === 'admin') admins[String(u['Username'])] = true; });
+  return botMemberRows_()
+    .filter(function (m) {
+      var following = !(m['IsFollowing'] === false || String(m['IsFollowing']).toUpperCase() === 'FALSE');
+      return m['Status'] === BOT_STAFF_STATUS.ACTIVE && following && admins[String(m['LinkedUsername'] || '')] && /^U[0-9a-f]{32}$/.test(String(m['LineUserId']));
+    })
+    .map(function (m) { return String(m['LineUserId']); })
+    .slice(0, 20);
+}
+
+/** 實際推播（透過機器人伺服器 /api/push，用員工助理的官方帳號）。force = 不管時段與勾選（測試用）。回傳 { sent, why }。 */
+function botAdminLine_(kind, text, force) {
+  try {
+    var n = botNotifyCfg_();
+    if (!force) {
+      if (!n.enabled) return { sent: false, why: '通知沒有開啟' };
+      if (!n.events[kind]) return { sent: false, why: '這類事件沒有勾選' };
+      if (!botNotifyInWindow_(n, new Date())) return { sent: false, why: '不在通知時段內' };
+    }
+    var url = botGeneral_().botUrl;
+    var secret = botKey_('staff');
+    if (!url || !secret) return { sent: false, why: '還沒有設定機器人網址或員工助理金鑰' };
+    var targets = botAdminTargets_();
+    if (!targets.length) return { sent: false, why: '沒有可通知的管理員：請到「員工助理」成員，把管理員的 LINE 開通並綁定他的網站帳號' };
+    var res = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/api/push', {
+      method: 'post', contentType: 'application/json', headers: { 'x-bot-secret': secret }, muteHttpExceptions: true,
+      payload: JSON.stringify({ alert: String(text).slice(0, 900), targets: targets }),
+    });
+    var code = res.getResponseCode();
+    return code >= 200 && code < 300 ? { sent: true, targets: targets.length } : { sent: false, why: '機器人伺服器回應 ' + code + '（可能還沒重新部署 linebot）' };
+  } catch (e) {
+    return { sent: false, why: String(e && e.message ? e.message : e).slice(0, 120) };
+  }
+}
+
+/** 「有人使用機器人」：每 chatEvery 分鐘最多推一則，期間其他人合併計數。 */
+function botNotifyChat_(channel, name, firstText) {
+  var n = botNotifyCfg_();
+  if (!n.enabled || !n.events.chat) return;
+  var held = Number(botCacheGet_('csadm:cnt') || 0);
+  if (botCache_().get('csadm:chat')) {
+    botCachePut_('csadm:cnt', held + 1, n.chatEvery * 60 + 600);
+    return;
+  }
+  var total = held + 1;
+  var who = name || (channel === 'web' ? '網站訪客' : 'LINE 客人');
+  var r = botAdminLine_('chat', '💬 有人正在使用機器人：' + who + (total > 1 ? '（這段時間共 ' + total + ' 位）' : '') + '\n客人說：' + String(firstText || '').slice(0, 100) + '\n想親自回覆請到「BOT 設定 → 對話與小編接手」。');
+  if (r.sent) {
+    botCacheRemove_(['csadm:cnt']);
+    botCachePut_('csadm:chat', 1, n.chatEvery * 60);
+  } else {
+    botCachePut_('csadm:cnt', held + 1, n.chatEvery * 60 + 600);
+  }
+}
+
+function handleBotNotifyTest(body) {
+  var r = botAdminLine_('handoff', '✅ 這是 AOI 系統的測試通知（' + botNow_() + '）。收到這則代表「LINE 通知管理員」設定正確。', true);
+  return r.sent ? { success: true, targets: r.targets } : { success: false, message: r.why };
 }
 
 // ---- 待回覆提醒：每頁右下角持續跳通知，直到有人回覆 / 處理 ----

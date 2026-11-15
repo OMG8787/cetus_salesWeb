@@ -140,7 +140,8 @@ export function handoffReply(info: CsInfo, topic = ""): string {
   const base = t
     ? (info.topicText || "這個問題（{主題}）由專人為您回覆，已經通知同仁囉，請稍候 🙏").replaceAll("{主題}", topic)
     : info.handoffText || "🙏 已經通知專人，營業時間內會盡快回覆您，請稍候！";
-  const ask = t?.ask?.trim() ?? "";
+  // 沒有指定問題的「留資料說明」時，轉真人一律先請客人留下聯絡方式（說明文字後台可改）
+  const ask = t?.ask?.trim() || (info.leadState === "done" ? "" : (info.handoffLeadText ?? "").trim());
   const parts = t?.askPos === "before" ? [ask, base] : [base, ask];
   if (info.inHours === false) parts.push(info.offText || `⏰ 目前是專人休息時間（服務時間：${info.hoursText}），上班後會盡快回覆您。`);
   return parts.filter(Boolean).join("\n\n");
