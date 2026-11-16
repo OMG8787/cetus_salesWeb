@@ -36,8 +36,10 @@ function readOnly() {
 // ------------------------------------------------------------
 // 分頁
 // ------------------------------------------------------------
+const DEFAULT_TAB = 'talk';
 function showTab(tab) {
   curTab = tab;
+  document.querySelectorAll('[data-bot-tab]').forEach((b) => b.classList.toggle('active', b.dataset.botTab === tab));
   document.querySelectorAll('.bot-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.bot-panel').forEach((p) => (p.style.display = p.dataset.panel === tab ? '' : 'none'));
   try {
@@ -1578,7 +1580,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 /** 網址 #talk、#leads 切到該分頁；#talk:客人編號 = 右下角「客人等待回覆」提醒的「前往回覆」，直接打開那位客人的對話。 */
 function gotoHash() {
   const [first, convId] = (location.hash || '').replace('#', '').split(':');
-  if (!first || !document.querySelector(`.bot-tab[data-tab="${first}"]`)) return;
+  if (!first || !document.querySelector(`.bot-tab[data-tab="${first}"]`)) return showTab(DEFAULT_TAB); // 沒指定分頁：預設「對話與小編接手」
   showTab(first);
   if (first === 'talk' && /^[A-Za-z0-9_-]{6,80}$/.test(convId || '')) openThread(convId);
 }
