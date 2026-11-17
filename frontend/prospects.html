@@ -213,7 +213,7 @@
       <div id="pen-source" style="margin:10px 0;"></div>
       <div id="pen-scope" style="font-weight:600;"></div>
       <label style="display:block;margin-top:8px;"><input type="checkbox" id="pen-onlynew" checked style="width:auto;" /> 只查還沒查過的</label>
-      <label style="display:block;margin-top:6px;"><input type="checkbox" id="pen-mail" checked style="width:auto;" /> 同時依官網內容寫好寄信內容（要有 Email 才寫；每家多呼叫 1 次 AI，約多 5～10 秒；之後在名單的「✉️ 預覽/寄信」確認後才會寄出）</label>
+      <label style="display:block;margin-top:6px;"><input type="checkbox" id="pen-mail" style="width:auto;" /> 同時依官網內容寫好寄信內容（要有 Email 才寫；每家多呼叫 1 次 AI，約多 5～10 秒；之後在名單的「✉️ 預覽/寄信」確認後才會寄出）</label>
       <label style="display:block;margin-top:6px;">這次最多查幾家（1–500）：<input id="pen-limit" type="number" min="1" max="500" value="50" style="width:100px;display:inline-block;margin-left:6px;" /></label>
       <div class="calc-hint">一家大約 5～15 秒，50 家約 5～10 分鐘；過程中請不要關閉這個分頁。</div>
       <div style="margin-top:10px;"><button type="button" id="pen-go" onclick="startEnrich()">開始查詢</button> <span id="pen-msg" class="calc-hint"></span></div>
@@ -243,7 +243,7 @@
     <label style="display:block;"><input type="checkbox" id="psm-noattach" style="width:auto;" /> 這封不附檔案</label>
     <div class="pcv-btns" style="margin-top:10px;">
       <button type="button" class="ps-btn ps-btn-primary" id="psm-send" onclick="sendMail()">📨 確認寄出</button>
-      <button type="button" class="ps-btn" id="psm-regen" onclick="mailRegen()">🔄 重新產生內容</button>
+      <button type="button" class="ps-btn" id="psm-regen" onclick="mailRegen()">✨ 一鍵生成文案</button>
       <span id="psm-msg" class="calc-hint"></span>
     </div>
   </div>
@@ -334,6 +334,6 @@
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
 <script src="prospects-lib.js?v=20261111b"></script>
-<script src="prospects.js?v=20261117a"></script>
+<script src="prospects.js?v=20261117b"></script>
 </body>
 </html>

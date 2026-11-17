@@ -311,7 +311,7 @@ function renderRows() {
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
         <td class="ps-stage-cell"><select class="ps-stage" data-stage="${e(r.Stage)}" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${followHtml(r)}${r.AssignedTo ? `<div class="ps-meta">👤 ${e(r.AssignedTo)}</div>` : ''}</td>
-        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button>${!ro && r.Email && !r.Optout ? `<div><button type="button" class="btn-mini ps-mailbtn" title="${r.HasMail ? '已有依官網內容寫好的草稿' : '還沒有草稿，開啟時會讀官網並用 AI 寫一封'}" onclick="openMail(${i})">✉️ 預覽/寄信${r.HasMail ? ' ✓' : ''}</button>${r.MailSentAt ? `<div class="calc-hint">已寄 ${e(String(r.MailSentAt).slice(0, 10))}</div>` : ''}</div>` : ''}${r.Hidden && !ro ? `<div><button type="button" class="btn-mini ps-unhide" onclick="setHidden([data.rows[${i}].Key], false)">↩ 取消隱藏</button></div>` : ''}</td>
+        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button>${!ro && r.Email && !r.Optout ? `<div><button type="button" class="btn-mini ps-mailbtn" title="${r.HasMail ? '已有依官網內容寫好的草稿' : '還沒有草稿，開啟後可按「一鍵生成文案」'}" onclick="openMail(${i})">✉️ 預覽/寄信${r.HasMail ? ' ✓' : ''}</button>${r.MailSentAt ? `<div class="calc-hint">已寄 ${e(String(r.MailSentAt).slice(0, 10))}</div>` : ''}</div>` : ''}${r.Hidden && !ro ? `<div><button type="button" class="btn-mini ps-unhide" onclick="setHidden([data.rows[${i}].Key], false)">↩ 取消隱藏</button></div>` : ''}</td>
       </tr>`;
     })
     .join('');
@@ -1029,7 +1029,7 @@ async function openMail(i) {
   if (!r) return;
   mailRow = r;
   document.getElementById('psm-name').textContent = r.Name;
-  document.getElementById('psm-state').textContent = '讀取中…（沒有草稿時會先讀官網、用 AI 寫一封，約 10～30 秒）';
+  document.getElementById('psm-state').textContent = '讀取中…';
   ['psm-to', 'psm-subject', 'psm-body'].forEach((id) => (document.getElementById(id).value = ''));
   document.getElementById('psm-msg').textContent = '';
   document.getElementById('psm-noattach').checked = false;
@@ -1057,9 +1057,11 @@ async function loadMail(regen) {
   document.getElementById('psm-subject').value = res.subject || '';
   document.getElementById('psm-body').value = res.body || '';
   const st = [];
+  mailHasDraft = !!res.hasDraft;
   if (res.generated) st.push('✨ 已依官網內容產生草稿，請確認後再寄出');
   else if (res.draftAt) st.push('草稿產生於 ' + res.draftAt);
-  if (res.genError) st.push('⚠️ 沒有產生草稿：' + res.genError + '（下面是空白信件，可以直接手寫）');
+  else if (!res.hasDraft && !res.genError) st.push('還沒有文案：按「✨ 一鍵生成文案」讀官網用 AI 寫一封（約 10～30 秒），或直接在下面手寫');
+  if (res.genError) st.push('⚠️ 沒有產生文案：' + res.genError + '（可以直接在下面手寫）');
   if (res.sentAt) st.push('📨 這家已在 ' + res.sentAt + ' 寄過信，再寄會再寄一封');
   document.getElementById('psm-state').textContent = st.join('　');
   const a = res.attach || {};
@@ -1068,8 +1070,9 @@ async function loadMail(regen) {
   setMailBusy(false);
 }
 
+let mailHasDraft = false;
 async function mailRegen() {
-  if (!confirm('重新產生會覆蓋你在這裡修改的內容，確定嗎？')) return;
+  if (mailHasDraft && !confirm('重新生成會覆蓋目前的文案（包含你在這裡修改的內容），確定嗎？')) return;
   setMailBusy(true);
   document.getElementById('psm-state').textContent = '產生中…（約 10～30 秒）';
   await loadMail(true);

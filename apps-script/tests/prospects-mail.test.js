@@ -73,8 +73,12 @@ ok(call('handleProspectMailCfg', {}).cfg.signature === 'MY-SIG\nAustin', '署名
 // ---- 預覽：沒有草稿 → 現場產生（讀官網 → AI） ----
 const a = find('翔笙');
 ok(a.HasMail === 0 && a.MailBody === undefined, '列表：不帶信件全文，只有 HasMail 旗標');
+const n0 = calls.ai;
 r = call('handleProspectMailPreview', { key: a.Key, row: a.RowIndex });
-ok(r.success && r.generated && r.to === 'sales@cam.com.tw' && /AOI 視覺/.test(r.subject) && /翔笙精密機械團隊您好/.test(r.body), '預覽：產生草稿（收件人、主旨、內容）');
+ok(r.success && !r.generated && !r.hasDraft && calls.ai === n0 && /MY-SIG/.test(r.body) && r.to === 'sales@cam.com.tw', '開啟預覽不呼叫 AI：沒有草稿就給空白信件（只有署名）');
+ok(find('翔笙').HasMail === 0, '只開預覽不會存草稿');
+r = call('handleProspectMailPreview', { key: a.Key, row: a.RowIndex, regen: true });
+ok(r.success && r.generated && r.hasDraft && r.to === 'sales@cam.com.tw' && /AOI 視覺/.test(r.subject) && /翔笙精密機械團隊您好/.test(r.body), '預覽：產生草稿（收件人、主旨、內容）');
 ok(/MY-SIG/.test(r.body) && r.attach.ok && r.attach.name === '鑫堡AOI檢測系統.pdf', '預覽：署名接在最後；附件顯示檔名');
 const prompt1 = JSON.stringify(calls.prompts[0]);
 ok(/滾子凸輪式分割器/.test(prompt1) && /EtherCAT/.test(prompt1) && /沒有明確關聯/.test(prompt1) && /設備商/.test(prompt1), '給 AI 的提示：有官網文字、鑫堡項目、寫信原則、對方類型');
@@ -83,22 +87,22 @@ const n = calls.ai;
 r = call('handleProspectMailPreview', { key: a.Key, row: a.RowIndex });
 ok(r.success && !r.generated && calls.ai === n, '再開一次預覽：用存好的草稿，不重複呼叫 AI');
 r = call('handleProspectMailPreview', { key: a.Key, row: a.RowIndex, regen: true });
-ok(r.success && r.generated && calls.ai === n + 1, '按「重新產生」→ 再呼叫一次 AI');
+ok(r.success && r.generated && calls.ai === n + 1, '再按「一鍵生成文案」→ 再呼叫一次 AI');
 
 // ---- 預覽的各種例外 ----
 const fac = find('大塑膠');
 aiReply = '這不是 JSON，但是有內容：貴公司從事射出成型，我們提供 AOI 產線檢測。';
-r = call('handleProspectMailPreview', { key: fac.Key, row: fac.RowIndex });
+r = call('handleProspectMailPreview', { key: fac.Key, row: fac.RowIndex, regen: true });
 ok(r.success && r.generated && /射出成型/.test(r.body) && /鑫堡 AOI 檢測方案/.test(r.subject), 'AI 沒回 JSON：整段當正文、主旨用預設');
 aiStatus = 403;
 const nof = find('沒信箱');
-r = call('handleProspectMailPreview', { key: nof.Key, row: nof.RowIndex });
+r = call('handleProspectMailPreview', { key: nof.Key, row: nof.RowIndex, regen: true });
 ok(r.success && !r.generated && /AI 都失敗/.test(r.genError) && r.genError.indexOf('KEY-SECRET') < 0 && /MY-SIG/.test(r.body) && r.to === '', 'AI 失敗：回空白草稿讓人手寫、金鑰不外洩、沒有收件人');
 aiStatus = 200;
 r = call('handleProspectMailPreview', { key: optRow.Key, row: optRow.RowIndex });
 ok(!r.success && /拒絕聯絡/.test(r.message), '標了拒絕聯絡 → 不能預覽 / 寄信');
 const nosite = find('沒官網');
-r = call('handleProspectMailPreview', { key: nosite.Key, row: nosite.RowIndex });
+r = call('handleProspectMailPreview', { key: nosite.Key, row: nosite.RowIndex, regen: true });
 ok(r.success && !r.generated && /還沒有官網/.test(r.genError), '沒有官網：說明原因，仍可手寫');
 
 // ---- 寄出 ----

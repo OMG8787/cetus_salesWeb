@@ -13076,7 +13076,10 @@ function psMailSiteText_(rec) {
   return texts.join('\n').replace(/\s+/g, ' ').slice(0, PS_MAIL_TEXT_MAX);
 }
 
-/** 預覽：回傳這家的信件（沒有草稿或 regen = true 就現場產生）。產生失敗時仍回成功，給空白草稿（只有署名）讓人手寫，並說明原因。 */
+/**
+ * 預覽：回傳這家的信件。開啟預覽不會呼叫 AI；按「一鍵生成文案」（regen = true）才讀官網、用 AI 寫一封並存成草稿。
+ * 還沒有草稿時回空白信件（只有署名）與 hasDraft = false；生成失敗仍回成功，保留原本內容並說明原因。
+ */
 function handleProspectMailPreview(body) {
   var key = String(body.key || '');
   if (!key) return { success: false, message: '缺少名單編號' };
@@ -13089,7 +13092,8 @@ function handleProspectMailPreview(body) {
   var cfg = psMailCfg_();
   var genError = '';
   var generated = false;
-  if (body.regen || !o.MailBody) {
+  var hasDraft = !!o.MailBody;
+  if (body.regen === true) {
     try {
       var text = psMailSiteText_(o);
       if (!text) throw new Error(o.Website ? '讀不到官網內容（網站打不開，或 robots.txt 不允許讀取），沒有可以參考的資料' : '這家還沒有官網，沒有可以參考的資料（可以先用「找官網與聯絡方式」）');
@@ -13098,16 +13102,17 @@ function handleProspectMailPreview(body) {
       o.MailSubject = d.subject;
       o.MailBody = d.body;
       generated = true;
+      hasDraft = true;
     } catch (e) {
       genError = String(e.message || e).slice(0, 200);
-      if (!o.MailBody) {
-        o.MailSubject = '鑫堡 AOI 檢測方案｜' + o.Name;
-        o.MailBody = '您好：\n\n\n' + cfg.signature;
-      }
     }
   }
+  if (!o.MailBody) {
+    o.MailSubject = '鑫堡 AOI 檢測方案｜' + o.Name;
+    o.MailBody = '您好：\n\n\n' + cfg.signature;
+  }
   var att = psMailAttach_(cfg);
-  return { success: true, to: o.Email || '', name: o.Name, subject: o.MailSubject, body: o.MailBody, generated: generated, genError: genError, draftAt: o.MailAt || '', sentAt: o.MailSentAt || '', attach: { configured: !!cfg.attach, ok: att.ok, name: att.name, message: att.message }, fromName: cfg.fromName };
+  return { success: true, to: o.Email || '', name: o.Name, subject: o.MailSubject, body: o.MailBody, generated: generated, hasDraft: hasDraft, genError: genError, draftAt: o.MailAt || '', sentAt: o.MailSentAt || '', attach: { configured: !!cfg.attach, ok: att.ok, name: att.name, message: att.message }, fromName: cfg.fromName };
 }
 
 /** 寄出（使用者已預覽、可編輯內容）：寄信 → 記錄到聯繫紀錄（Email）→ 開發狀態從「未處理」變「已聯絡」。 */
