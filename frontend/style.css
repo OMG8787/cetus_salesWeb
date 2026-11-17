@@ -1023,6 +1023,7 @@ html[data-theme="dark"] #ps-edit-modal .ps-iscust { background: rgba(79,134,214,
 
 /* 深色模式 */
 @media screen {
+html[data-theme="dark"] #ps-mail-modal .modal-box, html[data-theme="dark"] #ps-mailcfg-modal .modal-box { color-scheme: dark; }
 html[data-theme="dark"] #ps-conv-modal, html[data-theme="dark"] #ps-mail-modal, html[data-theme="dark"] #ps-mailcfg-modal {--ps-bg: #161b22; --ps-card: #1d232b; --ps-line: #323b48; --ps-line2: #2a323d; --ps-text: #e5e7eb; --ps-muted: #9aa5b4; --ps-accent: #4f86d6; --ps-accent-soft: rgba(79,134,214,.16); --ps-danger: #ff8a80; }
 html[data-theme="dark"] .ps-conv { background: rgba(60,180,100,.18); color: #8fdcab; }
 html[data-theme="dark"] .ps-hid { background: rgba(150,110,230,.2); color: #c7b3f4; }
