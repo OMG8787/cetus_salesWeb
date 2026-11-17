@@ -311,7 +311,7 @@ function renderRows() {
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
         <td class="ps-stage-cell"><select class="ps-stage" data-stage="${e(r.Stage)}" data-i="${i}" ${ro ? 'disabled' : ''}>${stageOpts}</select>${r.Optout ? '<div><span class="nc-badge">拒絕聯絡</span></div>' : ''}${followHtml(r)}${r.AssignedTo ? `<div class="ps-meta">👤 ${e(r.AssignedTo)}</div>` : ''}</td>
-        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button>${r.Hidden && !ro ? `<div><button type="button" class="btn-mini ps-unhide" onclick="setHidden([data.rows[${i}].Key], false)">↩ 取消隱藏</button></div>` : ''}</td>
+        <td class="nc-act"><button type="button" class="btn-mini" onclick="openEdit(${i})">${ro ? '查看紀錄' : '📞 聯繫 / 紀錄'}</button>${!ro && r.Email && !r.Optout ? `<div><button type="button" class="btn-mini ps-mailbtn" title="${r.HasMail ? '已有依官網內容寫好的草稿' : '還沒有草稿，開啟時會讀官網並用 AI 寫一封'}" onclick="openMail(${i})">✉️ 預覽/寄信${r.HasMail ? ' ✓' : ''}</button>${r.MailSentAt ? `<div class="calc-hint">已寄 ${e(String(r.MailSentAt).slice(0, 10))}</div>` : ''}</div>` : ''}${r.Hidden && !ro ? `<div><button type="button" class="btn-mini ps-unhide" onclick="setHidden([data.rows[${i}].Key], false)">↩ 取消隱藏</button></div>` : ''}</td>
       </tr>`;
     })
     .join('');
@@ -1021,6 +1021,136 @@ function enrichScope() {
   return { filter: filterBody(), label: `符合目前條件的 ${data ? data.total.toLocaleString() : 0} 筆（沒有勾選時就用目前的篩選結果）` };
 }
 
+// ---------- 開發信：預覽 / 寄信 ----------
+let mailRow = null;
+
+async function openMail(i) {
+  const r = data.rows[i];
+  if (!r) return;
+  mailRow = r;
+  document.getElementById('psm-name').textContent = r.Name;
+  document.getElementById('psm-state').textContent = '讀取中…（沒有草稿時會先讀官網、用 AI 寫一封，約 10～30 秒）';
+  ['psm-to', 'psm-subject', 'psm-body'].forEach((id) => (document.getElementById(id).value = ''));
+  document.getElementById('psm-msg').textContent = '';
+  document.getElementById('psm-noattach').checked = false;
+  document.getElementById('psm-attach').textContent = '';
+  setMailBusy(true);
+  document.getElementById('ps-mail-modal').style.display = 'flex';
+  await loadMail(false);
+}
+
+function setMailBusy(b) {
+  document.getElementById('psm-send').disabled = b;
+  document.getElementById('psm-regen').disabled = b;
+}
+
+async function loadMail(regen) {
+  const row = mailRow;
+  const res = await callApi('prospectMailPreview', { key: row.Key, row: row.RowIndex, regen: !!regen }, { silent: true });
+  if (mailRow !== row) return; // 視窗已經換成別家
+  if (!res || !res.success) {
+    document.getElementById('psm-state').textContent = '⚠️ ' + ((res && res.message) || '讀取失敗');
+    document.getElementById('psm-regen').disabled = false;
+    return;
+  }
+  document.getElementById('psm-to').value = res.to || '';
+  document.getElementById('psm-subject').value = res.subject || '';
+  document.getElementById('psm-body').value = res.body || '';
+  const st = [];
+  if (res.generated) st.push('✨ 已依官網內容產生草稿，請確認後再寄出');
+  else if (res.draftAt) st.push('草稿產生於 ' + res.draftAt);
+  if (res.genError) st.push('⚠️ 沒有產生草稿：' + res.genError + '（下面是空白信件，可以直接手寫）');
+  if (res.sentAt) st.push('📨 這家已在 ' + res.sentAt + ' 寄過信，再寄會再寄一封');
+  document.getElementById('psm-state').textContent = st.join('　');
+  const a = res.attach || {};
+  const att = document.getElementById('psm-attach');
+  att.textContent = !a.configured ? '📎 沒有設定附件（可在「⚙️ 寄信設定」設定）' : a.ok ? '📎 會附上：' + a.name : '⚠️ ' + (a.message || '附件讀取失敗') + '（修正設定，或勾選「這封不附檔案」）';
+  setMailBusy(false);
+}
+
+async function mailRegen() {
+  if (!confirm('重新產生會覆蓋你在這裡修改的內容，確定嗎？')) return;
+  setMailBusy(true);
+  document.getElementById('psm-state').textContent = '產生中…（約 10～30 秒）';
+  await loadMail(true);
+}
+
+async function sendMail() {
+  const to = document.getElementById('psm-to').value.trim();
+  const subject = document.getElementById('psm-subject').value.trim();
+  const body = document.getElementById('psm-body').value.trim();
+  const msg = document.getElementById('psm-msg');
+  if (!to || !subject || !body) {
+    msg.textContent = '收件人、主旨、內容都要填';
+    return;
+  }
+  const noAttach = document.getElementById('psm-noattach').checked;
+  if (!confirm(`確定寄給 ${to}？\n主旨：${subject}\n${noAttach ? '（不附檔案）' : '（會附上設定的附件）'}\n\n寄出後無法收回。`)) return;
+  setMailBusy(true);
+  msg.textContent = '寄送中…';
+  const row = mailRow;
+  const r = await callApi('prospectMailSend', { key: row.Key, row: row.RowIndex, to, subject, body, noAttach });
+  if (!r || !r.success) {
+    msg.textContent = '✗ ' + ((r && r.message) || '寄信失敗');
+    setMailBusy(false);
+    return;
+  }
+  if (r.row) {
+    const i = data.rows.findIndex((x) => x.Key === r.row.Key);
+    if (i > -1) data.rows[i] = r.row;
+    renderRows();
+  }
+  msg.textContent = '✓ 已寄出' + (r.attach ? `（附件：${r.attach}）` : '') + (r.logError ? '；但聯繫紀錄沒有記到：' + r.logError : '，已記到聯繫紀錄');
+  document.getElementById('psm-state').textContent = '📨 已寄出於 ' + r.sentAt;
+  document.getElementById('psm-regen').disabled = false;
+  loadStatus();
+}
+
+async function openMailCfg() {
+  document.getElementById('pmc-msg').textContent = '';
+  document.getElementById('ps-mailcfg-modal').style.display = 'flex';
+  const r = await callApi('prospectMailCfg', {}, { silent: true });
+  if (!r || !r.success) {
+    document.getElementById('pmc-msg').textContent = (r && r.message) || '讀取失敗';
+    return;
+  }
+  const c = r.cfg;
+  document.getElementById('pmc-attach').value = c.attach || '';
+  document.getElementById('pmc-from').value = c.fromName;
+  document.getElementById('pmc-sender').value = c.sender;
+  document.getElementById('pmc-sig').value = c.signature;
+  document.getElementById('pmc-intro').value = c.intro;
+  document.getElementById('pmc-strategy').value = c.strategy;
+  showMailAttach(r.attach);
+}
+
+function showMailAttach(a) {
+  document.getElementById('pmc-attach-state').textContent = !a || (!a.ok && !a.message) ? '目前沒有設定附件。' : a.ok ? '✓ 讀到附件：' + a.name : '⚠️ ' + a.message;
+}
+
+async function saveMailCfg() {
+  const msg = document.getElementById('pmc-msg');
+  if (!isAdminUser()) {
+    msg.textContent = '只有管理員可以儲存設定';
+    return;
+  }
+  const cfg = {
+    attach: document.getElementById('pmc-attach').value.trim(),
+    fromName: document.getElementById('pmc-from').value.trim(),
+    sender: document.getElementById('pmc-sender').value.trim(),
+    signature: document.getElementById('pmc-sig').value.trim(),
+    intro: document.getElementById('pmc-intro').value.trim(),
+    strategy: document.getElementById('pmc-strategy').value.trim(),
+  };
+  const r = await callApi('prospectMailCfgSave', { cfg });
+  if (!r || !r.success) {
+    msg.textContent = '✗ ' + ((r && r.message) || '儲存失敗');
+    return;
+  }
+  showMailAttach(r.attach);
+  msg.textContent = '✓ 已儲存';
+}
+
 function openEnrich() {
   if (readOnly()) return alert('你只有查看權限');
   if (!data || !data.total) return alert('目前沒有名單可以查。先匯入名單，或放寬篩選條件。');
@@ -1057,7 +1187,7 @@ function stopEnrich() {
 function enrichRowHtml(x) {
   const url = psSafeUrl(x.website);
   const cls = x.status === 'ok' ? 'nc-badge ok' : 'nc-badge';
-  return `<tr><td>${e(x.name || '')}</td><td><span class="${cls}">${e(ENRICH_LABEL[x.status] || x.status)}</span></td><td>${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">${e(String(x.website).replace(/^https?:\/\//i, ''))}</a>` : ''}</td><td>${e(x.email || '')}</td><td>${e(x.phone || '')}</td><td class="calc-hint" style="white-space:normal;max-width:260px;">${e(x.note || '')}${x.extra ? '<br>＋ ' + e(x.extra) : ''}</td></tr>`;
+  return `<tr><td>${e(x.name || '')}</td><td><span class="${cls}">${e(ENRICH_LABEL[x.status] || x.status)}</span></td><td>${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">${e(String(x.website).replace(/^https?:\/\//i, ''))}</a>` : ''}</td><td>${e(x.email || '')}</td><td>${e(x.phone || '')}</td><td class="calc-hint" style="white-space:normal;max-width:260px;">${e(x.note || '')}${x.extra ? '<br>＋ ' + e(x.extra) : ''}${x.mail === 'ok' ? '<br>✉️ 已寫好寄信內容' : x.mail === 'fail' ? '<br>✉️ 寄信內容沒寫成：' + e(x.mailNote || '') : ''}</td></tr>`;
 }
 
 async function startEnrich() {
@@ -1098,7 +1228,7 @@ async function startEnrich() {
     const batch = queue.slice(0, ENRICH_BATCH);
     let r = null;
     for (let attempt = 0; attempt < 3; attempt++) {
-      r = await callApi('prospectEnrich', { items: batch }, { silent: true });
+      r = await callApi('prospectEnrich', { items: batch, mail: document.getElementById('pen-mail').checked }, { silent: true });
       if (r && r.success) break;
       if (!(r && r.networkError) && !/忙碌/.test((r && r.message) || '')) break;
       await new Promise((res) => setTimeout(res, 3000 * (attempt + 1)));

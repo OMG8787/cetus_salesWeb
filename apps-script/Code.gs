@@ -11722,7 +11722,7 @@ function handleCopyGenerate(body) {
 // ============================================================
 var PS_SHEET = 'Prospects';
 // 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
-var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt', 'Type'];
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt', 'Type', 'MailSubject', 'MailBody', 'MailAt', 'MailSentAt'];
 var PS_LOG_SHEET = 'ProspectLogs';
 var PS_LOG_COLS = ['ID', 'Key', 'Time', 'User', 'Method', 'Content', 'Stage', 'NextFollowUp'];
 var PS_LOG_METHODS = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'];
@@ -11747,6 +11747,7 @@ function prospectPerms_() {
     prospectEnrichPlan: ['customers', 'w'], prospectEnrich: ['customers', 'w'],
     prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'], workAgenda: ['customers', 'r'], prospectImportCheck: ['customers', 'w'],
     prospectClear: ['admin', 'd'],
+    prospectMailCfg: ['customers', 'r'], prospectMailCfgSave: ['admin', 'w'], prospectMailPreview: ['customers', 'w'], prospectMailSend: ['customers', 'w'],
     prospectToCustomer: ['customers', 'w'], prospectDelete: ['customers', 'd'], prospectLookup: ['customers', 'r'],
   };
 }
@@ -11766,6 +11767,10 @@ function prospectRoutes_() {
     prospectImportCheck: { auth: true, fn: handleProspectImportCheck },
     prospectLogAdd: { auth: true, fn: handleProspectLogAdd },
     prospectClear: { auth: true, fn: handleProspectClear },
+    prospectMailCfg: { auth: true, fn: handleProspectMailCfg },
+    prospectMailCfgSave: { auth: true, fn: handleProspectMailCfgSave },
+    prospectMailPreview: { auth: true, fn: handleProspectMailPreview },
+    prospectMailSend: { auth: true, fn: handleProspectMailSend },
     prospectToCustomer: { auth: true, fn: handleProspectToCustomer },
     prospectDelete: { auth: true, fn: handleProspectDelete },
     prospectLookup: { auth: true, fn: handleProspectLookup },
@@ -12229,6 +12234,8 @@ function psMatch_(sh, body) {
 function psOut_(arr, rowNum) {
   var o = psObj_(arr);
   delete o.Search;
+  o.HasMail = o.MailBody ? 1 : 0;
+  delete o.MailBody; // 信件全文只在「預覽 / 寄信」時才讀
   o.RowIndex = rowNum;
   o.Stage = o.Stage || PS_STAGES[0];
   return o;
@@ -12717,7 +12724,7 @@ function psEnrichCount_(n) {
  * rec = 目前這一列的物件。結果 status：ok（有官網且抓到聯絡方式）/ nocontact（有官網但沒抓到）/ nosite（找不到或不確定是官網）/ blocked（網站不讓爬）/ error（網路或 API 錯誤）。
  */
 function psEnrichCompany_(rec) {
-  var out = { status: 'nosite', note: '', website: '', emails: [], phones: [], fill: {} };
+  var out = { status: 'nosite', note: '', website: '', emails: [], phones: [], fill: {}, pageText: '' };
   var key = PropertiesService.getScriptProperties().getProperty('GOOGLE_PLACES_API_KEY');
   var site = psNormalizeSite_(rec.Website);
   var trustedByPlaces = false;
@@ -12807,6 +12814,7 @@ function psEnrichCompany_(rec) {
     if (own.length) emails = own;
     out.emails = emails.slice(0, 5);
     out.phones = phones.slice(0, 3);
+    out.pageText = pages.map(function (pg) { return psHtmlText_(pg); }).join('\n').replace(/\s+/g, ' ').slice(0, PS_MAIL_TEXT_MAX);
     out.status = out.emails.length || out.phones.length ? 'ok' : 'nocontact';
     out.note = (hadSite ? '' : (trustedByPlaces ? 'Google Places 找到：' : '搜尋找到：')) + host + '（讀了 ' + pages.length + ' 頁）' + (out.status === 'nocontact' ? '，沒有找到公開的 Email 或電話' : '');
     return out;
@@ -12901,17 +12909,252 @@ function handleProspectEnrich(body) {
     var res = psEnrichCompany_(rec); // 網路請求在鎖外面做，不卡住其他人
     psEnrichCount_(1);
     // 寫回時重新讀一次（這段時間別人可能改過），只補空白欄位
+    var wrote = null;
     withLock_(function () {
       var sh = psSheet_(false);
       var cur = psReadRows_(sh, [row])[row];
       if (!cur || String(cur[0]) !== String(it.key)) return;
       var o = psApplyEnrich_(psObj_(cur), res);
       sh.getRange(row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+      wrote = o;
       results.push({ key: o.Key, name: o.Name, status: res.status, note: res.note, website: o.Website, email: o.Email, phone: o.Phone, extra: o.ExtraContacts });
     });
+    // 同時產生寄信內容：要有信箱、讀到官網文字、沒標拒絕聯絡、還沒有草稿才寫（AI 呼叫在鎖外面）
+    if (wrote && body.mail && res.pageText && wrote.Email && !wrote.Optout && !wrote.MailBody) {
+      var last = results[results.length - 1];
+      try {
+        var d = psMailDraft_(wrote, res.pageText);
+        psMailSaveDraft_(row, it.key, d);
+        last.mail = 'ok';
+        last.mailAngle = d.angle;
+      } catch (e2) {
+        last.mail = 'fail';
+        last.mailNote = String(e2.message || e2).slice(0, 120);
+      }
+    }
   }
   var q2 = psEnrichQuota_();
   return { success: true, results: results, remaining: items.slice(i), source: src, quota: { limit: q2.limit, used: q2.used } };
+}
+
+// ------------------------------------------------------------
+// 開發名單：開發信（讀完官網後，依對方的能力與鑫堡可合作的項目，寫出預設信件；預覽後直接寄出）
+// 設定存在指令碼屬性 PS_MAIL_CFG（JSON）：公司簡介、寫信原則、署名、寄件人名稱、附件（Google Drive 檔案連結或 ID）。
+// 附件一定要放在 Google Drive：Apps Script 跑在 Google 的伺服器，讀不到你電腦上的 D:\ 路徑。
+// ------------------------------------------------------------
+var PS_MAIL_TEXT_MAX = 6000;
+var PS_MAIL_DEFAULTS = {
+  sender: 'Austin',
+  fromName: '鑫堡股份有限公司 CETUS',
+  signature: 'Best Regards,\nAustin (0972259172)\n鑫堡股份有限公司 CETUS\n公司官網：https://www.cetus.tw/',
+  attach: '',
+  intro: '鑫堡股份有限公司（CETUS）主要從事工業機器視覺及 AOI 檢測系統整合，提供工業相機、鏡頭、光源、視覺演算法及客製化檢測軟體開發；另外也提供運動控制相關產品，包含運動控制卡、EtherCAT 控制器、線性馬達及伺服驅動等。AOI 可處理的項目包含：外觀瑕疵檢測、尺寸量測、定位辨識、異物檢測、OCR／條碼辨識、多角度影像檢查及自動化分選。',
+  strategy: '如果評估後發現對方與鑫堡在機械設備、運動控制、技術整合或專案配合上沒有明確的互補合作機會，就不勉強尋找合作切入點，直接以 AOI 生產線瑕疵檢測作為主要推廣方向。\n依照以下原則撰寫：\n1. 有明確合作互補性：主打雙方技術整合、機械設備合作、運動控制或客戶轉介。\n2. 對方本身是設備商或自動化廠商：主打 AOI 作為設備選配模組，協助客戶增加視覺檢測功能。\n3. 對方是製造商或工廠：直接推廣 AOI 生產線檢測，包含外觀瑕疵、尺寸量測、異物檢測、OCR／條碼辨識及自動化分選。\n4. 雙方沒有明確合作關聯：不硬談合作，直接介紹鑫堡的 AOI 檢測方案，爭取產線檢測需求。\n核心原則：以實際商業機會為主，不為了談合作而談合作；AOI 是主要業務，優先爭取檢測設備導入機會。',
+};
+
+function psMailCfg_() {
+  var o = {};
+  try {
+    o = JSON.parse(PropertiesService.getScriptProperties().getProperty('PS_MAIL_CFG') || '{}') || {};
+  } catch (e) {
+    o = {};
+  }
+  var out = {};
+  Object.keys(PS_MAIL_DEFAULTS).forEach(function (k) {
+    var v = typeof o[k] === 'string' ? o[k].trim() : '';
+    out[k] = v || (k === 'attach' ? '' : PS_MAIL_DEFAULTS[k]);
+  });
+  return out;
+}
+
+/** Google Drive 連結或純 ID → 檔案 ID；認不出來回空字串。 */
+function psDriveId_(v) {
+  var s = String(v || '').trim();
+  if (!s) return '';
+  var m = s.match(/\/d\/([A-Za-z0-9_-]{15,})/) || s.match(/[?&]id=([A-Za-z0-9_-]{15,})/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{15,}$/.test(s) ? s : '';
+}
+
+/** 設定的附件：回 { ok, id, name, size, message }；沒設定 ok=false、id=''。 */
+function psMailAttach_(cfg) {
+  var id = psDriveId_(cfg.attach);
+  if (!cfg.attach) return { ok: false, id: '', name: '', message: '' };
+  if (!id) return { ok: false, id: '', name: '', message: '附件不是有效的 Google Drive 連結或檔案 ID' };
+  try {
+    var f = DriveApp.getFileById(id);
+    return { ok: true, id: id, name: f.getName(), size: f.getSize ? f.getSize() : 0, message: '' };
+  } catch (e) {
+    return { ok: false, id: id, name: '', message: '讀不到這個附件（檔案不存在，或部署這個系統的 Google 帳號沒有權限）' };
+  }
+}
+
+function handleProspectMailCfg(body) {
+  var cfg = psMailCfg_();
+  var att = psMailAttach_(cfg);
+  return { success: true, cfg: cfg, defaults: PS_MAIL_DEFAULTS, attach: att };
+}
+
+function handleProspectMailCfgSave(body) {
+  var inc = body.cfg || {};
+  var next = {};
+  var lim = { sender: 40, fromName: 60, signature: 600, attach: 300, intro: 1500, strategy: 2500 };
+  Object.keys(lim).forEach(function (k) {
+    next[k] = typeof inc[k] === 'string' ? psClean_(inc[k], lim[k], k === 'signature' || k === 'intro' || k === 'strategy') : '';
+  });
+  if (next.attach && !psDriveId_(next.attach)) return { success: false, message: '附件請貼 Google Drive 的檔案連結（或檔案 ID）；電腦上的路徑（例如 D:\\...）Apps Script 讀不到' };
+  PropertiesService.getScriptProperties().setProperty('PS_MAIL_CFG', JSON.stringify(next));
+  var cfg = psMailCfg_();
+  return { success: true, cfg: cfg, attach: psMailAttach_(cfg) };
+}
+
+var PS_MAIL_TYPE_TEXT = { D: '設備商 / 自動化廠商', U: '一般使用者（製造商 / 工廠）' };
+
+/** 依官網文字寫一封開發信，回 { subject, body（已含署名）, angle, model }。失敗丟出錯誤。 */
+function psMailDraft_(rec, pageText) {
+  var list = botAiList_();
+  if (!list.length) throw new Error('還沒有設定 AI 模型：請到「BOT 設定 → AI 模型」填入 API Key');
+  var cfg = psMailCfg_();
+  var typeLetter = psTypeLetter_(rec.Type);
+  var system = '你是鑫堡股份有限公司的業務開發信寫手。使用繁體中文，語氣專業、誠懇、簡潔，不誇大。只根據提供的官網文字談對方的能力，文字裡沒有寫的事一律不要編造。';
+  var prompt = '【鑫堡簡介與可提供項目】\n' + cfg.intro +
+    '\n\n【寫信原則】\n' + cfg.strategy +
+    '\n\n【對方資料】\n公司名稱：' + rec.Name + '\n類型：' + (PS_MAIL_TYPE_TEXT[typeLetter] || '未分類（請依官網內容判斷是設備商還是製造商）') +
+    (rec.Products ? '\n登記產品：' + String(rec.Products).slice(0, 200) : '') + (rec.Category ? '\n產業類別：' + String(rec.Category).slice(0, 120) : '') +
+    '\n\n【對方官網文字（節錄）】\n' + String(pageText || '').slice(0, PS_MAIL_TEXT_MAX) +
+    '\n\n【輸出格式】只輸出一行 JSON，不要加說明或 markdown：{"angle":"collab|equipment|factory|aoi","subject":"信件主旨","body":"信件正文"}\n' +
+    'angle：collab = 有明確合作互補；equipment = 對方是設備商，主打 AOI 選配模組；factory = 對方是製造商 / 工廠，主打產線檢測；aoi = 沒有明確關聯，直接介紹 AOI 方案。\n' +
+    '正文要求：以「' + String(rec.Name).replace(/(股份)?有限公司$/, '') + '團隊您好：」開頭；第二句「我是鑫堡股份有限公司的 ' + cfg.sender + '。」；接著簡介鑫堡、說明從官網了解到對方的哪些能力或產品（要具體、只引用官網文字有的內容）、提出可合作或可導入的具體做法、最後邀請安排時間交流；約 300 到 450 字；段落之間空一行；不要寫署名與聯絡方式（系統會自動加上）；信裡有附上公司簡介 PDF 的話，可以提一句「附件為公司 AOI 檢測系統簡介」。';
+  var failures = [];
+  for (var i = 0; i < list.length; i++) {
+    try {
+      var text = botCallAi_(list[i], system, [{ role: 'user', text: prompt }], { maxTokens: 3000 });
+      var m = String(text || '').match(/\{[\s\S]*\}/);
+      var o = null;
+      try { o = m ? JSON.parse(m[0]) : null; } catch (e) { o = null; }
+      var bodyText = o && o.body ? String(o.body) : String(text || '');
+      bodyText = bodyText.replace(/^```[a-z]*\s*|```\s*$/g, '').trim();
+      if (!bodyText) throw new Error('AI 沒有產生內容');
+      var subject = psClean_(o && o.subject ? o.subject : '鑫堡 AOI 檢測方案｜' + rec.Name, 120);
+      var angle = o && /^(collab|equipment|factory|aoi)$/.test(String(o.angle)) ? String(o.angle) : 'aoi';
+      return { subject: subject, body: psClean_(bodyText, 4000, true) + '\n\n' + cfg.signature, angle: angle, model: (BOT_AI_PROVIDERS[list[i].provider] || {}).name + '／' + list[i].model };
+    } catch (e) {
+      failures.push(e.message);
+    }
+  }
+  throw new Error('AI 都失敗了：' + failures.join('；').slice(0, 300));
+}
+
+/** 把草稿寫進名單（重新讀一次那一列，只動信件欄位）。 */
+function psMailSaveDraft_(row, key, d) {
+  withLock_(function () {
+    var sh = psSheet_(false);
+    var found = psFindRow_(sh, key, row);
+    if (!found) return;
+    var o = found.obj;
+    o.MailSubject = d.subject;
+    o.MailBody = d.body;
+    o.MailAt = nowStr();
+    sh.getRange(found.row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+  });
+}
+
+/** 沒有 pageText 時（沒在查官網時一起產生過），現場讀官網首頁與最多 2 個「關於 / 聯絡」頁。 */
+function psMailSiteText_(rec) {
+  var site = psNormalizeSite_(rec.Website);
+  if (!site) return '';
+  var robots = psFetchPage_(site + '/robots.txt');
+  if (robots !== null && !psRobotsAllows_(robots, '/')) return '';
+  var home = psFetchPage_(site + '/');
+  if (home === null) home = psFetchPage_(site);
+  if (home === null) return '';
+  var texts = [psHtmlText_(home)];
+  psContactLinks_(home, site).filter(function (l) { return psRobotsAllows_(robots || '', l.url.replace(/^https?:\/\/[^\/]+/i, '') || '/'); }).slice(0, 2).forEach(function (l) {
+    var t = psFetchPage_(l.url);
+    if (t) texts.push(psHtmlText_(t));
+  });
+  return texts.join('\n').replace(/\s+/g, ' ').slice(0, PS_MAIL_TEXT_MAX);
+}
+
+/** 預覽：回傳這家的信件（沒有草稿或 regen = true 就現場產生）。產生失敗時仍回成功，給空白草稿（只有署名）讓人手寫，並說明原因。 */
+function handleProspectMailPreview(body) {
+  var key = String(body.key || '');
+  if (!key) return { success: false, message: '缺少名單編號' };
+  var sh = psSheet_(false);
+  if (!sh) return { success: false, message: '名單庫還是空的' };
+  var found = psFindRow_(sh, key, body.row);
+  if (!found) return { success: false, message: '找不到這筆名單（可能已被刪除），請重新整理' };
+  var o = found.obj;
+  if (o.Optout) return { success: false, message: '這家標了「拒絕聯絡」，不能寄信' };
+  var cfg = psMailCfg_();
+  var genError = '';
+  var generated = false;
+  if (body.regen || !o.MailBody) {
+    try {
+      var text = psMailSiteText_(o);
+      if (!text) throw new Error(o.Website ? '讀不到官網內容（網站打不開，或 robots.txt 不允許讀取），沒有可以參考的資料' : '這家還沒有官網，沒有可以參考的資料（可以先用「找官網與聯絡方式」）');
+      var d = psMailDraft_(o, text);
+      psMailSaveDraft_(found.row, key, d);
+      o.MailSubject = d.subject;
+      o.MailBody = d.body;
+      generated = true;
+    } catch (e) {
+      genError = String(e.message || e).slice(0, 200);
+      if (!o.MailBody) {
+        o.MailSubject = '鑫堡 AOI 檢測方案｜' + o.Name;
+        o.MailBody = '您好：\n\n\n' + cfg.signature;
+      }
+    }
+  }
+  var att = psMailAttach_(cfg);
+  return { success: true, to: o.Email || '', name: o.Name, subject: o.MailSubject, body: o.MailBody, generated: generated, genError: genError, draftAt: o.MailAt || '', sentAt: o.MailSentAt || '', attach: { configured: !!cfg.attach, ok: att.ok, name: att.name, message: att.message }, fromName: cfg.fromName };
+}
+
+/** 寄出（使用者已預覽、可編輯內容）：寄信 → 記錄到聯繫紀錄（Email）→ 開發狀態從「未處理」變「已聯絡」。 */
+function handleProspectMailSend(body) {
+  var key = String(body.key || '');
+  var to = psEmail_(body.to);
+  var subject = psClean_(body.subject, 200);
+  var text = psClean_(body.body, 8000, true);
+  if (!key) return { success: false, message: '缺少名單編號' };
+  if (!to) return { success: false, message: '收件人 Email 格式不對' };
+  if (!subject) return { success: false, message: '請填寫主旨' };
+  if (text.length < 20) return { success: false, message: '信件內容太短' };
+  var sh = psSheet_(false);
+  if (!sh) return { success: false, message: '名單庫還是空的' };
+  var found = psFindRow_(sh, key, body.row);
+  if (!found) return { success: false, message: '找不到這筆名單（可能已被刪除），請重新整理' };
+  if (found.obj.Optout) return { success: false, message: '這家標了「拒絕聯絡」，不能寄信' };
+  var cache = CacheService.getScriptCache();
+  var dupKey = 'psmail:' + key;
+  if (cache.get(dupKey)) return { success: false, message: '剛剛已經寄出過這封信，請稍候再寄（避免重複寄送）' };
+  var cfg = psMailCfg_();
+  var opts = { name: cfg.fromName };
+  var attName = '';
+  if (cfg.attach && body.noAttach !== true) {
+    var att = psMailAttach_(cfg);
+    if (!att.ok) return { success: false, message: '附件讀取失敗，信沒有寄出：' + att.message + '（可以先在「寄信設定」修正，或勾選「這封不附檔案」）' };
+    opts.attachments = [DriveApp.getFileById(att.id).getBlob()];
+    attName = att.name;
+  }
+  try {
+    GmailApp.sendEmail(to, subject, text, opts);
+  } catch (e) {
+    return { success: false, message: '寄信失敗：' + String(e.message || e).slice(0, 160) };
+  }
+  cache.put(dupKey, '1', 30);
+  var now = nowStr();
+  withLock_(function () {
+    var f2 = psFindRow_(psSheet_(false), key, found.row);
+    if (!f2) return;
+    var o2 = f2.obj;
+    o2.MailSubject = subject;
+    o2.MailBody = text;
+    o2.MailSentAt = now;
+    psSheet_(false).getRange(f2.row, 1, 1, PS_COLS.length).setValues([psArr_(o2)]);
+  });
+  var logged = handleProspectLogAdd({ _user: body._user, key: key, row: found.row, method: 'Email', content: '寄出開發信：「' + subject + '」→ ' + to + (attName ? '（附件：' + attName + '）' : '（沒有附件）'), nextFollowUp: found.obj.NextFollowUp || '' });
+  return { success: true, sentAt: now, attach: attName, row: logged && logged.success ? logged.row : null, logError: logged && logged.success ? '' : (logged && logged.message) || '' };
 }
 
 // ------------------------------------------------------------
