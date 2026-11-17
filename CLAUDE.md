@@ -16,7 +16,7 @@
 - 新頁面：新增 `frontend/<頁>.html` + `<頁>.js` → 用 `common.js` 的 callApi → `demo.js` 補假資料 → README 檔案結構登記。
 - 新後端動作：在 `Code.gs` 加 action → `apps-script/tests/` 補 `.test.js` → `setup()` 必須維持可重跑（idempotent）。
 - 機器人新工具：`linebot/src/` 實作 → `test/` 補測試；AI 只能提議寫入／刪除，由使用者確認後才寫。
-- 改核心先說明原因與影響：`Code.gs` 的權限／setup、`frontend/common.js`、`linebot/src/gas.ts`（被 21 檔引用）、`cs.ts`、`config.ts`。
+- 改核心先說明原因與影響：`Code.gs` 的權限／setup、`frontend/common.js`、`linebot/src/gas.ts`（被 22 檔引用）、`cs.ts`、`config.ts`。
 
 ## 業務規則放哪
 - 客戶分級、權限、知識庫可見對象（`cs`／`staff`）都在 `Code.gs`，前端只負責顯示；README 有對應說明，改規則要一起更新。

@@ -1,20 +1,20 @@
 {
  "version": 2,
  "root": "D:\\claude\\CetusSalesWeb",
- "generatedAt": "2026-11-13T09:23:26",
+ "generatedAt": "2026-11-17T13:24:39",
  "maxLines": 800,
  "counts": {
-  "source": 66,
-  "test": 49,
+  "source": 67,
+  "test": 53,
   "script": 0,
   "config": 9,
-  "doc": 5,
+  "doc": 8,
   "other": 30,
-  "asset": 6
+  "asset": 7
  },
  "languages": {
-  ".js": 74,
-  ".ts": 41
+  ".js": 77,
+  ".ts": 43
  },
  "entryPoints": [],
  "files": {
@@ -26,11 +26,27 @@
    "kind": "config",
    "ext": ""
   },
+  "CLAUDE.md": {
+   "sha256": "dee95753ed5c1c990bbab2b149c28cf49e236f7968846c0bde8ede0c719eef00",
+   "size": 2685,
+   "mtime": 1794552792033976200,
+   "lines": 28,
+   "kind": "doc",
+   "ext": ".md"
+  },
+  "PROGRESS.md": {
+   "sha256": "080ef93944e131618126237d9fc2bac080bc30d861584958161a3713da907d6e",
+   "size": 1975,
+   "mtime": 1794892859883025600,
+   "lines": 14,
+   "kind": "doc",
+   "ext": ".md"
+  },
   "README.md": {
-   "sha256": "934966a90ee9feefc77a8f86369a766ae8a601f0f6cf231eb5647662df0cab22",
-   "size": 84496,
-   "mtime": 1794486318838110500,
-   "lines": 340,
+   "sha256": "dc21eb3df2ce3dc7fa75d7fe1299325de69f44c65b619d29ef188862cbcaf963",
+   "size": 89314,
+   "mtime": 1794887847053651400,
+   "lines": 367,
    "kind": "doc",
    "ext": ".md"
   },
@@ -42,19 +58,27 @@
    "kind": "doc",
    "ext": ".md"
   },
+  "robot-app.js": {
+   "sha256": "1a26f505d59e8fd05fb45b2e4a45041de590885195245bc3634a1549837ba927",
+   "size": 17157,
+   "mtime": 1794552516746773700,
+   "lines": 359,
+   "kind": "source",
+   "ext": ".js"
+  },
   "robot-loader.js": {
    "sha256": "39e2623cf70620cdab28d95fef7167abf8f058c3cf3a8c17425b56534c68568f",
    "size": 1370,
-   "mtime": 1793863919719081000,
+   "mtime": 1794553572437189000,
    "lines": 41,
    "kind": "source",
    "ext": ".js"
   },
   "robot-widget.js": {
-   "sha256": "0f362ced0b7c1c1a9ec6e4cac34caaf0077c03452465aa385ac1057fd4e04727",
-   "size": 14192,
-   "mtime": 1794495213625930100,
-   "lines": 315,
+   "sha256": "ddd784040c23aebe6869e795842ccd9d3d6bafd5127d0bbb3ecea16bb014367a",
+   "size": 1432,
+   "mtime": 1794552779962696500,
+   "lines": 27,
    "kind": "source",
    "ext": ".js"
   },
@@ -75,9 +99,9 @@
    "ext": ".json"
   },
   "apps-script/Code.gs": {
-   "sha256": "ee7db08f09557d55de8895ffd769f833be577684ecc4151454e1d731ddc49181",
-   "size": 646570,
-   "mtime": 1794489323947436200,
+   "sha256": "85da3768b84baa444503c6dad0409045ed1c2f6d1190f4accee482db7c609d4f",
+   "size": 671818,
+   "mtime": 1794887738217116700,
    "lines": null,
    "kind": "other",
    "ext": ".gs"
@@ -131,10 +155,10 @@
    "ext": ".js"
   },
   "apps-script/tests/bot.test.js": {
-   "sha256": "2e8eeca347234db7fcb072025bebdc377c310ad98528c949913d725ed41f525a",
-   "size": 17550,
-   "mtime": 1794487015382033700,
-   "lines": 237,
+   "sha256": "ac9c73862b51acb18c6a7f136feee193008bb4e0913fecca80e567b40326e1d8",
+   "size": 19500,
+   "mtime": 1794553544304991700,
+   "lines": 266,
    "kind": "test",
    "ext": ".js"
   },
@@ -274,6 +298,14 @@
    "kind": "test",
    "ext": ".js"
   },
+  "apps-script/tests/notify.test.js": {
+   "sha256": "6479bf0a1406dc5e038a0c584c33e611e6ca77f0d0b29c837a72fab41707d957",
+   "size": 6879,
+   "mtime": 1794761384069295100,
+   "lines": 94,
+   "kind": "test",
+   "ext": ".js"
+  },
   "apps-script/tests/product-export.test.js": {
    "sha256": "dcc8f4f4021acedbdad5ea2571a480601e1340a2cf2986b51c5701222fc93945",
    "size": 7391,
@@ -319,6 +351,14 @@
    "size": 10140,
    "mtime": 1794317371594444900,
    "lines": 116,
+   "kind": "test",
+   "ext": ".js"
+  },
+  "apps-script/tests/prospects-mail.test.js": {
+   "sha256": "96d52648ac1de3fd556a2e71d55529b24ca60f395376905e27f5c60cd61e2a76",
+   "size": 12990,
+   "mtime": 1794887779585427300,
+   "lines": 153,
    "kind": "test",
    "ext": ".js"
   },
@@ -395,18 +435,18 @@
    "ext": ".js"
   },
   "frontend/bot.html": {
-   "sha256": "88e64fd52a6d86131a6a820ea98fb26482bcfd69827b618e8ff8ea9d4c23ce73",
-   "size": 58740,
-   "mtime": 1794489303838322100,
+   "sha256": "dc2c09c3b6adf7dca9db2b08b0c667df373776def669a0c3277c6aa4bc866772",
+   "size": 66165,
+   "mtime": 1794790754177077700,
    "lines": null,
    "kind": "other",
    "ext": ".html"
   },
   "frontend/bot.js": {
-   "sha256": "3df967dbe1d23b3299062d2a0d268ffa6e0258ea727a7023e7ddb6a9d8b927d7",
-   "size": 77096,
-   "mtime": 1794486756745119900,
-   "lines": 1431,
+   "sha256": "3ffa87407582c095762e2aa69c8cb5270a9d5c0093325db12fa2b2fc4868f512",
+   "size": 86387,
+   "mtime": 1794790754173980700,
+   "lines": 1592,
    "kind": "source",
    "ext": ".js"
   },
@@ -427,9 +467,9 @@
    "ext": ".js"
   },
   "frontend/calc.html": {
-   "sha256": "69565c777b1077a98c4831569d46046f4d2f494ab6a80b55d1cc0c07548e5e98",
-   "size": 19474,
-   "mtime": 1794489303874069600,
+   "sha256": "fdf9089e774abc537f236379574ae027f6e7d709ef15f5fd8445f84beb4fce5e",
+   "size": 20686,
+   "mtime": 1794790752968917200,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -451,9 +491,9 @@
    "ext": ".js"
   },
   "frontend/cases.html": {
-   "sha256": "171bd99db6288c8261896c846ab7a61c11a21ba593801efae76dd6ecdccc112e",
-   "size": 19120,
-   "mtime": 1794489303899973800,
+   "sha256": "5a437ba3cb641f171613c6f1a6e8cca99826837b9f4bc64eeae5255242259b1b",
+   "size": 20332,
+   "mtime": 1794790752984175100,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -491,9 +531,9 @@
    "ext": ".js"
   },
   "frontend/copy.html": {
-   "sha256": "5ad62c75343fd5f8dacd7e0421cb77b29032ea905331db1cd4a75ef96cca57f7",
-   "size": 14130,
-   "mtime": 1794489303921738500,
+   "sha256": "1e84b3344a6c027f645b77e94daebacf4791b06d992bc5824e9640590e5aa213",
+   "size": 15342,
+   "mtime": 1794790753078311700,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -507,9 +547,9 @@
    "ext": ".js"
   },
   "frontend/customers.html": {
-   "sha256": "6985141f7ab81750908f69921f6abcd9fee83b33fb94ae90f6db17d77cf15a22",
-   "size": 16896,
-   "mtime": 1794489303942444500,
+   "sha256": "559173357733be8f9222e5a31d09a80d52f16fe88806f27eecd6c8bf0d85b452",
+   "size": 18108,
+   "mtime": 1794790753092403000,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -539,17 +579,17 @@
    "ext": ".js"
   },
   "frontend/demo.js": {
-   "sha256": "c85bb5ab931df77eaa50d60a5ae8179bbee4c77e031732a1de74e04856eedda4",
-   "size": 84771,
-   "mtime": 1794117961482920100,
-   "lines": 1490,
+   "sha256": "fc2592a983d8a6f810347dedbf34324115d3fd74d6ee523b4e26f1363184f1a8",
+   "size": 84880,
+   "mtime": 1794761388522234500,
+   "lines": 1492,
    "kind": "source",
    "ext": ".js"
   },
   "frontend/devices.html": {
-   "sha256": "d40447dbd778875214acb55e51423ae6ba578cc96b8ea5aae7a4e09bafe4f337",
-   "size": 7447,
-   "mtime": 1794489303965411900,
+   "sha256": "79ec80be1ceb2a1fd95b464481e42b91796b0b7a206aae061b8907b054d1081b",
+   "size": 8659,
+   "mtime": 1794790753104000300,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -571,9 +611,9 @@
    "ext": ".js"
   },
   "frontend/evalreport.html": {
-   "sha256": "96b059e833b0bd5d25481ade7b694e27015578571f58f2dd82d53976e1d91d7f",
-   "size": 12251,
-   "mtime": 1794489303986329500,
+   "sha256": "ab2000d2498b98946e541ea5cb960dc5fd5c68f401ddd79d99d496d9662ecc76",
+   "size": 13463,
+   "mtime": 1794790753118475600,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -587,9 +627,9 @@
    "ext": ".js"
   },
   "frontend/home.html": {
-   "sha256": "c6881568d55a62ad3fe7b894e6904a590ba94b8e7b48af71481112c6755e2466",
-   "size": 7949,
-   "mtime": 1794489304013931700,
+   "sha256": "e77ac78c847f7dc7dce752a0e37b2ba1be287b7fe7b65619262ea218399936ed",
+   "size": 9161,
+   "mtime": 1794790753603369700,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -619,9 +659,9 @@
    "ext": ".js"
   },
   "frontend/marketing.html": {
-   "sha256": "c2ccc73112931bbf9a426cadc6451cd5b2f2b8c1e4ad19895cb2b4adfc00f689",
-   "size": 9638,
-   "mtime": 1794489304061701500,
+   "sha256": "30504100c2cecf80c25c64b98c086bb46a60daffdaa2795719a7513ee3143b21",
+   "size": 10850,
+   "mtime": 1794790753838786900,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -635,9 +675,9 @@
    "ext": ".js"
   },
   "frontend/namecards.html": {
-   "sha256": "f71c3b1e1b61c1234069fe0e4080ee481b40f0894f9e90c9663ecd3760d7e155",
-   "size": 7535,
-   "mtime": 1794489304088973800,
+   "sha256": "80315d7c3821040039f4e36266b1743959f803acb9fc96cc95aa088be3939904",
+   "size": 8747,
+   "mtime": 1794790753850464500,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -659,9 +699,9 @@
    "ext": ".js"
   },
   "frontend/products.html": {
-   "sha256": "a45af15c82b1f7df9b10ad99304ecb95ef2577a45f64f7b0cbb1b0bac45f0dab",
-   "size": 22627,
-   "mtime": 1794489304117597000,
+   "sha256": "0f81c2d560d98beb3a6376a720c0001d420e3636bb63101b7b56cf012a179cce",
+   "size": 23839,
+   "mtime": 1794790754075999300,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -675,9 +715,9 @@
    "ext": ".js"
   },
   "frontend/profile.html": {
-   "sha256": "8d8c970c96e4ac375214a1c2b3e0bc4e742bd23f288c1346fca5c32714baf452",
-   "size": 5698,
-   "mtime": 1794489304151125500,
+   "sha256": "bc0943ab35603093eec2deb2efee442c631b0cb9e510ad867dd4dc6ee1f37f98",
+   "size": 6910,
+   "mtime": 1794790754086947400,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -699,25 +739,25 @@
    "ext": ".js"
   },
   "frontend/prospects.html": {
-   "sha256": "d0083f04214d7794ea7da051f6fc2de6d94d6712529c8866a08e9ec9038e29f0",
-   "size": 19884,
-   "mtime": 1794489304172478300,
+   "sha256": "ad7d14944c1821a6288ab3901ba637000aee1d9f18920dc03d411f994d76b678",
+   "size": 24737,
+   "mtime": 1794887824854749300,
    "lines": null,
    "kind": "other",
    "ext": ".html"
   },
   "frontend/prospects.js": {
-   "sha256": "8bc9472938928962e0f972c244117c1cbc516e3fda3854eabb2fb216a2f15f12",
-   "size": 68276,
-   "mtime": 1794367565898162600,
-   "lines": 1257,
+   "sha256": "c0c17bb76b54e532cd02e2416ecc025176be38d0158c5593e02ce3e57d7ffe77",
+   "size": 74730,
+   "mtime": 1794887824871147300,
+   "lines": 1387,
    "kind": "source",
    "ext": ".js"
   },
   "frontend/quote.html": {
-   "sha256": "146fbee5d39ebc5b59e78fe3a4044124ac59e721fb74d6036781b6696a9a0ac9",
-   "size": 11903,
-   "mtime": 1794489304201002500,
+   "sha256": "ef3a2e6d645dc00440cbf87e8d9665aa8a9e36bf45c2a11598cefb84c8e91848",
+   "size": 13115,
+   "mtime": 1794790754115726000,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -739,9 +779,9 @@
    "ext": ".js"
   },
   "frontend/schedule.html": {
-   "sha256": "1de121e7681e7e1e327d8303c25180a711cbe7df8eec1a63415f85db7dbf527e",
-   "size": 14694,
-   "mtime": 1794489304234343600,
+   "sha256": "e8cf9c206f3f66d3cbac4ca7a06320a1e7e3ed212ae8e680139df071230a510f",
+   "size": 15906,
+   "mtime": 1794790754129021100,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -763,9 +803,9 @@
    "ext": ".js"
   },
   "frontend/staff.html": {
-   "sha256": "d5009215f15c66f44ef524cc03303bead2f302fbf42627893419b3add05be050",
-   "size": 5598,
-   "mtime": 1794489304258741600,
+   "sha256": "d99cbb76d711879cab66ffc650d1d170992f0afe3d27abddcc0c8ae28f692f6f",
+   "size": 6810,
+   "mtime": 1794790754140107400,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -811,9 +851,9 @@
    "ext": ".js"
   },
   "frontend/users.html": {
-   "sha256": "f0daf3cf724d5ba232b24f006f481e02d269f362bd6b55809ecc02bc16f7f95a",
-   "size": 11670,
-   "mtime": 1794489304308345200,
+   "sha256": "55b021fa8bfb1bad73e316a05d23147be7bba3e895e8ee441db031b94d9b4f64",
+   "size": 12882,
+   "mtime": 1794790754157159400,
    "lines": null,
    "kind": "other",
    "ext": ".html"
@@ -887,6 +927,14 @@
    "size": 225118,
    "mtime": 1793873727714715600,
    "lines": 3169,
+   "kind": "doc",
+   "ext": ".txt"
+  },
+  "kb-source/mtt寶迪官網資料.txt": {
+   "sha256": "6feea7d7573509e79456be6490639d53d6e883e253439aab8bffbee40fbd0818",
+   "size": 39010,
+   "mtime": 1794557353629959100,
+   "lines": 1332,
    "kind": "doc",
    "ext": ".txt"
   },
@@ -971,10 +1019,10 @@
    "ext": ".ts"
   },
   "linebot/api/push.ts": {
-   "sha256": "d6f569511eb345ea311109ed51af7fa51ce8a74bd6ddcc6df3e1a247370f7b22",
-   "size": 929,
-   "mtime": 1793776289847682400,
-   "lines": 21,
+   "sha256": "dbd07d14bf63d6371a6d259e3f805412fd0b78dc81d03189d18e96154c487ff0",
+   "size": 1372,
+   "mtime": 1794761288324553600,
+   "lines": 27,
    "kind": "source",
    "ext": ".ts"
   },
@@ -1035,10 +1083,10 @@
    "ext": ".ts"
   },
   "linebot/api/widget/messages.ts": {
-   "sha256": "d39177e47ba600e32a7f6f9f262caa4fe22d404d45c7c3dbf28820205705627b",
-   "size": 2961,
-   "mtime": 1794485094086566600,
-   "lines": 59,
+   "sha256": "1fc95d83872646da961d582c9de4159b094e61e0a195ecbf413bdfa62f8b8969",
+   "size": 3140,
+   "mtime": 1794553526745384200,
+   "lines": 60,
    "kind": "source",
    "ext": ".ts"
   },
@@ -1051,10 +1099,10 @@
    "ext": ".html"
   },
   "linebot/public/widget.js": {
-   "sha256": "3a6cf87cd6fb4c7117863d0b71d5f0367a1738ba258ab04da21707b7e7d8c68d",
-   "size": 36372,
-   "mtime": 1794486756747618100,
-   "lines": 557,
+   "sha256": "19e3e45296a707f11841bb0fafb8c2bd01aeec1e893d128ec8b01b9296fae41e",
+   "size": 38039,
+   "mtime": 1794761313928845800,
+   "lines": 575,
    "kind": "source",
    "ext": ".js"
   },
@@ -1107,18 +1155,18 @@
    "ext": ".ts"
   },
   "linebot/src/cs.ts": {
-   "sha256": "fa3c2fa98d6e542f9b19a0a709cbcbb1816aed6c1e0fae213b1ccbe7ed409772",
-   "size": 38519,
-   "mtime": 1794467000214447500,
-   "lines": 600,
+   "sha256": "14b5b6cd743b0d99054b376591b87693a879d9f87587c528674355bef79ecbcb",
+   "size": 38717,
+   "mtime": 1794761288310359000,
+   "lines": 601,
    "kind": "source",
    "ext": ".ts"
   },
   "linebot/src/gas.ts": {
-   "sha256": "d8e0f59c25475eaeca25539e6871f4fefe3349c155efc8882d3f21afb7b338fa",
-   "size": 14803,
-   "mtime": 1794467972408306100,
-   "lines": 363,
+   "sha256": "8031c5e4ab1d73368f7d384382535b43ce9d3deb05ee706793cf61cfe310db1a",
+   "size": 15310,
+   "mtime": 1794761288289295500,
+   "lines": 371,
    "kind": "source",
    "ext": ".ts"
   },
@@ -1171,10 +1219,10 @@
    "ext": ".ts"
   },
   "linebot/src/staff.ts": {
-   "sha256": "a5b6d700cf0ab8bab18e9880a431ecf31dfa6538422038e5ede43d3cdb0ad494",
-   "size": 61623,
-   "mtime": 1794368327579994800,
-   "lines": 913,
+   "sha256": "95d2a52578ea6c525a1e7627ffab6cd6b87b31c0cd2f898e3ee6a50fd9bdf089",
+   "size": 62314,
+   "mtime": 1794761288319832300,
+   "lines": 928,
    "kind": "source",
    "ext": ".ts"
   },
@@ -1187,10 +1235,10 @@
    "ext": ".ts"
   },
   "linebot/src/web.ts": {
-   "sha256": "31e122473a8e2a82a0c2d59fb407015c5eb879cd816b6d68352468c0d0e18793",
-   "size": 5681,
-   "mtime": 1794194263026218100,
-   "lines": 126,
+   "sha256": "91e901bcb5963746c7a56cb4af1e3582207f7006cf8cde4326fa151f551330fa",
+   "size": 5795,
+   "mtime": 1794761288299446100,
+   "lines": 129,
    "kind": "source",
    "ext": ".ts"
   },
@@ -1226,6 +1274,14 @@
    "kind": "test",
    "ext": ".ts"
   },
+  "linebot/test/depgraph-gate.test.ts": {
+   "sha256": "b82ba93a8d65d4b0fee828109991e5f0019662ad8300441e055b9d702d37b206",
+   "size": 1768,
+   "mtime": 1794533079259494400,
+   "lines": 37,
+   "kind": "test",
+   "ext": ".ts"
+  },
   "linebot/test/ground.test.ts": {
    "sha256": "eb21396b8b7d403a462244f0d5e08132781f0bd3d9c3922e986ef4e67370457a",
    "size": 9407,
@@ -1239,6 +1295,14 @@
    "size": 10389,
    "mtime": 1794194370874436600,
    "lines": 179,
+   "kind": "test",
+   "ext": ".ts"
+  },
+  "linebot/test/handoff-lead.test.ts": {
+   "sha256": "3594d60839a314a50aa0db0f0a6c2c4322fd86e030afd2de3194019edf825c2d",
+   "size": 1452,
+   "mtime": 1794761398881500600,
+   "lines": 30,
    "kind": "test",
    "ext": ".ts"
   },
@@ -1291,20 +1355,20 @@
    "ext": ".ts"
   }
  },
- "graphEdges": 165,
+ "graphEdges": 169,
  "cycles": [],
  "mostDepended": [
   [
    "apps-script/tests/gasmock.js",
-   33
+   35
   ],
   [
    "linebot/src/gas.ts",
-   21
+   22
   ],
   [
    "linebot/src/cs.ts",
-   15
+   16
   ],
   [
    "linebot/src/web.ts",
@@ -1337,28 +1401,28 @@
  ],
  "biggest": [
   [
+   "frontend/bot.js",
+   1592
+  ],
+  [
    "frontend/evalreport.js",
    1542
   ],
   [
    "frontend/demo.js",
-   1490
-  ],
-  [
-   "frontend/bot.js",
-   1431
+   1492
   ],
   [
    "frontend/calc.js",
    1393
   ],
   [
-   "frontend/common.js",
-   1366
+   "frontend/prospects.js",
+   1387
   ],
   [
-   "frontend/prospects.js",
-   1257
+   "frontend/common.js",
+   1366
   ],
   [
    "frontend/products.js",
@@ -1366,7 +1430,7 @@
   ],
   [
    "linebot/src/staff.ts",
-   913
+   928
   ],
   [
    "frontend/cases.js",
@@ -1380,18 +1444,18 @@
  "problems": [
   {
    "kind": "big-file",
+   "file": "frontend/bot.js",
+   "detail": "1592 行 > 800"
+  },
+  {
+   "kind": "big-file",
    "file": "frontend/evalreport.js",
    "detail": "1542 行 > 800"
   },
   {
    "kind": "big-file",
    "file": "frontend/demo.js",
-   "detail": "1490 行 > 800"
-  },
-  {
-   "kind": "big-file",
-   "file": "frontend/bot.js",
-   "detail": "1431 行 > 800"
+   "detail": "1492 行 > 800"
   },
   {
    "kind": "big-file",
@@ -1400,13 +1464,13 @@
   },
   {
    "kind": "big-file",
-   "file": "frontend/common.js",
-   "detail": "1366 行 > 800"
+   "file": "frontend/prospects.js",
+   "detail": "1387 行 > 800"
   },
   {
    "kind": "big-file",
-   "file": "frontend/prospects.js",
-   "detail": "1257 行 > 800"
+   "file": "frontend/common.js",
+   "detail": "1366 行 > 800"
   },
   {
    "kind": "big-file",
@@ -1416,7 +1480,7 @@
   {
    "kind": "big-file",
    "file": "linebot/src/staff.ts",
-   "detail": "913 行 > 800"
+   "detail": "928 行 > 800"
   },
   {
    "kind": "big-file",
