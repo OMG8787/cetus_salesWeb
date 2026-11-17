@@ -21,3 +21,4 @@
 - 待辦：9 個檔 >800 行（`evalreport.js`、`demo.js`、`bot.js`、`calc.js`、`common.js`、`prospects.js`、`Code.gs` 等）排進拆檔（`cds-modularize`），需使用者同意才開拆。
 - 其他未完：寶迪知識庫重新匯入、寶迪產品頁規格慢速重抓；cetus.tw SEO 報告已發 Artifact，給 webtech 的修改清單未做。
 - 2026-11-17 晚｜使用者要求「名單中沒有開發信件的也補足，之後要直接發送」：沒有草稿且有 Email、沒拒絕聯絡的共 681 家（清單 scratchpad `teeia/todo-mail.json`，可用 `node tools/claude-api.js list '{"noMail":true}'` 重抓）。已寫 6 封（元捷、帝駒、東榮豐、春竑、承輝、昊爾，`fill` 存草稿）。**刻意略過**：三德科技（官網有薄膜檢測、黏袋視覺檢測機＝可能同業）、益賽德（Exyte 無塵室工程，非目標）。下一場：每批約 30～50 家，先抓官網文字（TEEIA 的在 `teeia/enrich-out.json` 的 text；舊名單要重讀官網），依 mailCfg 寫信 → fill；第四批標「可能是同業」的 75 家先列給使用者確認，不寫。
+- 2026-11-17 晚｜開發信續寫：TEEIA 批完成（寫 43 封、略過 16 家，略過原因在 scratchpad `teeia/mail-skip.json`）。舊名單 622 家：85 家備註「可能是同業」不寫（`teeia/old-peer.json`，要給使用者確認）；537 家背景讀官網中（`enrich-run.js` → `teeia/old-out.json`，可續跑），讀完一批就用 `teeia/mailgen.py` 的範本寫信 → `fill`。scratchpad 若被清掉：用 `list noMail` 重抓即可，已寫的不會重寫（fill 不覆蓋草稿）。
