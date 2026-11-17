@@ -365,3 +365,11 @@ cd linebot && npm run typecheck && npm test   # 機器人伺服器：檢索 / �
 - **設定項目**（只有管理員能儲存，留空 = 預設）：附件、寄件人名稱、署名、鑫堡簡介、寫信原則。存在指令碼屬性 `PS_MAIL_CFG`。
 - **寄信額度**：用部署者的 Gmail 寄出，受 Google 每日寄信額度限制；超過時會回報錯誤，不會記成已寄出。
 - **部署**：`Code.gs` 整份貼上並發新版本（寄信需要的 Gmail、Drive 權限在 appsscript.json 已有）；前端推上 GitHub Pages，Ctrl+F5。
+
+## 開發名單：Claude 專用金鑰（本機 Claude Code 代查、代寫、直接匯入）
+
+- **用途**：讓使用者電腦上的 Claude Code 用使用者自己的 Claude 訂閱額度讀官網、寫開發信，再把結果寫回名單；**不使用「BOT 設定」的 AI 金鑰**。
+- **產生 / 換新 / 停用**：Apps Script 編輯器選 `claudeKeyGenerate` 按「執行」，執行紀錄會顯示金鑰（只顯示一次，系統只存雜湊值）；再執行一次 = 換新、舊的立刻失效；`claudeKeyRevoke` = 停用。
+- **能做的**（`action: claudeApi` + `op`）：`list` 讀未處理名單（可只看設備商 / 沒草稿的）、`index` 全部名單的名稱 / 官網 / 統編（匯入前比對）、`mailCfg` 寫信原則與署名、`importCheck` 匯入前檢查、`import` 匯入（只新增不存在的，已存在的只補空白；已是客戶、隱藏名單一律略過；來源標「Claude代查：…」）、`fill` 寫回官網 / 電話 / Email / 聯絡人 / 產品（只補空白）與開發信草稿（已有草稿不覆蓋）。
+- **不能做的**：刪除、寄信、改開發狀態、覆蓋已有資料、取消隱藏。
+- **本機工具**：`node tools/claude-api.js <op> [JSON 或 @檔案]`，金鑰放環境變數 `CLAUDE_KEY` 或 `.claude/claude-key.txt`（已 gitignore）。

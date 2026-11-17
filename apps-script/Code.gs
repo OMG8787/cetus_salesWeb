@@ -11774,6 +11774,7 @@ function prospectRoutes_() {
     prospectToCustomer: { auth: true, fn: handleProspectToCustomer },
     prospectDelete: { auth: true, fn: handleProspectDelete },
     prospectLookup: { auth: true, fn: handleProspectLookup },
+    claudeApi: { auth: false, fn: handleClaudeApi }, // Claude 專用金鑰（不用登入，用金鑰驗證；見檔尾）
   };
 }
 
@@ -13863,4 +13864,184 @@ function psMigrateType_(sh) {
   }
   sh.getRange(2, psCol_('Type'), n, 1).setValues(types);
   hasR.setValues(has);
+}
+
+// ============================================================
+// Claude 專用金鑰：讓使用者電腦上的 Claude Code（用使用者自己的 Claude 訂閱額度，不用 BOT 設定的 AI 金鑰）
+// 讀「未處理」名單、把查到的官網 / 聯絡方式 / 開發信草稿寫回、直接匯入新名單。
+// 這把金鑰只能「新增、只補空白」：不能刪除、不能寄信、不能改開發狀態、不能覆蓋已經有的資料。
+// 產生：在 Apps Script 編輯器選 claudeKeyGenerate 按「執行」，執行紀錄會顯示金鑰（只顯示這一次，系統只存雜湊值）。
+// 重新執行 = 換新金鑰、舊的立刻失效；執行 claudeKeyRevoke = 停用。
+// ============================================================
+var CLAUDE_KEY_PROP = 'CLAUDE_KEY_HASH';
+var CLAUDE_OPS = ['ping', 'list', 'index', 'mailCfg', 'importCheck', 'import', 'fill'];
+var CLAUDE_FILL_FIELDS = ['Website', 'Phone', 'Email', 'Contact', 'Products'];
+var CLAUDE_ENRICH_STATUS = ['ok', 'nocontact', 'nosite', 'blocked', 'error'];
+var CLAUDE_LIST_MAX = 200;
+var CLAUDE_FILL_MAX = 200;
+
+function claudeKeyGenerate() {
+  var key = 'ck_' + botRandomKey_();
+  PropertiesService.getScriptProperties().setProperty(CLAUDE_KEY_PROP, sha256('claude:' + key));
+  Logger.log('Claude 專用金鑰（只顯示這一次，請複製交給 Claude Code；重新執行會換新、舊的失效）：' + key);
+  return key;
+}
+
+function claudeKeyRevoke() {
+  PropertiesService.getScriptProperties().deleteProperty(CLAUDE_KEY_PROP);
+  Logger.log('Claude 專用金鑰已停用');
+}
+
+function handleClaudeApi(body) {
+  var fail = function (msg, code) {
+    return { success: false, message: msg, code: code };
+  };
+  var hash = PropertiesService.getScriptProperties().getProperty(CLAUDE_KEY_PROP);
+  if (!hash) return fail('Claude 專用金鑰尚未啟用：請在 Apps Script 編輯器執行 claudeKeyGenerate', 'CLAUDE_OFF');
+  // 比對雜湊值：長度固定，不會因為比對到第幾個字才不同而洩漏金鑰
+  if (sha256('claude:' + String(body.secret || '')) !== hash) return fail('Claude 專用金鑰錯誤', 'CLAUDE_AUTH');
+  var op = String(body.op || '');
+  if (CLAUDE_OPS.indexOf(op) < 0) return fail('這把金鑰不能做這個操作：' + op);
+  try {
+    if (op === 'ping') return { success: true, ops: CLAUDE_OPS };
+    if (op === 'list') return claudeList_(body);
+    if (op === 'index') return claudeIndex_();
+    if (op === 'mailCfg') {
+      var cfg = psMailCfg_();
+      return { success: true, cfg: { sender: cfg.sender, intro: cfg.intro, strategy: cfg.strategy, signature: cfg.signature } };
+    }
+    if (op === 'importCheck') return handleProspectImportCheck({ rows: body.rows });
+    if (op === 'import') return claudeImport_(body);
+    return claudeFill_(body);
+  } catch (e) {
+    return fail(e.message);
+  }
+}
+
+/** 未處理（開發狀態空白或「未處理」）、沒隱藏的名單，分頁。type = D 只要設備商 / U 只要一般使用者；noMail = true 只要還沒有草稿的。 */
+function claudeList_(body) {
+  var sh = psSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return { success: true, total: 0, offset: 0, rows: [] };
+  var n = sh.getLastRow() - 1;
+  var head = sh.getRange(2, 1, n, psCol_('Has')).getValues();
+  var stageI = psCol_('Stage') - 1;
+  var hasI = psCol_('Has') - 1;
+  var type = body.type === 'D' || body.type === 'U' ? body.type : '';
+  var mailCol = body.noMail ? psColVals_(sh, psCol_('MailBody'), n) : null; // 要看信件欄位才知道有沒有草稿：只讀那一欄
+  var hits = [];
+  head.forEach(function (r, i) {
+    var st = String(r[stageI] || '');
+    var has = String(r[hasI] || '');
+    if ((st && st !== PS_STAGES[0]) || has.indexOf('H') > -1) return;
+    if (type && has.indexOf(type) < 0) return;
+    if (mailCol && mailCol[i]) return;
+    hits.push(i + 2);
+  });
+  var offset = Math.max(0, Math.floor(Number(body.offset)) || 0);
+  var limit = Math.min(CLAUDE_LIST_MAX, Math.max(1, Math.floor(Number(body.limit)) || 50));
+  var slice = hits.slice(offset, offset + limit);
+  var read = psReadRows_(sh, slice);
+  var rows = slice.map(function (row) {
+    var o = psObj_(read[row]);
+    return {
+      key: o.Key, row: row, name: o.Name, taxId: o.TaxId, type: o.Type, category: o.Category, products: o.Products, address: o.Address,
+      website: o.Website, phone: o.Phone, email: o.Email, contact: o.Contact, extraContacts: o.ExtraContacts, source: o.Source, notes: o.Notes,
+      optout: !!o.Optout, enriched: o.Enriched, hasMail: !!o.MailBody, mailSent: !!o.MailSentAt,
+    };
+  });
+  return { success: true, total: hits.length, offset: offset, rows: rows };
+}
+
+/** 全部名單（含已聯絡、隱藏）的名稱與官網網域：匯入前比對用（之前有用英文名匯入的，只比名稱會漏）。只讀這兩欄。 */
+function claudeIndex_() {
+  var sh = psSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return { success: true, rows: [] };
+  var n = sh.getLastRow() - 1;
+  var names = psColVals_(sh, psCol_('Name'), n);
+  var webs = psColVals_(sh, psCol_('Website'), n);
+  var taxes = psColVals_(sh, psCol_('TaxId'), n);
+  return { success: true, rows: names.map(function (nm, i) { return [nm, webs[i], taxes[i]]; }) };
+}
+
+/** 匯入新名單：先跑匯入前檢查，只送「新的」和「已存在（只補空白）」；已是客戶、隱藏、同批重複、沒名稱的一律略過並回報。 */
+function claudeImport_(body) {
+  var rows = body.rows;
+  var src = psClean_(body.source, 40);
+  if (!src) return { success: false, message: '請填來源（例如：2026 自動化展）' };
+  var check = handleProspectImportCheck({ rows: rows });
+  if (!check.success) return check;
+  var keep = [];
+  var skipped = [];
+  check.results.forEach(function (r) {
+    var o = rows[r.i] || {};
+    if (r.status === 'new' || r.status === 'same' || r.status === 'diff') {
+      var c = {};
+      Object.keys(o).forEach(function (k) {
+        if (k.charAt(0) !== '_') c[k] = o[k]; // 不接受 _update（覆蓋）/ _unhide（取消隱藏）
+      });
+      keep.push(c);
+    } else {
+      skipped.push({ i: r.i, name: String(o.Name || ''), status: r.status, customer: r.customer || '' });
+    }
+  });
+  if (!keep.length) return { success: true, added: 0, merged: 0, skipped: skipped, count: check.count };
+  var res = handleProspectImport({ rows: keep, source: 'Claude代查：' + src, update: false });
+  res.skipped = skipped;
+  res.count = check.count;
+  return res;
+}
+
+/** 把查到的資料寫回既有名單：官網 / 電話 / Email / 聯絡人 / 產品只補空白；草稿只在還沒有草稿時寫；不動開發狀態。 */
+function claudeFill_(body) {
+  var items = body.items;
+  if (!Array.isArray(items) || !items.length) return { success: false, message: '沒有要寫回的資料' };
+  if (items.length > CLAUDE_FILL_MAX) return { success: false, message: '一次最多寫回 ' + CLAUDE_FILL_MAX + ' 筆' };
+  return withLock_(function () {
+    var sh = psSheet_(false);
+    if (!sh) return { success: false, message: '名單庫還是空的' };
+    var now = nowStr();
+    var results = items.map(function (it) {
+      it = it || {};
+      var found = it.key ? psFindRow_(sh, it.key, it.row) : null;
+      if (!found) return { key: it.key || '', status: 'notfound' };
+      var o = found.obj;
+      if (o.Hidden) return { key: o.Key, status: 'hidden' };
+      var filled = [];
+      CLAUDE_FILL_FIELDS.forEach(function (f) {
+        if (o[f] || !it[f]) return;
+        var v = f === 'Website' ? psWebsite_(it[f]) : f === 'Email' ? psEmail_(it[f]) : psClean_(it[f], f === 'Products' ? 400 : f === 'Phone' ? 60 : 80);
+        if (v) {
+          o[f] = v;
+          filled.push(f);
+        }
+      });
+      if (!o.ExtraContacts && it.ExtraContacts) {
+        o.ExtraContacts = psClean_(it.ExtraContacts, 300);
+        filled.push('ExtraContacts');
+      }
+      var enrich = CLAUDE_ENRICH_STATUS.indexOf(it.Enriched) > -1;
+      if (enrich) {
+        o.Enriched = it.Enriched;
+        o.EnrichedAt = now;
+        o.EnrichNote = psClean_('Claude 代查：' + String(it.EnrichNote || ''), 200);
+      }
+      var mail = '';
+      var mb = psClean_(it.MailBody, 4000, true);
+      if (mb) {
+        if (o.MailBody) mail = 'kept';
+        else {
+          o.MailSubject = psClean_(it.MailSubject || '鑫堡 AOI 檢測方案｜' + o.Name, 120);
+          o.MailBody = mb;
+          o.MailAt = now;
+          mail = 'saved';
+        }
+      }
+      if (!filled.length && mail !== 'saved' && !enrich) return { key: o.Key, status: 'same', mail: mail };
+      o.UpdatedAt = now;
+      psDerive_(o);
+      sh.getRange(found.row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+      return { key: o.Key, status: 'updated', filled: filled, mail: mail };
+    });
+    return { success: true, results: results };
+  });
 }
