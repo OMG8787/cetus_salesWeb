@@ -10,6 +10,7 @@
 - 做完：開發名單「找官網」可同時產生開發信草稿；名單操作欄「✉️ 預覽/寄信」；「⚙️ 寄信設定」（管理員）；寄出後記 Email 聯繫紀錄並把「未處理」改「已聯絡」。後端 `Code.gs`（prospectMail*）、前端 `prospects.html/js`、測試 `apps-script/tests/prospects-mail.test.js`（36 項）、README 新增一節。
 - 附件：Apps Script 讀不到 `D:\` 路徑，必須上傳 Google Drive 後在「寄信設定」貼連結；`鑫堡AOI檢測系統.pdf`（根目錄）未 commit。
 - 尚待：①使用者貼整份 `Code.gs` 並發新版本（可能要重新授權 Gmail/Drive）②推送前端（等後端發布後）③真實瀏覽器點過畫面（未驗）④Gmail 每日寄信額度已查證：Apps Script 寄信收件人一般 Gmail 帳號 100 位/天、Workspace 1,500 位/天（https://developers.google.com/apps-script/guides/services/quotas，2026-11-17 查）。重新授權：Code.gs 原本就用 GmailApp、DriveApp，權限範圍應該沒有變，可能不會跳授權（未實測）。
+- 2026-11-17 晚｜**使用者已同意，下一場對話一開始就做**（原話「好，下一場開始做 Claude 專用金鑰」）。做法：照 `handleBotApi` 的 Bot 金鑰模式（存 sha256 雜湊、限定可用 op），只開放：讀未處理名單、補寫官網/聯絡方式（只補空白）、寫信件草稿（已有就略過）、匯入新名單（不重複、不覆蓋、略過隱藏與已是客戶）；不能刪除、不能寄信；補 `apps-script/tests/` 測試；完成後使用者重貼 `Code.gs`、發新版本、產生金鑰交給我。下一步原文：做「Claude 專用金鑰」寫入管道，讓本機的 Claude Code 讀未處理名單、寫回官網、聯絡方式與信件草稿（只補空白、不覆蓋）、直接匯入新名單。原因：使用者原話「不要消耗我API的TOKEN，希望可以直接使用claude」，以及「叫你匯入潛在客戶300筆就直接匯入，然後不重複不覆蓋」。爬網站在本機跑，可以沿用 scratchpad 的 batch.js（不一定還在）。
 - 2026-11-17 晚：決策｜開啟「預覽/寄信」不再自動呼叫 AI，改按「✨ 一鍵生成文案」；「找官網」的「同時寫寄信內容」改成預設不勾｜使用者要求改成按鈕｜`handleProspectMailPreview` 只在 regen=true 生成，測試已改。**需要使用者重新貼 `Code.gs` 發新版本**；前端已推。寄信視窗 UI 已補樣式（0ab6264）。CSV 匯入目前不會讀「文案 / 信件內容」欄位（`psIncoming_` 沒對應 MailSubject/MailBody），待使用者決定要不要加。
 - 2026-11-17：使用者已發布後端；前端已推（60c2875），GitHub Pages 部署成功。剩真實畫面驗證（先寄給自己）。
 - 2026-11-17 接手：已重跑盤點（`docs/PROJECT-INVENTORY.md`、`.claude/project-scan.json`，原始碼 67、問題 9、循環 0）；後端測試 36 檔、linebot typecheck + 147 項全過。
