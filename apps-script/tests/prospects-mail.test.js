@@ -28,7 +28,8 @@ props.GEMINI_API_KEY = 'KEY-SECRET';
 // 假 Gmail / Drive 檔案
 const sent = [];
 let sendFail = false;
-ctx.GmailApp = { sendEmail: (to, subject, body, opts) => { if (sendFail) throw new Error('Service invoked too many times'); sent.push({ to, subject, body, opts }); } };
+const drafts = [];
+ctx.GmailApp = { sendEmail: (to, subject, body, opts) => { if (sendFail) throw new Error('Service invoked too many times'); sent.push({ to, subject, body, opts }); }, createDraft: (to, subject, body, opts) => { drafts.push({ to, subject, body, opts }); return { getMessage: () => ({ getId: () => 'MSG1' }) }; } };
 const DRIVE_ID = 'abcDEF1234567890xyz_-';
 ctx.DriveApp.getFileById = (id) => {
   if (id !== DRIVE_ID) throw new Error('no file');
@@ -154,4 +155,11 @@ e = call('handleProspectEnrich', { items: [{ key: g.Key, row: g.RowIndex, name: 
 ok(e.results[0].status === 'ok' && (e.results[0].mail === undefined || e.results[0].mail === 'fail' || e.results[0].mail === 'ok'), 'AI 失敗不影響找官網的結果');
 aiStatus = 200;
 
+// ---- 存成 Gmail 草稿：不寄出、不記聯繫紀錄、不改開發狀態 ----
+const dz = find('沒官網');
+const sentBefore = sent.length;
+r = call('handleProspectMailSend', { key: dz.Key, row: dz.RowIndex, to: 'x@nosite.com.tw', subject: '草稿主旨', body: '沒官網團隊您好：這是要先存成草稿的內容，確認後再寄。', draftOnly: true, noAttach: true });
+ok(r.success && r.draft && /drafts/.test(r.draftUrl) && drafts.length === 1 && sent.length === sentBefore, '存成 Gmail 草稿：建立草稿、沒有寄出');
+const dz2 = find('沒官網');
+ok(!dz2.MailSentAt && (dz2.Stage === '' || dz2.Stage === '未處理') && call('handleProspectMailPreview', { key: dz2.Key, row: dz2.RowIndex }).subject === '草稿主旨', '存成草稿：修改的內容存回名單、狀態不變、不算已寄');
 console.log('prospects-mail checks passed: ' + pass);

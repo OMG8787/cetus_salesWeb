@@ -90,6 +90,10 @@ const csvText = '﻿工廠名稱,工廠登記編號,統一編號,產業類別,�
   ok(map.Name === 0 && map.TaxId === 1 && map.Email === 2 && map.Phone === 3 && map.Website === 4 && map.Contact === 5 && map.Category === 6 && map.Notes === 7, '展覽 / 自己整理的名單：各種標題寫法都能對應（含 BOM、E-mail）');
   map = lib.psAutoMap(['Company Name', 'Tax ID', 'Email', 'Phone']);
   ok(map.Name === 0 && map.TaxId === 1 && map.Email === 2 && map.Phone === 3, '英文標題');
+  map = lib.psAutoMap(['公司名稱', 'Email', '主旨', '信件內容']);
+  ok(map.MailSubject === 2 && map.MailBody === 3 && map.Email === 1, 'CSV 的「主旨 / 信件內容」對應到開發信欄位');
+  map = lib.psAutoMap(['公司名稱', '開發信主旨', '文案']);
+  ok(map.MailSubject === 1 && map.MailBody === 2, '「開發信主旨 / 文案」也認得');
   map = lib.psAutoMap(['名稱', '公司名稱']);
   ok(map.Name === 1 && Object.keys(map).length === 1, '同一欄不會被兩個系統欄位重複使用');
 

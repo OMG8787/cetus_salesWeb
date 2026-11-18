@@ -11722,7 +11722,7 @@ function handleCopyGenerate(body) {
 // ============================================================
 var PS_SHEET = 'Prospects';
 // 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
-var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt', 'Type', 'MailSubject', 'MailBody', 'MailAt', 'MailSentAt'];
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt', 'Type', 'MailSubject', 'MailBody', 'MailAt', 'MailSentAt', 'Peer'];
 var PS_LOG_SHEET = 'ProspectLogs';
 var PS_LOG_COLS = ['ID', 'Key', 'Time', 'User', 'Method', 'Content', 'Stage', 'NextFollowUp'];
 var PS_LOG_METHODS = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'];
@@ -11952,8 +11952,11 @@ function psIncoming_(o, source) {
     Owner: psClean_(o.Owner, 60), Category: psClean_(o.Category, 300), Products: psClean_(o.Products, 400), Status: psClean_(o.Status, 40), Org: psClean_(o.Org, 40),
     Website: psWebsite_(o.Website), Phone: psClean_(o.Phone, 60), Email: psEmail_(o.Email), Contact: psClean_(o.Contact, 80), Notes: psClean_(o.Notes, 500, true),
     Source: source, Stage: '', Optout: '', AssignedTo: '',
+    MailSubject: psClean_(o.MailSubject, 120), MailBody: psClean_(o.MailBody, 4000, true),
   };
   if (!r.Name) return null;
+  if (r.MailBody) r.MailAt = nowStr();
+  else r.MailSubject = '';
   r.Type = psTypeOf_(o.Type) || psGuessType_(r);
   return r;
 }
@@ -11981,6 +11984,13 @@ function psMergeInto_(ex, inc, update) {
   }
   if (!ex.Notes && inc.Notes) {
     ex.Notes = inc.Notes;
+    changed = true;
+  }
+  if (!ex.MailBody && inc.MailBody) {
+    // 匯入的信件內容：只在還沒有草稿時寫入（已有草稿、已寄出的都不覆蓋）
+    ex.MailSubject = inc.MailSubject || '鑫堡 AOI 檢測方案｜' + ex.Name;
+    ex.MailBody = inc.MailBody;
+    ex.MailAt = inc.MailAt || nowStr();
     changed = true;
   }
   var srcs = String(ex.Source || '').split('、').filter(Boolean);
@@ -13131,6 +13141,7 @@ function handleProspectMailSend(body) {
   var found = psFindRow_(sh, key, body.row);
   if (!found) return { success: false, message: '找不到這筆名單（可能已被刪除），請重新整理' };
   if (found.obj.Optout) return { success: false, message: '這家標了「拒絕聯絡」，不能寄信' };
+  if (body.draftOnly === true) return psMailToDraft_(key, found, to, subject, text, body.noAttach === true);
   var cache = CacheService.getScriptCache();
   var dupKey = 'psmail:' + key;
   if (cache.get(dupKey)) return { success: false, message: '剛剛已經寄出過這封信，請稍候再寄（避免重複寄送）' };
@@ -13161,6 +13172,41 @@ function handleProspectMailSend(body) {
   });
   var logged = handleProspectLogAdd({ _user: body._user, key: key, row: found.row, method: 'Email', content: '寄出開發信：「' + subject + '」→ ' + to + (attName ? '（附件：' + attName + '）' : '（沒有附件）'), nextFollowUp: found.obj.NextFollowUp || '' });
   return { success: true, sentAt: now, attach: attName, row: logged && logged.success ? logged.row : null, logError: logged && logged.success ? '' : (logged && logged.message) || '' };
+}
+
+/** 存成 Gmail 草稿（不寄出）：建立草稿、把修改過的主旨 / 內容存回名單；不記聯繫紀錄、不改開發狀態。 */
+function psMailToDraft_(key, found, to, subject, text, noAttach) {
+  var cfg = psMailCfg_();
+  var opts = { name: cfg.fromName };
+  var attName = '';
+  if (cfg.attach && !noAttach) {
+    var att = psMailAttach_(cfg);
+    if (!att.ok) return { success: false, message: '附件讀取失敗，沒有建立草稿：' + att.message + '（可以先在「寄信設定」修正，或勾選「這封不附檔案」）' };
+    opts.attachments = [DriveApp.getFileById(att.id).getBlob()];
+    attName = att.name;
+  }
+  var draft;
+  try {
+    draft = GmailApp.createDraft(to, subject, text, opts);
+  } catch (e) {
+    return { success: false, message: '建立 Gmail 草稿失敗：' + String(e.message || e).slice(0, 160) };
+  }
+  withLock_(function () {
+    var sh = psSheet_(false);
+    var f2 = psFindRow_(sh, key, found.row);
+    if (!f2) return;
+    f2.obj.MailSubject = subject;
+    f2.obj.MailBody = text;
+    f2.obj.MailAt = nowStr();
+    sh.getRange(f2.row, 1, 1, PS_COLS.length).setValues([psArr_(f2.obj)]);
+  });
+  var id = '';
+  try {
+    id = draft.getMessage().getId();
+  } catch (e2) {
+    id = '';
+  }
+  return { success: true, draft: true, attach: attName, draftUrl: id ? 'https://mail.google.com/mail/u/0/#drafts?compose=' + id : 'https://mail.google.com/mail/u/0/#drafts' };
 }
 
 // ------------------------------------------------------------
@@ -13874,7 +13920,7 @@ function psMigrateType_(sh) {
 // 重新執行 = 換新金鑰、舊的立刻失效；執行 claudeKeyRevoke = 停用。
 // ============================================================
 var CLAUDE_KEY_PROP = 'CLAUDE_KEY_HASH';
-var CLAUDE_OPS = ['ping', 'list', 'index', 'mailCfg', 'importCheck', 'import', 'fill'];
+var CLAUDE_OPS = ['ping', 'list', 'index', 'mailCfg', 'importCheck', 'import', 'fill', 'redraft'];
 var CLAUDE_FILL_FIELDS = ['Website', 'Phone', 'Email', 'Contact', 'Products'];
 var CLAUDE_ENRICH_STATUS = ['ok', 'nocontact', 'nosite', 'blocked', 'error'];
 var CLAUDE_LIST_MAX = 200;
@@ -13912,6 +13958,7 @@ function handleClaudeApi(body) {
     }
     if (op === 'importCheck') return handleProspectImportCheck({ rows: body.rows });
     if (op === 'import') return claudeImport_(body);
+    if (op === 'redraft') return claudeRedraft_(body);
     return claudeFill_(body);
   } catch (e) {
     return fail(e.message);
@@ -14015,6 +14062,10 @@ function claudeFill_(body) {
           filled.push(f);
         }
       });
+      if (!o.Peer && it.Peer) {
+        o.Peer = psClean_(it.Peer, 120);
+        filled.push('Peer');
+      }
       if (!o.ExtraContacts && it.ExtraContacts) {
         o.ExtraContacts = psClean_(it.ExtraContacts, 300);
         filled.push('ExtraContacts');
@@ -14043,5 +14094,35 @@ function claudeFill_(body) {
       return { key: o.Key, status: 'updated', filled: filled, mail: mail };
     });
     return { success: true, results: results };
+  });
+}
+
+/** 修正還沒寄出的草稿（使用者指定要改的，例如公司名稱寫錯）：只改主旨 / 內容；已寄出的一律不動。 */
+function claudeRedraft_(body) {
+  var items = body.items;
+  if (!Array.isArray(items) || !items.length) return { success: false, message: '沒有要修正的草稿' };
+  if (items.length > 50) return { success: false, message: '一次最多修正 50 封' };
+  return withLock_(function () {
+    var sh = psSheet_(false);
+    if (!sh) return { success: false, message: '名單庫還是空的' };
+    var now = nowStr();
+    return {
+      success: true,
+      results: items.map(function (it) {
+        it = it || {};
+        var found = it.key ? psFindRow_(sh, it.key, it.row) : null;
+        if (!found) return { key: it.key || '', status: 'notfound' };
+        var o = found.obj;
+        if (o.MailSentAt) return { key: o.Key, status: 'sent' };
+        var mb = psClean_(it.MailBody, 4000, true);
+        if (!mb) return { key: o.Key, status: 'empty' };
+        o.MailSubject = psClean_(it.MailSubject || o.MailSubject || '鑫堡 AOI 檢測方案｜' + o.Name, 120);
+        o.MailBody = mb;
+        o.MailAt = now;
+        o.UpdatedAt = now;
+        sh.getRange(found.row, 1, 1, PS_COLS.length).setValues([psArr_(o)]);
+        return { key: o.Key, status: 'updated' };
+      }),
+    };
   });
 }

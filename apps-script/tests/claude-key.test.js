@@ -97,6 +97,23 @@ ok(r.results[0].mail === 'kept' && /甲精密您好/.test(call('handleProspectMa
 ok(api('list', { noMail: true }).rows.every((x) => x.name !== '甲精密股份有限公司'), 'list noMail：有草稿的不再列出');
 ok(!api('fill', { items: [] }).success, 'fill：空的擋下');
 
+// ---- 匯入可帶信件內容 / 同業備註 / 修正未寄出的草稿 ----
+r = api('import', { source: '2026 測試', rows: [{ Name: '帶信公司股份有限公司', Email: 'a@mailco.com.tw', MailSubject: '主旨M', MailBody: '帶信公司您好：內容' }] });
+let m1 = find('帶信公司');
+ok(r.added === 1 && m1.HasMail === 1 && call('handleProspectMailPreview', { key: m1.Key, row: m1.RowIndex }).subject === '主旨M', 'import：可以一起帶信件主旨與內容');
+r = api('import', { source: '2026 測試', rows: [{ Name: '帶信公司股份有限公司', MailBody: '另一版' }] });
+ok(/帶信公司您好/.test(call('handleProspectMailPreview', { key: m1.Key, row: m1.RowIndex }).body), 'import：已有草稿的不覆蓋');
+r = api('fill', { items: [{ key: m1.Key, row: m1.RowIndex, Peer: '官網有 AOI 產品' }] });
+ok(r.results[0].filled.indexOf('Peer') > -1 && find('帶信公司').Peer === '官網有 AOI 產品', 'fill：可以寫同業備註（只補空白）');
+r = api('redraft', { items: [{ key: m1.Key, row: m1.RowIndex, MailSubject: '新主旨', MailBody: '正確公司您好：新內容' }] });
+ok(r.success && r.results[0].status === 'updated' && /正確公司您好/.test(call('handleProspectMailPreview', { key: m1.Key, row: m1.RowIndex }).body), 'redraft：還沒寄出的草稿可以修正');
+const shp = ctx.psSheet_(false);
+const fr = ctx.psFindRow_(shp, m1.Key, m1.RowIndex);
+fr.obj.MailSentAt = '2026-11-18 10:00';
+shp.getRange(fr.row, 1, 1, ctx.PS_COLS.length).setValues([ctx.psArr_(fr.obj)]);
+r = api('redraft', { items: [{ key: m1.Key, row: m1.RowIndex, MailBody: '不該改' }] });
+ok(r.results[0].status === 'sent' && !/不該改/.test(call('handleProspectMailPreview', { key: m1.Key, row: m1.RowIndex }).body), 'redraft：已寄出的不動');
+
 // ---- 換金鑰 / 停用 ----
 const key2 = ctx.claudeKeyGenerate();
 ok(!api('ping').success && post({ action: 'claudeApi', secret: key2, op: 'ping' }).success, '重新產生：舊金鑰立刻失效、新的可用');

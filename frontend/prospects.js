@@ -306,7 +306,7 @@ function renderRows() {
       const src = (r.Source || '').split('、').join('、');
       return `<tr data-i="${i}" class="${r.Optout ? 'ps-optout' : ''}">
         <td><input type="checkbox" data-key="${e(r.Key)}" ${selected.has(r.Key) || selectAllMatching ? 'checked' : ''} ${selectAllMatching ? 'disabled' : ''} /></td>
-        <td class="ps-name"><div>${psTypeBadge(r.Type)} <b>${e(r.Name)}</b> ${warn}${r.ConvertedTo ? ` <span class="ps-conv" title="已轉成客戶：${e(r.ConvertedTo)}（${e(String(r.ConvertedAt || '').slice(0, 10))}）">✅ 已轉客戶</span>` : r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}${r.Hidden ? ` <span class="ps-hid" title="${e(r.HiddenBy || '')} ${e(r.HiddenAt || '')} 隱藏">🙈 隱藏</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源：${e(src)}">📂 ${e(src.split('、').map(shortSource).join('、'))}</div></td>
+        <td class="ps-name"><div>${psTypeBadge(r.Type)} <b>${e(r.Name)}</b> ${warn}${r.ConvertedTo ? ` <span class="ps-conv" title="已轉成客戶：${e(r.ConvertedTo)}（${e(String(r.ConvertedAt || '').slice(0, 10))}）">✅ 已轉客戶</span>` : r.IsCustomer ? ` <span class="ps-iscust" title="客戶管理裡已有：${e(r.IsCustomer)}">已是客戶</span>` : ''}${r.Peer ? ` <span class="ps-peer" title="可能是同業：${e(r.Peer)}">⚠️ 同業</span>` : ''}${r.Hidden ? ` <span class="ps-hid" title="${e(r.HiddenBy || '')} ${e(r.HiddenAt || '')} 隱藏">🙈 隱藏</span>` : ''}</div><div class="calc-hint">${r.TaxId ? '統編 ' + e(r.TaxId) : ''}${r.Org ? '　' + e(r.Org) : ''}</div><div class="ps-src" title="來源：${e(src)}">📂 ${e(src.split('、').map(shortSource).join('、'))}</div></td>
         <td class="ps-cat">${catHtml(r)}<div class="ps-prod" title="${e(r.Products || '')}">${e((r.Products || '').slice(0, 70))}</div></td>
         <td class="ps-addr"><div><b>${e(r.City || '')}</b> <span class="calc-hint">${e(r.Address || '').replace(e(r.City || ''), '')}</span></div>${r.Owner ? `<div class="calc-hint">負責人 ${e(r.Owner)}</div>` : ''}</td>
         <td class="ps-contact">${contactHtml(r)}</td>
@@ -1029,6 +1029,9 @@ async function openMail(i) {
   if (!r) return;
   mailRow = r;
   document.getElementById('psm-name').textContent = r.Name;
+  const peer = document.getElementById('psm-peer');
+  peer.style.display = r.Peer ? '' : 'none';
+  peer.textContent = r.Peer ? '⚠️ 可能是同業：' + r.Peer + '（信件以硬體採購 / 軟體客製 / 合作為主）' : '';
   document.getElementById('psm-state').textContent = '讀取中…';
   ['psm-to', 'psm-subject', 'psm-body'].forEach((id) => (document.getElementById(id).value = ''));
   document.getElementById('psm-msg').textContent = '';
@@ -1041,6 +1044,7 @@ async function openMail(i) {
 
 function setMailBusy(b) {
   document.getElementById('psm-send').disabled = b;
+  document.getElementById('psm-draft').disabled = b;
   document.getElementById('psm-regen').disabled = b;
 }
 
@@ -1107,6 +1111,31 @@ async function sendMail() {
   document.getElementById('psm-state').textContent = '📨 已寄出於 ' + r.sentAt;
   document.getElementById('psm-regen').disabled = false;
   loadStatus();
+}
+
+/** 存成 Gmail 草稿：不寄出、不記聯繫紀錄；修改過的主旨 / 內容一併存回名單。 */
+async function saveMailDraft() {
+  const to = document.getElementById('psm-to').value.trim();
+  const subject = document.getElementById('psm-subject').value.trim();
+  const body = document.getElementById('psm-body').value.trim();
+  const msg = document.getElementById('psm-msg');
+  if (!to || !subject || !body) {
+    msg.textContent = '收件人、主旨、內容都要填';
+    return;
+  }
+  const noAttach = document.getElementById('psm-noattach').checked;
+  setMailBusy(true);
+  msg.textContent = '建立 Gmail 草稿中…';
+  const row = mailRow;
+  const r = await callApi('prospectMailSend', { key: row.Key, row: row.RowIndex, to, subject, body, noAttach, draftOnly: true });
+  setMailBusy(false);
+  if (!r || !r.success) {
+    msg.textContent = '✗ ' + ((r && r.message) || '建立草稿失敗');
+    return;
+  }
+  const i = data.rows.findIndex((x) => x.Key === row.Key);
+  if (i > -1) data.rows[i].HasMail = 1;
+  msg.innerHTML = '✓ 已存到 Gmail 草稿匣' + (r.attach ? `（附件：${e(r.attach)}）` : '') + `，還沒寄出。<a href="${e(r.draftUrl)}" target="_blank" rel="noopener noreferrer">開啟 Gmail 草稿</a>`;
 }
 
 async function openMailCfg() {

@@ -20,6 +20,9 @@ const PS_FIELDS = [
   { key: 'Contact', label: '聯絡人', aliases: ['聯絡人', '聯絡窗口', '窗口', 'contact'] },
   { key: 'Notes', label: '備註', aliases: ['備註', 'note', 'notes', 'remark'] },
   { key: 'Type', label: '類型（一般使用者 / 設備商）', aliases: ['類型', '客戶類型', '公司類型', 'type'] },
+  // 開發信：匯入時只在這家還沒有草稿才寫入（已有草稿、已寄出的不覆蓋）
+  { key: 'MailSubject', label: '信件主旨', aliases: ['信件主旨', '開發信主旨', '主旨', 'subject', 'mailsubject'] },
+  { key: 'MailBody', label: '信件內容', aliases: ['信件內容', '開發信內容', '開發信', '文案', '內文', 'mailbody', 'body'] },
 ];
 
 // 行業快速選取（經濟部工廠登記的產業類別代碼）

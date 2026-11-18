@@ -5,7 +5,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>開發名單庫 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261117a" />
+<link rel="stylesheet" href="style.css?v=20261118a" />
 <link rel="stylesheet" href="dark.css?v=20261111b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -232,6 +232,7 @@
   <div class="modal-box" style="max-width:760px;">
     <div class="modal-header"><h3 style="margin:0;">✉️ 預覽 / 寄信</h3><button type="button" onclick="closeModal('ps-mail-modal')">關閉</button></div>
     <div id="psm-name" class="ps-edit-title"></div>
+    <div id="psm-peer" class="ps-peer-box" style="display:none;"></div>
     <div id="psm-state" class="ps-sub" style="margin:4px 0 8px;"></div>
     <label class="ps-label" for="psm-to">收件人</label>
     <input id="psm-to" type="email" maxlength="120" />
@@ -243,6 +244,7 @@
     <label style="display:block;"><input type="checkbox" id="psm-noattach" style="width:auto;" /> 這封不附檔案</label>
     <div class="pcv-btns" style="margin-top:10px;">
       <button type="button" class="ps-btn ps-btn-primary" id="psm-send" onclick="sendMail()">📨 確認寄出</button>
+      <button type="button" class="ps-btn" id="psm-draft" onclick="saveMailDraft()" title="放進 Gmail 草稿匣，不會寄出">📝 存成 Gmail 草稿</button>
       <button type="button" class="ps-btn" id="psm-regen" onclick="mailRegen()">✨ 一鍵生成文案</button>
       <span id="psm-msg" class="calc-hint"></span>
     </div>
@@ -333,7 +335,7 @@
 <script src="common.js?v=20261111d"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
-<script src="prospects-lib.js?v=20261111b"></script>
-<script src="prospects.js?v=20261117b"></script>
+<script src="prospects-lib.js?v=20261118a"></script>
+<script src="prospects.js?v=20261118a"></script>
 </body>
 </html>

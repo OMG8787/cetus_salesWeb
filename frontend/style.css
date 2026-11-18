@@ -851,6 +851,9 @@ header, .tabs { position: relative; z-index: 300; }
 
 /* 開發名單：陌生開發 / 已是客戶標記、匯入前檢查 */
 .ps-cold { background: #f3e8fb; color: #8e44ad; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; }
+.ps-peer { background: #fff4e5; color: #b45309; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; cursor: help; }
+.ps-peer-box { background: #fff4e5; color: #92400e; border-radius: 6px; padding: 6px 10px; font-size: 13px; margin: 4px 0; }
+html[data-theme="dark"] .ps-peer, html[data-theme="dark"] .ps-peer-box { background: rgba(245,158,11,.18); color: #fbbf24; }
 .ps-iscust { background: #e8f0fb; color: #2c5aa0; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; }
 .pc-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .pc-table td { white-space: normal; font-size: 13px; }
