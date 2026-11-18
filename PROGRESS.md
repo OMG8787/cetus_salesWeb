@@ -29,3 +29,4 @@
 - 2026-11-18｜使用者六項要求：①同業也寫信（硬體供應／軟體客製／合作）並在畫面標記 ②非同業跳過的也寫 ③「存成 Gmail 草稿」按鈕 ④CSV 匯入讀主旨／信件內容 ⑤TEEIA 剩 40 家匯入 ⑥4 封公司名直接改。
   - 已完成：程式（commit e78e968，**只在本機、還沒推**：舊後端不認得 draftOnly，前端先推會把信直接寄出）；40 家已匯入（總 836）並寫回官網查詢結果；補寫 316 封（同業 126＋通用 173＋TEEIA 17），開發信總計 699 封。排除寶迪自動化（供應商）、華洋精機（官網 / Email 是別家）。
   - **等使用者貼新版 Code.gs 發布後**：①`node tools/claude-api.js fill @<S>/teeia/peer-mark.json`（127 家同業標記）②`node tools/claude-api.js redraft @<S>/teeia/redraft4.json`（4 封公司名）③`git push` 推前端。scratchpad 不見的話：同業清單在 Downloads 的 skip 報告。
+- 2026-11-18｜四種附件（設備商推 AOI／一般客戶 AOI／供應廠商／運動控制客戶）＋寄信時下拉選附件＋「🧪 測試寄出」（寄給自己、不算已寄出）完成，commit a2512ff（本機，還沒推；跟 e78e968 一起等後端發布）。
