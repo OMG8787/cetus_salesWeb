@@ -1151,6 +1151,11 @@ async function openMail(i) {
   if (!r) return;
   mailRow = r;
   document.getElementById('psm-name').textContent = r.Name;
+  // 官網連結：寫信時對照對方網站，開新分頁，不用關掉這個視窗
+  const site = psSafeUrl(r.Website);
+  document.getElementById('psm-site').innerHTML = site
+    ? `🌐 官網：<a href="${e(site)}" target="_blank" rel="noopener noreferrer">${e(String(r.Website).replace(/^https?:\/\//i, '').replace(/\/+$/, ''))}</a>`
+    : '<span class="calc-hint">🌐 還沒有官網</span>';
   const peer = document.getElementById('psm-peer');
   peer.style.display = r.Peer ? '' : 'none';
   peer.textContent = r.Peer ? '⚠️ 可能是同業：' + r.Peer + '（信件以硬體採購 / 軟體客製 / 合作為主）' : '';

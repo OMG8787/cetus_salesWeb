@@ -803,6 +803,7 @@ header, .tabs { position: relative; z-index: 300; }
 .ps-bulk select, .ps-bulk button { margin: 0; }
 .ps-bulk button.ps-run { background: #2c5aa0 !important; color: #fff !important; font-weight: bold; }
 .ps-bulk button.ps-run.ps-danger { background: #b03a2e !important; }
+.psm-site { margin: 2px 0 6px; font-size: 14px; word-break: break-all; }
 .ps-bulk-msg { color: #7a5b00; }
 .ps-table td { white-space: normal; }
 .ps-table { width: 100%; min-width: 0; }
@@ -1014,6 +1015,7 @@ html[data-theme="dark"] #ps-edit-modal .ps-iscust { background: rgba(79,134,214,
 #ps-mail-modal, #ps-mailcfg-modal {
   --ps-bg: #f6f8fb; --ps-card: #ffffff; --ps-line: #e3e8ef; --ps-text: #1f2937; --ps-muted: #6b7280; --ps-accent: #2c5aa0; --ps-accent-soft: #e8effa; --ps-danger: #c0392b;
 }
+#ps-mail-modal, #ps-mailcfg-modal { z-index: 400; } /* 蓋過頂部導覽列（z-index 300），矮螢幕時視窗上方的公司名稱、官網才看得到 */
 #ps-mail-modal .modal-box, #ps-mailcfg-modal .modal-box { color: var(--ps-text); background: var(--ps-card); border-radius: 12px; padding: 22px 24px; box-shadow: 0 20px 50px rgba(0,0,0,.25); width: 92vw; box-sizing: border-box; }
 #ps-mail-modal .modal-header h3, #ps-mailcfg-modal .modal-header h3 { font-size: 18px; }
 #ps-mail-modal .modal-box, #ps-mailcfg-modal .modal-box { max-height: 90vh; overflow-y: auto; }
