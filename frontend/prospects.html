@@ -5,7 +5,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>開發名單庫 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261118b" />
+<link rel="stylesheet" href="style.css?v=20261118c" />
 <link rel="stylesheet" href="dark.css?v=20261111b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -113,6 +113,9 @@
     <div class="ps-main">
       <div class="ps-bar">
         <input id="ps-q" placeholder="搜尋公司名稱 / 統編 / 負責人 / 主要產品 / 地址（多個關鍵字用空白分開）" oninput="onSearchInput()" />
+        <select id="ps-stage" onchange="onStageSelect()" title="開發狀態（左側也可以多選）">
+          <option value="">開發狀態：全部</option>
+        </select>
         <select id="ps-assigned" onchange="onAssignedChange()">
           <option value="">負責業務：全部</option>
           <option value="me">我負責的</option>
@@ -351,6 +354,6 @@
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
 <script src="prospects-lib.js?v=20261118a"></script>
-<script src="prospects.js?v=20261118b"></script>
+<script src="prospects.js?v=20261118c"></script>
 </body>
 </html>

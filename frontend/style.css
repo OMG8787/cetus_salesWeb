@@ -801,6 +801,9 @@ header, .tabs { position: relative; z-index: 300; }
 .ps-chip button { background: none !important; color: #1f3d73 !important; border: none; padding: 0 5px !important; margin: 0 !important; cursor: pointer; font-size: 14px; }
 .ps-bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #fff7e0; border: 1px solid #f1d98a; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; font-size: 13px; }
 .ps-bulk select, .ps-bulk button { margin: 0; }
+.ps-bulk button.ps-run { background: #2c5aa0 !important; color: #fff !important; font-weight: bold; }
+.ps-bulk button.ps-run.ps-danger { background: #b03a2e !important; }
+.ps-bulk-msg { color: #7a5b00; }
 .ps-table td { white-space: normal; }
 .ps-table { width: 100%; min-width: 0; }
 .ps-table .ps-name { width: 24%; min-width: 170px; }

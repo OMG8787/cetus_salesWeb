@@ -11747,7 +11747,7 @@ function prospectPerms_() {
     prospectEnrichPlan: ['customers', 'w'], prospectEnrich: ['customers', 'w'],
     prospectLogs: ['customers', 'r'], prospectLogAdd: ['customers', 'w'], workAgenda: ['customers', 'r'], prospectImportCheck: ['customers', 'w'],
     prospectClear: ['admin', 'd'],
-    prospectMailCfg: ['customers', 'r'], prospectMailCfgSave: ['admin', 'w'], prospectMailPreview: ['customers', 'w'], prospectMailSend: ['customers', 'w'],
+    prospectMailCfg: ['customers', 'r'], prospectMailCfgSave: ['admin', 'w'], prospectMailPreview: ['customers', 'w'], prospectMailSend: ['customers', 'w'], prospectMailBulk: ['customers', 'w'],
     prospectToCustomer: ['customers', 'w'], prospectDelete: ['customers', 'd'], prospectLookup: ['customers', 'r'],
   };
 }
@@ -11771,6 +11771,7 @@ function prospectRoutes_() {
     prospectMailCfgSave: { auth: true, fn: handleProspectMailCfgSave },
     prospectMailPreview: { auth: true, fn: handleProspectMailPreview },
     prospectMailSend: { auth: true, fn: handleProspectMailSend },
+    prospectMailBulk: { auth: true, fn: handleProspectMailBulk },
     prospectToCustomer: { auth: true, fn: handleProspectToCustomer },
     prospectDelete: { auth: true, fn: handleProspectDelete },
     prospectLookup: { auth: true, fn: handleProspectLookup },
@@ -13235,6 +13236,104 @@ function handleProspectMailSend(body) {
   });
   var logged = handleProspectLogAdd({ _user: body._user, key: key, row: found.row, method: 'Email', content: '寄出開發信：「' + subject + '」→ ' + to + (attName ? '（附件：' + attName + '）' : '（沒有附件）'), nextFollowUp: found.obj.NextFollowUp || '' });
   return { success: true, sentAt: now, attach: attName, row: logged && logged.success ? logged.row : null, logError: logged && logged.success ? '' : (logged && logged.message) || '' };
+}
+
+// ---- 批次寄信：勾選的公司各自寄出名單上存好的開發信 ----
+var PS_MAIL_BULK_MAX = 100; // 一次請求最多幾家（前端分批送）
+var PS_MAIL_BULK_MS = 240000; // 一次請求最多寄這麼久，剩下的回 later 讓前端再送
+
+function psMailQuota_() {
+  try {
+    return MailApp.getRemainingDailyQuota();
+  } catch (e) {
+    return -1; // 查不到額度就不擋，讓 Gmail 自己回錯誤
+  }
+}
+
+/** 這家能不能批次寄：回空字串 = 可以，否則是略過原因代號。 */
+function psMailBulkWhy_(o, resend) {
+  if (o.Hidden) return 'hidden';
+  if (o.Optout) return 'optout';
+  if (!psEmail_(o.Email)) return 'noemail';
+  if (!o.MailBody) return 'nodraft';
+  if (o.MailSentAt && !resend) return 'sent';
+  return '';
+}
+
+/**
+ * 批次寄信：body.keys（最多 PS_MAIL_BULK_MAX）每家寄出自己存好的主旨 / 內容；
+ * attachKey：auto（預設，依每家類型帶附件）/ equip / user / supplier / motion / none。
+ * dryRun = true 只統計（可寄幾家、各種略過原因、今天剩下的寄信額度），不寄。
+ * 沒有信箱、沒有草稿、拒絕聯絡、隱藏、已經寄過（resend = true 才重寄）一律略過。寄出後跟單封寄信一樣記聯繫紀錄。
+ */
+function handleProspectMailBulk(body) {
+  var keys = psList_(body.keys, PS_MAIL_BULK_MAX + 1);
+  if (!keys.length) return { success: false, message: '沒有勾選任何公司' };
+  if (keys.length > PS_MAIL_BULK_MAX) return { success: false, message: '一次最多 ' + PS_MAIL_BULK_MAX + ' 家，請分批送' };
+  var ak = String(body.attachKey || 'auto');
+  if (ak !== 'auto' && ak !== 'none' && !PS_MAIL_ATTACHES.some(function (a) { return a.key === ak; })) return { success: false, message: '附件種類不正確' };
+  var sh = psSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return { success: false, message: '名單庫還是空的' };
+  var n = sh.getLastRow() - 1;
+  var want = psSet_(keys);
+  var rows = [];
+  psColVals_(sh, 1, n).forEach(function (k, i) { if (want[k]) rows.push(i + 2); });
+  var read = psReadRows_(sh, rows);
+  var plan = rows.map(function (r) {
+    var o = psObj_(read[r]);
+    return { row: r, o: o, why: psMailBulkWhy_(o, body.resend === true) };
+  });
+  var count = { ok: 0, hidden: 0, optout: 0, noemail: 0, nodraft: 0, sent: 0, notfound: keys.length - rows.length };
+  plan.forEach(function (p) { count[p.why || 'ok']++; });
+  var quota = psMailQuota_();
+  var cfg = psMailCfg_();
+  if (body.dryRun === true) return { success: true, count: count, quota: quota, attaches: psMailAttachList_(cfg) };
+
+  var cache = CacheService.getScriptCache();
+  var optsByKey = {};
+  var t0 = Date.now();
+  var results = [];
+  plan.forEach(function (p) {
+    var o = p.o;
+    var out = { key: o.Key, name: o.Name };
+    results.push(out);
+    if (p.why) return (out.status = p.why);
+    if (Date.now() - t0 > PS_MAIL_BULK_MS) return (out.status = 'later');
+    if (quota === 0) return (out.status = 'quota');
+    var key = ak === 'auto' ? psMailAttachDefault_(cfg, o) : ak;
+    if (!optsByKey[key]) optsByKey[key] = psMailOpts_(cfg, { attachKey: key });
+    var mo = optsByKey[key];
+    if (!mo.ok) {
+      out.status = 'error';
+      out.message = mo.message;
+      return;
+    }
+    if (cache.get('psmail:' + o.Key)) return (out.status = 'dup');
+    var to = psEmail_(o.Email);
+    var subject = psClean_(o.MailSubject || '鑫堡 AOI 檢測方案｜' + o.Name, 200);
+    try {
+      GmailApp.sendEmail(to, subject, o.MailBody, mo.opts);
+    } catch (e) {
+      out.status = 'error';
+      out.message = String(e.message || e).slice(0, 160);
+      if (/too many times|quota|額度/i.test(out.message)) quota = 0; // Gmail 額度用完：剩下的都不寄
+      return;
+    }
+    cache.put('psmail:' + o.Key, '1', 30);
+    if (quota > 0) quota--;
+    var now = nowStr();
+    withLock_(function () {
+      var f2 = psFindRow_(sh, o.Key, p.row);
+      if (!f2) return;
+      f2.obj.MailSentAt = now;
+      sh.getRange(f2.row, 1, 1, PS_COLS.length).setValues([psArr_(f2.obj)]);
+    });
+    handleProspectLogAdd({ _user: body._user, key: o.Key, row: p.row, method: 'Email', content: '寄出開發信（批次）：「' + subject + '」→ ' + to + (mo.attName ? '（附件：' + mo.attName + '）' : '（沒有附件）'), nextFollowUp: o.NextFollowUp || '' });
+    out.status = 'ok';
+    out.to = to;
+    out.attach = mo.attName;
+  });
+  return { success: true, results: results, quota: quota };
 }
 
 /** 測試寄出：把同一封信（含選的附件）寄到 testTo，看客戶收到的樣子；不記聯繫紀錄、不改開發狀態、不算已寄出、不存草稿。 */

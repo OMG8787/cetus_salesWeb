@@ -188,4 +188,36 @@ ok(!r.success && /運動控制客戶/.test(r.message), '選了還沒設定的附
 r = call('handleProspectMailSend', { key: ts.Key, row: ts.RowIndex, to: 'x@nosite.com.tw', subject: 's', body: '這是一封測試信，內容要超過二十個字才可以寄出喔。', test: true, testTo: 'me@cetus.tw', attachKey: 'none' });
 ok(r.success && !sent[sent.length - 1].opts.attachments, '選「不附檔案」就不附');
 
+// ---- 批次寄信 ----
+ok(ctx.permFor_('prospectMailBulk')[1] === 'w' && ctx.getRoute_('prospectMailBulk').auth === true, '批次寄信：要登入、要客戶編輯權');
+const BODY = '貴公司團隊您好：這是一封預先寫好的開發信，內容超過二十個字。';
+call('handleProspectImport', { source: '批次', rows: [
+  rec('批次甲股份有限公司', { RegNo: 'B1', Email: 'a@b1.com.tw', MailSubject: '甲主旨', MailBody: BODY, Type: '設備商' }),
+  rec('批次乙股份有限公司', { RegNo: 'B2', Email: 'b@b2.com.tw', MailSubject: '乙主旨', MailBody: BODY }),
+  rec('批次沒草稿有限公司', { RegNo: 'B3', Email: 'c@b3.com.tw' }),
+  rec('批次沒信箱有限公司', { RegNo: 'B4', MailBody: BODY }),
+] });
+const bk = ['批次甲', '批次乙', '批次沒草稿', '批次沒信箱'].map((q) => find(q).Key).concat([optRow.Key, 'R:不存在']);
+call('handleProspectUpdate', { key: optRow.Key, row: optRow.RowIndex, fields: {} });
+r = call('handleProspectMailBulk', { keys: bk, dryRun: true });
+ok(r.success && r.count.ok === 2 && r.count.nodraft === 1 && r.count.noemail === 1 && r.count.optout === 1 && r.count.notfound === 1 && r.attaches.length === 4, '批次寄信預覽：可寄 2、沒草稿 / 沒信箱 / 拒絕聯絡 / 找不到各 1');
+const nb = sent.length;
+r = call('handleProspectMailBulk', { keys: bk, attachKey: 'auto' });
+const okRes = r.results.filter((x) => x.status === 'ok');
+ok(r.success && okRes.length === 2 && sent.length === nb + 2, '批次寄信：只寄可寄的 2 家');
+ok(sent[nb].subject === '甲主旨' && sent[nb].body === BODY && sent[nb].opts.attachments[0].name === '鑫堡AOI檢測系統.pdf', '寄出存好的主旨 / 內容，設備商自動帶「設備商推 AOI」附件');
+const ga = find('批次甲');
+ok(ga.MailSentAt && ga.Stage === '已聯絡', '寄出後記下寄出時間、狀態變已聯絡');
+ok(call('handleProspectLogs', { key: ga.Key }).logs.some((l) => /批次/.test(l.Content) && l.Method === 'Email'), '寄出後記一筆聯繫紀錄');
+r = call('handleProspectMailBulk', { keys: [ga.Key], dryRun: true });
+ok(r.count.sent === 1 && r.count.ok === 0, '已經寄過的再勾 → 預設略過');
+r = call('handleProspectMailBulk', { keys: [find('批次乙').Key], attachKey: 'motion', resend: true });
+ok(r.results[0].status === 'error' && /運動控制客戶/.test(r.results[0].message), '選了還沒設定的附件 → 那家不寄並說明');
+ok(!call('handleProspectMailBulk', { keys: bk, attachKey: 'xx' }).success && !call('handleProspectMailBulk', { keys: [] }).success, '附件種類錯 / 沒勾選 → 擋下');
+ctx.CacheService.getScriptCache().remove('psmail:' + find('批次乙').Key); // 剛寄過的 30 秒防重複
+sendFail = true;
+r = call('handleProspectMailBulk', { keys: [find('批次乙').Key], attachKey: 'none', resend: true });
+ok(r.results[0].status === 'error' && r.quota === 0, 'Gmail 額度用完 → 回報錯誤、之後不再寄');
+sendFail = false;
+
 console.log('prospects-mail checks passed: ' + pass);

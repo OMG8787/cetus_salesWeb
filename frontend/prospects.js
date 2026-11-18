@@ -135,13 +135,15 @@ function renderFilters() {
   ];
   const hasLabel = { P: '有電話', E: '有 Email', W: '有網站' };
   const ptypeLabel = { D: '🏭 設備商', U: '👤 一般使用者', N: '未設定類型' };
+  const stageList = stages.map((v) => ({ v, n: ((f.stage || []).find((x) => x.v === v) || {}).n || 0 })).concat((f.stage || []).filter((x) => stages.indexOf(x.v) < 0));
+  syncStageSelect();
   const ptypeList = ['D', 'U', 'N'].map((v) => ({ v, n: ((f.ptype || []).find((x) => x.v === v) || {}).n || 0 })).filter((x) => x.n || state.ptypes.has(x.v));
   document.getElementById('ps-filters').innerHTML =
     facetBlock('類型', 'ptype', ptypeList, state.ptypes, (v) => ptypeLabel[v]) +
+    facetBlock('開發狀態', 'stage', stageList, state.stages, (v) => v) +
     facetBlock('產業分類', 'cat', f.cat, state.cats, catLabel, { pre: `<div class="ps-groups"><span class="calc-hint">快速選取：</span>${groups}</div>`, limit: 12, expanded: expandedFacets.has('cat') }) +
     facetBlock('來源', 'source', f.source, state.sources, (v) => v) +
     facetBlock('縣市', 'city', f.city, state.cities, (v) => v, { limit: 10, expanded: expandedFacets.has('city') }) +
-    facetBlock('開發狀態', 'stage', f.stage, state.stages, (v) => v) +
     facetBlock('聯絡方式', 'has', hasList, state.has, (v) => hasLabel[v]);
 }
 
@@ -200,6 +202,23 @@ function onSearchInput() {
   }, 450);
 }
 
+/** 上方「開發狀態」下拉：跟左側的勾選同步（左側勾了兩個以上會顯示「多選」）。 */
+function syncStageSelect() {
+  const sel = document.getElementById('ps-stage');
+  if (!sel) return;
+  const multi = state.stages.size > 1;
+  sel.innerHTML = '<option value="">開發狀態：全部</option>' + stages.map((s) => `<option value="${e(s)}">開發狀態：${e(s)}</option>`).join('') + (multi ? `<option value="__multi">開發狀態：多選（${state.stages.size} 個）</option>` : '');
+  sel.value = multi ? '__multi' : state.stages.size ? [...state.stages][0] : '';
+}
+
+function onStageSelect() {
+  const v = document.getElementById('ps-stage').value;
+  if (v === '__multi') return;
+  state.stages.clear();
+  if (v) state.stages.add(v);
+  filtersChanged();
+}
+
 function onAssignedChange() {
   state.assigned = document.getElementById('ps-assigned').value;
   filtersChanged();
@@ -235,7 +254,7 @@ function onSizeChange() {
 }
 
 function resetFilters() {
-  ['sources', 'cities', 'cats', 'stages', 'has'].forEach((k) => state[k].clear());
+  ['sources', 'cities', 'cats', 'stages', 'has', 'ptypes'].forEach((k) => state[k].clear());
   state.q = '';
   state.assigned = '';
   state.site = '';
@@ -387,20 +406,123 @@ function renderBulk() {
     el.style.display = 'none';
     return;
   }
+  // 勾選變動會重畫這一列：先記下已經選好的動作與選項，重畫後放回去
+  const keep = ['ps-bulk-action', 'ps-bulk-stage', 'ps-bulk-type', 'ps-bulk-attach'].map((id) => [id, (document.getElementById(id) || {}).value]);
   const canAll = !selectAllMatching && data.total > data.rows.length && data.rows.length > 0 && data.rows.every((r) => selected.has(r.Key));
   el.style.display = '';
   el.innerHTML = `<span>已選 <b>${n.toLocaleString()}</b> 筆${selectAllMatching ? '（符合目前條件的全部）' : ''}</span>
     ${canAll ? `<button type="button" class="btn-mini" onclick="pickAllMatching()">改選符合條件的全部 ${data.total.toLocaleString()} 筆</button>` : ''}
-    <select id="ps-bulk-stage"><option value="">設定開發狀態…</option>${stages.map((s) => `<option value="${e(s)}">${e(s)}</option>`).join('')}</select>
-    <button type="button" class="btn-mini" onclick="applyBulk('stage')">套用狀態</button>
-    <select id="ps-bulk-type"><option value="-">設定類型…</option><option value="設備商">設備商</option><option value="一般使用者">一般使用者</option><option value="">清除類型</option></select>
-    <button type="button" class="btn-mini" onclick="applyBulk('type')">套用類型</button>
-    <button type="button" class="btn-mini" onclick="applyBulk('me')">指派給我</button>
-    <button type="button" class="btn-mini" onclick="applyBulk('unassign')">取消指派</button>
-    <button type="button" class="btn-mini ps-danger" onclick="applyBulk('optout')">標記拒絕聯絡</button>
-    ${state.hidden ? `<button type="button" class="btn-mini" onclick="applyBulk('unhide')">↩ 取消隱藏</button>` : `<button type="button" class="btn-mini" onclick="applyBulk('hide')">🙈 隱藏（不是客戶）</button>`}
-    ${canDelete() ? `<button type="button" class="btn-mini ps-danger" onclick="bulkDelete()">🗑 刪除</button>` : ''}
+    <select id="ps-bulk-action" onchange="onBulkAction()">
+      <option value="">選擇要對勾選公司做的事…</option>
+      <option value="mail">✉️ 寄信（寄出各家存好的開發信）</option>
+      ${state.hidden ? '<option value="unhide">↩ 取消隱藏</option>' : '<option value="hide">🙈 隱藏（不是客戶）</option>'}
+      ${canDelete() ? '<option value="delete">🗑 刪除</option>' : ''}
+      <option value="stage">設定開發狀態…</option>
+      <option value="type">設定類型…</option>
+      <option value="me">指派給我</option>
+      <option value="unassign">取消指派</option>
+      <option value="optout">標記拒絕聯絡</option>
+    </select>
+    <span id="ps-bulk-extra"></span>
+    <button type="button" class="btn-mini ps-run" id="ps-bulk-run" onclick="runBulk()">執行</button>
+    <span id="ps-bulk-msg" class="ps-bulk-msg"></span>
     <button type="button" class="btn-mini" onclick="clearSelection();renderRows();renderBulk();">取消勾選</button>`;
+  const act = keep[0][1];
+  if (act && document.querySelector(`#ps-bulk-action option[value="${act}"]`)) {
+    document.getElementById('ps-bulk-action').value = act;
+    onBulkAction();
+    keep.slice(1).forEach(([id, v]) => {
+      const el = document.getElementById(id);
+      if (el && v !== undefined) el.value = v;
+    });
+  }
+}
+
+/** 選了需要補選項的動作（開發狀態 / 類型 / 寄信附件）就在旁邊多一個下拉。 */
+function onBulkAction() {
+  const act = document.getElementById('ps-bulk-action').value;
+  const extra = document.getElementById('ps-bulk-extra');
+  if (act === 'stage') extra.innerHTML = `<select id="ps-bulk-stage"><option value="">選開發狀態…</option>${stages.map((s) => `<option value="${e(s)}">${e(s)}</option>`).join('')}</select>`;
+  else if (act === 'type') extra.innerHTML = '<select id="ps-bulk-type"><option value="-">選類型…</option><option value="設備商">設備商</option><option value="一般使用者">一般使用者</option><option value="">清除類型</option></select>';
+  else if (act === 'mail')
+    extra.innerHTML =
+      '<select id="ps-bulk-attach" title="附件"><option value="auto">附件：依每家類型自動選</option><option value="equip">附件：設備商推 AOI</option><option value="user">附件：一般客戶 AOI</option><option value="supplier">附件：供應廠商</option><option value="motion">附件：運動控制客戶</option><option value="none">不附檔案</option></select>';
+  else extra.innerHTML = '';
+  document.getElementById('ps-bulk-run').classList.toggle('ps-danger', act === 'delete');
+}
+
+/** 按「執行」：依選的動作處理勾選的公司。 */
+function runBulk() {
+  const act = document.getElementById('ps-bulk-action').value;
+  if (!act) return alert('請先選擇要執行的動作');
+  if (act === 'mail') return bulkMail();
+  if (act === 'delete') return bulkDelete();
+  return applyBulk(act);
+}
+
+const PS_MAIL_BULK_CHUNK = 20;
+const PS_MAIL_BULK_LIMIT = 500;
+const PS_MAIL_SKIP = { hidden: '隱藏名單', optout: '拒絕聯絡', noemail: '沒有 Email', nodraft: '還沒有開發信草稿', sent: '已經寄過', notfound: '找不到（可能已被刪除）' };
+
+/** 批次寄信：每家寄出名單上存好的開發信（主旨 / 內容）；先統計再確認，分批送、顯示進度。 */
+async function bulkMail() {
+  if (selectAllMatching) return alert('批次寄信請直接勾選公司（一次最多 ' + PS_MAIL_BULK_LIMIT + ' 家），不能用「符合條件的全部」');
+  const keys = [...selected];
+  if (!keys.length) return;
+  if (keys.length > PS_MAIL_BULK_LIMIT) return alert('批次寄信一次最多 ' + PS_MAIL_BULK_LIMIT + ' 家，請減少勾選');
+  const attachKey = document.getElementById('ps-bulk-attach').value;
+  const msg = document.getElementById('ps-bulk-msg');
+  const runBtn = document.getElementById('ps-bulk-run');
+  runBtn.disabled = true;
+  msg.textContent = '檢查中…';
+  const count = { ok: 0 };
+  let quota = -1;
+  for (let i = 0; i < keys.length; i += 100) {
+    const r = await callApi('prospectMailBulk', { keys: keys.slice(i, i + 100), dryRun: true });
+    if (!r || !r.success) {
+      runBtn.disabled = false;
+      msg.textContent = '';
+      return alert((r && r.message) || '檢查失敗');
+    }
+    Object.keys(r.count).forEach((k) => (count[k] = (count[k] || 0) + r.count[k]));
+    quota = r.quota;
+  }
+  msg.textContent = '';
+  runBtn.disabled = false;
+  const skips = Object.keys(PS_MAIL_SKIP).filter((k) => count[k]).map((k) => `・${PS_MAIL_SKIP[k]}：${count[k]} 家（略過）`);
+  if (!count.ok) return alert('勾選的公司都不能寄：\n' + skips.join('\n'));
+  const quotaLine = quota >= 0 ? `\n今天剩下的寄信額度：${quota} 封${quota < count.ok ? `（不夠，只會寄出前 ${quota} 家）` : ''}` : '';
+  const attachText = document.getElementById('ps-bulk-attach').selectedOptions[0].textContent;
+  if (!confirm(`確定寄出 ${count.ok} 封開發信？\n每家寄出名單上存好的主旨與內容；${attachText}${skips.length ? '\n\n' + skips.join('\n') : ''}${quotaLine}\n\n寄出後無法收回。`)) return;
+
+  let queue = keys.slice();
+  const done = { ok: 0, fail: [], quota: false };
+  runBtn.disabled = true;
+  while (queue.length) {
+    const batch = queue.slice(0, PS_MAIL_BULK_CHUNK);
+    queue = queue.slice(PS_MAIL_BULK_CHUNK);
+    msg.textContent = `寄信中… 已寄 ${done.ok} / ${count.ok}`;
+    const r = await callApi('prospectMailBulk', { keys: batch, attachKey }, { silent: true });
+    if (!r || !r.success) {
+      done.fail.push('（這一批 ' + batch.length + ' 家）' + ((r && r.message) || '連線失敗'));
+      continue;
+    }
+    r.results.forEach((x) => {
+      if (x.status === 'ok') done.ok++;
+      else if (x.status === 'later') queue.push(x.key);
+      else if (x.status === 'quota') done.quota = true;
+      else if (x.status === 'error' || x.status === 'dup') done.fail.push(`${x.name}：${x.message || '剛剛寄過，略過'}`);
+    });
+    if (r.quota === 0 && queue.length) {
+      done.quota = true;
+      break;
+    }
+  }
+  runBtn.disabled = false;
+  msg.textContent = '';
+  clearSelection();
+  await load();
+  alert(`已寄出 ${done.ok} 封開發信（每封都記進聯繫紀錄）。${done.quota ? '\n\n⚠️ 今天的 Gmail 寄信額度用完了，剩下的明天再寄。' : ''}${done.fail.length ? '\n\n沒寄出：\n' + done.fail.slice(0, 15).join('\n') + (done.fail.length > 15 ? `\n…還有 ${done.fail.length - 15} 家` : '') : ''}`);
 }
 
 function pickAllMatching() {
