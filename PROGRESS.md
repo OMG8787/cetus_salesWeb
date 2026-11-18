@@ -26,3 +26,6 @@
 - 2026-11-18 凌晨｜**待補存**：`teeia/mail-o15.json`（18 封：友鋮～岱稜）寫好了但連不到 script.google.com（連線逾時）沒存進系統；網路恢復後先跑 `node tools/claude-api.js fill @<S>/teeia/mail-o15.json`。注意 `nextold.py` 會把 mail-o15 當成已完成，補存前不要刪這個檔。背景讀官網 537 家已全部讀完（`teeia/old-out.json`），剩約 222 家待寫。已存進系統：229 封。
 - 2026-11-18｜o15 已確認存入（247 封）。**4 封開頭公司名寫錯，要使用者寄前手動改**：JAINNHER（寫建德工業→鍵和機械）、PERFECT MACHINE（準力機械→普發工業）、DediProg（德鑫科技→岱鐠科技）、Jiann Sheng（健昇機電→健陞機電）。之後英文名公司只用查證過的中文名或英文名。
 - 2026-11-18｜**開發信全部完成：383 封**存進名單（TEEIA 43＋舊名單 340）。沒寫的 298 家整理在 `C:\Users\jason\Downloads\開發信沒寫的公司_20261118.md`：可能同業 38、名單備註可能同業 85、官網讀不到 91、非目標 84。待使用者：①改 4 封公司名（見上）②確認同業清單 ③寄信每天 100 封上限（一般 Gmail）。
+- 2026-11-18｜使用者六項要求：①同業也寫信（硬體供應／軟體客製／合作）並在畫面標記 ②非同業跳過的也寫 ③「存成 Gmail 草稿」按鈕 ④CSV 匯入讀主旨／信件內容 ⑤TEEIA 剩 40 家匯入 ⑥4 封公司名直接改。
+  - 已完成：程式（commit e78e968，**只在本機、還沒推**：舊後端不認得 draftOnly，前端先推會把信直接寄出）；40 家已匯入（總 836）並寫回官網查詢結果；補寫 316 封（同業 126＋通用 173＋TEEIA 17），開發信總計 699 封。排除寶迪自動化（供應商）、華洋精機（官網 / Email 是別家）。
+  - **等使用者貼新版 Code.gs 發布後**：①`node tools/claude-api.js fill @<S>/teeia/peer-mark.json`（127 家同業標記）②`node tools/claude-api.js redraft @<S>/teeia/redraft4.json`（4 封公司名）③`git push` 推前端。scratchpad 不見的話：同業清單在 Downloads 的 skip 報告。
