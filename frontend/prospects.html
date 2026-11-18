@@ -5,7 +5,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>開發名單庫 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261118a" />
+<link rel="stylesheet" href="style.css?v=20261118b" />
 <link rel="stylesheet" href="dark.css?v=20261111b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -240,8 +240,13 @@
     <input id="psm-subject" maxlength="200" />
     <label class="ps-label" for="psm-body">內容（可以直接修改；署名已附在最後）</label>
     <textarea id="psm-body" rows="16" maxlength="8000"></textarea>
-    <div id="psm-attach" class="calc-hint" style="margin:6px 0;"></div>
-    <label style="display:block;"><input type="checkbox" id="psm-noattach" style="width:auto;" /> 這封不附檔案</label>
+    <label class="ps-label" for="psm-attach-sel">附件</label>
+    <select id="psm-attach-sel" onchange="showPickedAttach()"></select>
+    <div id="psm-attach" class="calc-hint" style="margin:4px 0;"></div>
+    <div class="psm-test">
+      <label class="ps-label" for="psm-test-to">測試寄出（先寄給自己看客戶收到的樣子；不算已寄出、不記聯繫紀錄）</label>
+      <div class="psm-test-row"><input id="psm-test-to" type="email" maxlength="120" placeholder="你的信箱" /><button type="button" class="ps-btn" id="psm-test" onclick="testMail()">🧪 測試寄出</button></div>
+    </div>
     <div class="pcv-btns" style="margin-top:10px;">
       <button type="button" class="ps-btn ps-btn-primary" id="psm-send" onclick="sendMail()">📨 確認寄出</button>
       <button type="button" class="ps-btn" id="psm-draft" onclick="saveMailDraft()" title="放進 Gmail 草稿匣，不會寄出">📝 存成 Gmail 草稿</button>
@@ -255,10 +260,20 @@
   <div class="modal-box" style="max-width:720px;">
     <div class="modal-header"><h3 style="margin:0;">⚙️ 寄信設定</h3><button type="button" onclick="closeModal('ps-mailcfg-modal')">關閉</button></div>
     <div class="calc-hint">欄位留空 = 使用預設值。只有管理員可以儲存。</div>
-    <label class="ps-label" for="pmc-attach">附件（Google Drive 檔案連結或檔案 ID）</label>
-    <input id="pmc-attach" maxlength="300" placeholder="https://drive.google.com/file/d/…/view" />
+    <div class="ps-label">附件（四種，寄信時可以選；貼 Google Drive 檔案連結或檔案 ID）</div>
+    <label class="ps-label pmc-att-label" for="pmc-att-equip">設備商推 AOI</label>
+    <input id="pmc-att-equip" maxlength="300" placeholder="https://drive.google.com/file/d/…/view" />
+    <div id="pmc-att-equip-state" class="calc-hint"></div>
+    <label class="ps-label pmc-att-label" for="pmc-att-user">一般客戶 AOI</label>
+    <input id="pmc-att-user" maxlength="300" placeholder="https://drive.google.com/file/d/…/view" />
+    <div id="pmc-att-user-state" class="calc-hint"></div>
+    <label class="ps-label pmc-att-label" for="pmc-att-supplier">供應廠商</label>
+    <input id="pmc-att-supplier" maxlength="300" placeholder="https://drive.google.com/file/d/…/view" />
+    <div id="pmc-att-supplier-state" class="calc-hint"></div>
+    <label class="ps-label pmc-att-label" for="pmc-att-motion">運動控制客戶</label>
+    <input id="pmc-att-motion" maxlength="300" placeholder="https://drive.google.com/file/d/…/view" />
+    <div id="pmc-att-motion-state" class="calc-hint"></div>
     <div class="calc-hint">要放在 Google Drive，並讓部署這個系統的 Google 帳號讀得到。Apps Script 跑在 Google 的伺服器上，讀不到你電腦裡的 D:\ 路徑。</div>
-    <div id="pmc-attach-state" class="calc-hint"></div>
     <label class="ps-label" for="pmc-from">寄件人名稱（對方信箱顯示的名字）</label>
     <input id="pmc-from" maxlength="60" />
     <label class="ps-label" for="pmc-sender">信裡自我介紹用的名字</label>
@@ -336,6 +351,6 @@
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
 <script src="prospects-lib.js?v=20261118a"></script>
-<script src="prospects.js?v=20261118a"></script>
+<script src="prospects.js?v=20261118b"></script>
 </body>
 </html>

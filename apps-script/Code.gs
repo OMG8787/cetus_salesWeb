@@ -12959,6 +12959,9 @@ var PS_MAIL_DEFAULTS = {
   fromName: '鑫堡股份有限公司 CETUS',
   signature: 'Best Regards,\nAustin (0972259172)\n鑫堡股份有限公司 CETUS\n公司官網：https://www.cetus.tw/',
   attach: '',
+  attachUser: '',
+  attachSupplier: '',
+  attachMotion: '',
   intro: '鑫堡股份有限公司（CETUS）主要從事工業機器視覺及 AOI 檢測系統整合，提供工業相機、鏡頭、光源、視覺演算法及客製化檢測軟體開發；另外也提供運動控制相關產品，包含運動控制卡、EtherCAT 控制器、線性馬達及伺服驅動等。AOI 可處理的項目包含：外觀瑕疵檢測、尺寸量測、定位辨識、異物檢測、OCR／條碼辨識、多角度影像檢查及自動化分選。',
   strategy: '如果評估後發現對方與鑫堡在機械設備、運動控制、技術整合或專案配合上沒有明確的互補合作機會，就不勉強尋找合作切入點，直接以 AOI 生產線瑕疵檢測作為主要推廣方向。\n依照以下原則撰寫：\n1. 有明確合作互補性：主打雙方技術整合、機械設備合作、運動控制或客戶轉介。\n2. 對方本身是設備商或自動化廠商：主打 AOI 作為設備選配模組，協助客戶增加視覺檢測功能。\n3. 對方是製造商或工廠：直接推廣 AOI 生產線檢測，包含外觀瑕疵、尺寸量測、異物檢測、OCR／條碼辨識及自動化分選。\n4. 雙方沒有明確合作關聯：不硬談合作，直接介紹鑫堡的 AOI 檢測方案，爭取產線檢測需求。\n核心原則：以實際商業機會為主，不為了談合作而談合作；AOI 是主要業務，優先爭取檢測設備導入機會。',
 };
@@ -12973,7 +12976,7 @@ function psMailCfg_() {
   var out = {};
   Object.keys(PS_MAIL_DEFAULTS).forEach(function (k) {
     var v = typeof o[k] === 'string' ? o[k].trim() : '';
-    out[k] = v || (k === 'attach' ? '' : PS_MAIL_DEFAULTS[k]);
+    out[k] = v || (k.indexOf('attach') === 0 ? '' : PS_MAIL_DEFAULTS[k]);
   });
   return out;
 }
@@ -12987,8 +12990,60 @@ function psDriveId_(v) {
   return /^[A-Za-z0-9_-]{15,}$/.test(s) ? s : '';
 }
 
-/** 設定的附件：回 { ok, id, name, size, message }；沒設定 ok=false、id=''。 */
+// 四種附件（寄信時選一個）：key = 寄信時指定的代號，field = 設定裡存連結的欄位（attach 沿用舊版的單一附件）
+var PS_MAIL_ATTACHES = [
+  { key: 'equip', field: 'attach', label: '設備商推 AOI' },
+  { key: 'user', field: 'attachUser', label: '一般客戶 AOI' },
+  { key: 'supplier', field: 'attachSupplier', label: '供應廠商' },
+  { key: 'motion', field: 'attachMotion', label: '運動控制客戶' },
+];
+
+/** 四種附件各自的狀態：[{ key, label, configured, ok, name, message }]。 */
+function psMailAttachList_(cfg) {
+  return PS_MAIL_ATTACHES.map(function (a) {
+    var st = psMailAttachOf_(cfg[a.field]);
+    return { key: a.key, label: a.label, configured: !!cfg[a.field], ok: st.ok, name: st.name, message: st.message };
+  });
+}
+
+/** 這家預設帶哪個附件：同業 → 供應廠商、設備商 → 設備商推 AOI、其他 → 一般客戶 AOI；沒設定的就往下找有設定的，都沒有 → 不附。 */
+function psMailAttachDefault_(cfg, o) {
+  var want = o && o.Peer ? 'supplier' : psTypeLetter_(o && o.Type) === 'D' ? 'equip' : 'user';
+  var order = [want, 'equip', 'user', 'supplier', 'motion'];
+  for (var i = 0; i < order.length; i++) {
+    var a = PS_MAIL_ATTACHES.filter(function (x) { return x.key === order[i]; })[0];
+    if (cfg[a.field]) return a.key;
+  }
+  return 'none';
+}
+
+/** 寄信 / 草稿 / 測試寄出共用：依 body.attachKey（none = 不附；沒給就沿用舊版的 noAttach + 單一附件）組 GmailApp 參數。 */
+function psMailOpts_(cfg, body) {
+  var opts = { name: cfg.fromName };
+  var key = body.attachKey;
+  var link = '';
+  if (key === undefined || key === null || key === '') link = body.noAttach === true ? '' : cfg.attach;
+  else if (key !== 'none') {
+    var a = PS_MAIL_ATTACHES.filter(function (x) { return x.key === key; })[0];
+    if (!a) return { ok: false, message: '附件種類不正確' };
+    link = cfg[a.field];
+    if (!link) return { ok: false, message: '「' + a.label + '」還沒有設定附件（到「⚙️ 寄信設定」貼 Google Drive 連結，或選「不附檔案」）' };
+  }
+  if (!link) return { ok: true, opts: opts, attName: '' };
+  var att = psMailAttachOf_(link);
+  if (!att.ok) return { ok: false, message: '附件讀取失敗：' + att.message + '（可以先在「寄信設定」修正，或選「不附檔案」）' };
+  opts.attachments = [DriveApp.getFileById(att.id).getBlob()];
+  return { ok: true, opts: opts, attName: att.name };
+}
+
+/** 舊版單一附件的狀態（= 設備商推 AOI 那一欄）：回 { ok, id, name, size, message }。 */
 function psMailAttach_(cfg) {
+  return psMailAttachOf_(cfg.attach);
+}
+
+/** 一個 Drive 連結 / ID 的狀態：回 { ok, id, name, size, message }；沒設定 ok=false、id=''。 */
+function psMailAttachOf_(link) {
+  var cfg = { attach: link || '' };
   var id = psDriveId_(cfg.attach);
   if (!cfg.attach) return { ok: false, id: '', name: '', message: '' };
   if (!id) return { ok: false, id: '', name: '', message: '附件不是有效的 Google Drive 連結或檔案 ID' };
@@ -13003,20 +13058,21 @@ function psMailAttach_(cfg) {
 function handleProspectMailCfg(body) {
   var cfg = psMailCfg_();
   var att = psMailAttach_(cfg);
-  return { success: true, cfg: cfg, defaults: PS_MAIL_DEFAULTS, attach: att };
+  return { success: true, cfg: cfg, defaults: PS_MAIL_DEFAULTS, attach: att, attaches: psMailAttachList_(cfg) };
 }
 
 function handleProspectMailCfgSave(body) {
   var inc = body.cfg || {};
   var next = {};
-  var lim = { sender: 40, fromName: 60, signature: 600, attach: 300, intro: 1500, strategy: 2500 };
+  var lim = { sender: 40, fromName: 60, signature: 600, attach: 300, attachUser: 300, attachSupplier: 300, attachMotion: 300, intro: 1500, strategy: 2500 };
   Object.keys(lim).forEach(function (k) {
     next[k] = typeof inc[k] === 'string' ? psClean_(inc[k], lim[k], k === 'signature' || k === 'intro' || k === 'strategy') : '';
   });
-  if (next.attach && !psDriveId_(next.attach)) return { success: false, message: '附件請貼 Google Drive 的檔案連結（或檔案 ID）；電腦上的路徑（例如 D:\\...）Apps Script 讀不到' };
+  var badAtt = PS_MAIL_ATTACHES.filter(function (a) { return next[a.field] && !psDriveId_(next[a.field]); })[0];
+  if (badAtt) return { success: false, message: '「' + badAtt.label + '」附件請貼 Google Drive 的檔案連結（或檔案 ID）；電腦上的路徑（例如 D:\\...）Apps Script 讀不到' };
   PropertiesService.getScriptProperties().setProperty('PS_MAIL_CFG', JSON.stringify(next));
   var cfg = psMailCfg_();
-  return { success: true, cfg: cfg, attach: psMailAttach_(cfg) };
+  return { success: true, cfg: cfg, attach: psMailAttach_(cfg), attaches: psMailAttachList_(cfg) };
 }
 
 var PS_MAIL_TYPE_TEXT = { D: '設備商 / 自動化廠商', U: '一般使用者（製造商 / 工廠）' };
@@ -13123,7 +13179,17 @@ function handleProspectMailPreview(body) {
     o.MailBody = '您好：\n\n\n' + cfg.signature;
   }
   var att = psMailAttach_(cfg);
-  return { success: true, to: o.Email || '', name: o.Name, subject: o.MailSubject, body: o.MailBody, generated: generated, hasDraft: hasDraft, genError: genError, draftAt: o.MailAt || '', sentAt: o.MailSentAt || '', attach: { configured: !!cfg.attach, ok: att.ok, name: att.name, message: att.message }, fromName: cfg.fromName };
+  return { success: true, to: o.Email || '', name: o.Name, subject: o.MailSubject, body: o.MailBody, generated: generated, hasDraft: hasDraft, genError: genError, draftAt: o.MailAt || '', sentAt: o.MailSentAt || '', attach: { configured: !!cfg.attach, ok: att.ok, name: att.name, message: att.message }, attaches: psMailAttachList_(cfg), attachDefault: psMailAttachDefault_(cfg, o), peer: o.Peer || '', myEmail: psMyEmail_(body), fromName: cfg.fromName };
+}
+
+/** 登入者自己的 Email（測試寄出的預設收件人）。 */
+function psMyEmail_(body) {
+  try {
+    var u = body._user ? findUserRow_(body._user.username) : null;
+    return u && validEmail_(u['Email']) ? String(u['Email']).trim() : '';
+  } catch (e) {
+    return '';
+  }
 }
 
 /** 寄出（使用者已預覽、可編輯內容）：寄信 → 記錄到聯繫紀錄（Email）→ 開發狀態從「未處理」變「已聯絡」。 */
@@ -13141,19 +13207,16 @@ function handleProspectMailSend(body) {
   var found = psFindRow_(sh, key, body.row);
   if (!found) return { success: false, message: '找不到這筆名單（可能已被刪除），請重新整理' };
   if (found.obj.Optout) return { success: false, message: '這家標了「拒絕聯絡」，不能寄信' };
-  if (body.draftOnly === true) return psMailToDraft_(key, found, to, subject, text, body.noAttach === true);
+  if (body.draftOnly === true) return psMailToDraft_(key, found, to, subject, text, body);
+  if (body.test === true) return psMailTest_(body, subject, text);
   var cache = CacheService.getScriptCache();
   var dupKey = 'psmail:' + key;
   if (cache.get(dupKey)) return { success: false, message: '剛剛已經寄出過這封信，請稍候再寄（避免重複寄送）' };
   var cfg = psMailCfg_();
-  var opts = { name: cfg.fromName };
-  var attName = '';
-  if (cfg.attach && body.noAttach !== true) {
-    var att = psMailAttach_(cfg);
-    if (!att.ok) return { success: false, message: '附件讀取失敗，信沒有寄出：' + att.message + '（可以先在「寄信設定」修正，或勾選「這封不附檔案」）' };
-    opts.attachments = [DriveApp.getFileById(att.id).getBlob()];
-    attName = att.name;
-  }
+  var mo = psMailOpts_(cfg, body);
+  if (!mo.ok) return { success: false, message: mo.message + '，信沒有寄出' };
+  var opts = mo.opts;
+  var attName = mo.attName;
   try {
     GmailApp.sendEmail(to, subject, text, opts);
   } catch (e) {
@@ -13174,17 +13237,32 @@ function handleProspectMailSend(body) {
   return { success: true, sentAt: now, attach: attName, row: logged && logged.success ? logged.row : null, logError: logged && logged.success ? '' : (logged && logged.message) || '' };
 }
 
-/** 存成 Gmail 草稿（不寄出）：建立草稿、把修改過的主旨 / 內容存回名單；不記聯繫紀錄、不改開發狀態。 */
-function psMailToDraft_(key, found, to, subject, text, noAttach) {
-  var cfg = psMailCfg_();
-  var opts = { name: cfg.fromName };
-  var attName = '';
-  if (cfg.attach && !noAttach) {
-    var att = psMailAttach_(cfg);
-    if (!att.ok) return { success: false, message: '附件讀取失敗，沒有建立草稿：' + att.message + '（可以先在「寄信設定」修正，或勾選「這封不附檔案」）' };
-    opts.attachments = [DriveApp.getFileById(att.id).getBlob()];
-    attName = att.name;
+/** 測試寄出：把同一封信（含選的附件）寄到 testTo，看客戶收到的樣子；不記聯繫紀錄、不改開發狀態、不算已寄出、不存草稿。 */
+function psMailTest_(body, subject, text) {
+  var testTo = psEmail_(body.testTo);
+  if (!testTo) return { success: false, message: '測試收件信箱格式不對' };
+  var cache = CacheService.getScriptCache();
+  var k = 'psmailtest:' + String((body._user && body._user.username) || '');
+  var n = Number(cache.get(k) || 0);
+  if (n >= 20) return { success: false, message: '測試寄出太頻繁了（每人每小時 20 封），請稍後再試' };
+  var mo = psMailOpts_(psMailCfg_(), body);
+  if (!mo.ok) return { success: false, message: mo.message + '，測試信沒有寄出' };
+  try {
+    GmailApp.sendEmail(testTo, subject, text, mo.opts);
+  } catch (e) {
+    return { success: false, message: '測試寄出失敗：' + String(e.message || e).slice(0, 160) };
   }
+  cache.put(k, String(n + 1), 3600);
+  return { success: true, test: true, to: testTo, attach: mo.attName };
+}
+
+/** 存成 Gmail 草稿（不寄出）：建立草稿、把修改過的主旨 / 內容存回名單；不記聯繫紀錄、不改開發狀態。 */
+function psMailToDraft_(key, found, to, subject, text, body) {
+  var cfg = psMailCfg_();
+  var mo = psMailOpts_(cfg, body);
+  if (!mo.ok) return { success: false, message: mo.message + '，沒有建立草稿' };
+  var opts = mo.opts;
+  var attName = mo.attName;
   var draft;
   try {
     draft = GmailApp.createDraft(to, subject, text, opts);

@@ -851,6 +851,10 @@ header, .tabs { position: relative; z-index: 300; }
 
 /* 開發名單：陌生開發 / 已是客戶標記、匯入前檢查 */
 .ps-cold { background: #f3e8fb; color: #8e44ad; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; }
+.psm-test { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--border, #cbd5e1); border-radius: 8px; }
+.psm-test-row { display: flex; gap: 8px; align-items: center; }
+.psm-test-row input { flex: 1; min-width: 0; }
+.pmc-att-label { font-weight: normal; }
 .ps-peer { background: #fff4e5; color: #b45309; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; cursor: help; }
 .ps-peer-box { background: #fff4e5; color: #92400e; border-radius: 6px; padding: 6px 10px; font-size: 13px; margin: 4px 0; }
 html[data-theme="dark"] .ps-peer, html[data-theme="dark"] .ps-peer-box { background: rgba(245,158,11,.18); color: #fbbf24; }
@@ -1014,12 +1018,12 @@ html[data-theme="dark"] #ps-edit-modal .ps-iscust { background: rgba(79,134,214,
 #ps-mail-modal .modal-header button:hover, #ps-mailcfg-modal .modal-header button:hover { border-color: var(--ps-accent); color: var(--ps-accent); }
 #ps-mail-modal .ps-edit-title { font-size: 17px; font-weight: 700; margin-top: 4px; }
 #ps-mail-modal .ps-label, #ps-mailcfg-modal .ps-label { display: block; font-size: 13px; font-weight: 600; color: var(--ps-muted); margin: 12px 0 4px; }
-#ps-mail-modal input:not([type=checkbox]), #ps-mail-modal textarea, #ps-mailcfg-modal input:not([type=checkbox]), #ps-mailcfg-modal textarea {
+#ps-mail-modal input:not([type=checkbox]), #ps-mail-modal textarea, #ps-mail-modal select, #ps-mailcfg-modal input:not([type=checkbox]), #ps-mailcfg-modal textarea {
   display: block; width: 100%; box-sizing: border-box; margin: 0; border: 1px solid var(--ps-line); border-radius: 8px; padding: 8px 10px; background: var(--ps-card); color: var(--ps-text); font-family: inherit; font-size: 14px;
 }
 #ps-mail-modal textarea, #ps-mailcfg-modal textarea { line-height: 1.6; resize: vertical; min-height: 120px; }
 #ps-mail-modal #psm-body { min-height: 320px; }
-#ps-mail-modal input:focus, #ps-mail-modal textarea:focus, #ps-mailcfg-modal input:focus, #ps-mailcfg-modal textarea:focus { outline: none; border-color: var(--ps-accent); box-shadow: 0 0 0 3px var(--ps-accent-soft); }
+#ps-mail-modal input:focus, #ps-mail-modal select:focus, #ps-mail-modal textarea:focus, #ps-mailcfg-modal input:focus, #ps-mailcfg-modal textarea:focus { outline: none; border-color: var(--ps-accent); box-shadow: 0 0 0 3px var(--ps-accent-soft); }
 #ps-mail-modal #psm-state:not(:empty) { padding: 6px 10px; border-radius: 8px; background: var(--ps-accent-soft); color: var(--ps-accent); }
 #ps-mail-modal label:has(#psm-noattach) { display: inline-flex !important; align-items: center; gap: 6px; font-size: 13px; color: var(--ps-muted); margin-top: 4px; cursor: pointer; }
 #ps-mail-modal .pcv-btns, #ps-mailcfg-modal .pcv-btns { align-items: center; padding-top: 12px; border-top: 1px solid var(--ps-line); }

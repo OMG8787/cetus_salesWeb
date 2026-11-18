@@ -1035,7 +1035,7 @@ async function openMail(i) {
   document.getElementById('psm-state').textContent = '讀取中…';
   ['psm-to', 'psm-subject', 'psm-body'].forEach((id) => (document.getElementById(id).value = ''));
   document.getElementById('psm-msg').textContent = '';
-  document.getElementById('psm-noattach').checked = false;
+  document.getElementById('psm-attach-sel').innerHTML = '';
   document.getElementById('psm-attach').textContent = '';
   setMailBusy(true);
   document.getElementById('ps-mail-modal').style.display = 'flex';
@@ -1044,6 +1044,7 @@ async function openMail(i) {
 
 function setMailBusy(b) {
   document.getElementById('psm-send').disabled = b;
+  document.getElementById('psm-test').disabled = b;
   document.getElementById('psm-draft').disabled = b;
   document.getElementById('psm-regen').disabled = b;
 }
@@ -1068,9 +1069,13 @@ async function loadMail(regen) {
   if (res.genError) st.push('⚠️ 沒有產生文案：' + res.genError + '（可以直接在下面手寫）');
   if (res.sentAt) st.push('📨 這家已在 ' + res.sentAt + ' 寄過信，再寄會再寄一封');
   document.getElementById('psm-state').textContent = st.join('　');
-  const a = res.attach || {};
-  const att = document.getElementById('psm-attach');
-  att.textContent = !a.configured ? '📎 沒有設定附件（可在「⚙️ 寄信設定」設定）' : a.ok ? '📎 會附上：' + a.name : '⚠️ ' + (a.message || '附件讀取失敗') + '（修正設定，或勾選「這封不附檔案」）';
+  mailAttaches = res.attaches || [];
+  const sel = document.getElementById('psm-attach-sel');
+  sel.innerHTML = mailAttaches.map((x) => `<option value="${e(x.key)}" ${x.configured ? '' : 'disabled'}>${e(x.label)}${x.configured ? (x.ok ? '：' + e(x.name) : '（⚠️ 讀不到）') : '（未設定）'}</option>`).join('') + '<option value="none">不附檔案</option>';
+  sel.value = res.attachDefault || 'none';
+  showPickedAttach();
+  const tt = document.getElementById('psm-test-to');
+  if (!tt.value) tt.value = res.myEmail || '';
   setMailBusy(false);
 }
 
@@ -1091,12 +1096,12 @@ async function sendMail() {
     msg.textContent = '收件人、主旨、內容都要填';
     return;
   }
-  const noAttach = document.getElementById('psm-noattach').checked;
-  if (!confirm(`確定寄給 ${to}？\n主旨：${subject}\n${noAttach ? '（不附檔案）' : '（會附上設定的附件）'}\n\n寄出後無法收回。`)) return;
+  const attachKey = document.getElementById('psm-attach-sel').value || 'none';
+  if (!confirm(`確定寄給 ${to}？\n主旨：${subject}\n附件：${pickedAttachText()}\n\n寄出後無法收回。`)) return;
   setMailBusy(true);
   msg.textContent = '寄送中…';
   const row = mailRow;
-  const r = await callApi('prospectMailSend', { key: row.Key, row: row.RowIndex, to, subject, body, noAttach });
+  const r = await callApi('prospectMailSend', { key: row.Key, row: row.RowIndex, to, subject, body, attachKey });
   if (!r || !r.success) {
     msg.textContent = '✗ ' + ((r && r.message) || '寄信失敗');
     setMailBusy(false);
@@ -1113,6 +1118,44 @@ async function sendMail() {
   loadStatus();
 }
 
+let mailAttaches = [];
+function pickedAttachText() {
+  const k = document.getElementById('psm-attach-sel').value;
+  const x = mailAttaches.find((a) => a.key === k);
+  return !x ? '不附檔案' : x.label + (x.name ? '（' + x.name + '）' : '');
+}
+
+function showPickedAttach() {
+  const k = document.getElementById('psm-attach-sel').value;
+  const x = mailAttaches.find((a) => a.key === k);
+  const el = document.getElementById('psm-attach');
+  if (!mailAttaches.some((a) => a.configured)) el.textContent = '📎 還沒有設定任何附件（可在「⚙️ 寄信設定」設定四種附件）';
+  else if (!x) el.textContent = '📎 這封不附檔案';
+  else el.textContent = x.ok ? '📎 會附上：' + x.name : '⚠️ ' + (x.message || '附件讀取失敗') + '（修正設定，或改選其他附件）';
+}
+
+/** 測試寄出：同一封信（含選的附件）寄到自己填的信箱，不算已寄出、不記聯繫紀錄。 */
+async function testMail() {
+  const testTo = document.getElementById('psm-test-to').value.trim();
+  const subject = document.getElementById('psm-subject').value.trim();
+  const body = document.getElementById('psm-body').value.trim();
+  const msg = document.getElementById('psm-msg');
+  if (!testTo) {
+    msg.textContent = '請填測試收件的信箱';
+    return;
+  }
+  if (!subject || !body) {
+    msg.textContent = '主旨、內容都要填';
+    return;
+  }
+  setMailBusy(true);
+  msg.textContent = '測試寄出中…';
+  const row = mailRow;
+  const r = await callApi('prospectMailSend', { key: row.Key, row: row.RowIndex, to: document.getElementById('psm-to').value.trim() || testTo, subject, body, attachKey: document.getElementById('psm-attach-sel').value || 'none', test: true, testTo });
+  setMailBusy(false);
+  msg.textContent = r && r.success ? `✓ 測試信已寄到 ${r.to}${r.attach ? '（附件：' + r.attach + '）' : '（沒有附件）'}，這家仍是未寄出` : '✗ ' + ((r && r.message) || '測試寄出失敗');
+}
+
 /** 存成 Gmail 草稿：不寄出、不記聯繫紀錄；修改過的主旨 / 內容一併存回名單。 */
 async function saveMailDraft() {
   const to = document.getElementById('psm-to').value.trim();
@@ -1123,11 +1166,11 @@ async function saveMailDraft() {
     msg.textContent = '收件人、主旨、內容都要填';
     return;
   }
-  const noAttach = document.getElementById('psm-noattach').checked;
+  const attachKey = document.getElementById('psm-attach-sel').value || 'none';
   setMailBusy(true);
   msg.textContent = '建立 Gmail 草稿中…';
   const row = mailRow;
-  const r = await callApi('prospectMailSend', { key: row.Key, row: row.RowIndex, to, subject, body, noAttach, draftOnly: true });
+  const r = await callApi('prospectMailSend', { key: row.Key, row: row.RowIndex, to, subject, body, attachKey, draftOnly: true });
   setMailBusy(false);
   if (!r || !r.success) {
     msg.textContent = '✗ ' + ((r && r.message) || '建立草稿失敗');
@@ -1147,17 +1190,21 @@ async function openMailCfg() {
     return;
   }
   const c = r.cfg;
-  document.getElementById('pmc-attach').value = c.attach || '';
+  PMC_ATT.forEach(([id, f]) => (document.getElementById(id).value = c[f] || ''));
   document.getElementById('pmc-from').value = c.fromName;
   document.getElementById('pmc-sender').value = c.sender;
   document.getElementById('pmc-sig').value = c.signature;
   document.getElementById('pmc-intro').value = c.intro;
   document.getElementById('pmc-strategy').value = c.strategy;
-  showMailAttach(r.attach);
+  showMailAttach(r.attaches);
 }
 
-function showMailAttach(a) {
-  document.getElementById('pmc-attach-state').textContent = !a || (!a.ok && !a.message) ? '目前沒有設定附件。' : a.ok ? '✓ 讀到附件：' + a.name : '⚠️ ' + a.message;
+const PMC_ATT = [['pmc-att-equip', 'attach', 'equip'], ['pmc-att-user', 'attachUser', 'user'], ['pmc-att-supplier', 'attachSupplier', 'supplier'], ['pmc-att-motion', 'attachMotion', 'motion']];
+function showMailAttach(list) {
+  PMC_ATT.forEach(([id, , key]) => {
+    const a = (list || []).find((x) => x.key === key);
+    document.getElementById(id + '-state').textContent = !a || !a.configured ? '未設定' : a.ok ? '✓ 讀到附件：' + a.name : '⚠️ ' + a.message;
+  });
 }
 
 async function saveMailCfg() {
@@ -1167,7 +1214,7 @@ async function saveMailCfg() {
     return;
   }
   const cfg = {
-    attach: document.getElementById('pmc-attach').value.trim(),
+    ...Object.fromEntries(PMC_ATT.map(([id, f]) => [f, document.getElementById(id).value.trim()])),
     fromName: document.getElementById('pmc-from').value.trim(),
     sender: document.getElementById('pmc-sender').value.trim(),
     signature: document.getElementById('pmc-sig').value.trim(),
@@ -1179,7 +1226,7 @@ async function saveMailCfg() {
     msg.textContent = '✗ ' + ((r && r.message) || '儲存失敗');
     return;
   }
-  showMailAttach(r.attach);
+  showMailAttach(r.attaches);
   msg.textContent = '✓ 已儲存';
 }
 

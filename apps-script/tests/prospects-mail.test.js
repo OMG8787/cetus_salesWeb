@@ -162,4 +162,30 @@ r = call('handleProspectMailSend', { key: dz.Key, row: dz.RowIndex, to: 'x@nosit
 ok(r.success && r.draft && /drafts/.test(r.draftUrl) && drafts.length === 1 && sent.length === sentBefore, '存成 Gmail 草稿：建立草稿、沒有寄出');
 const dz2 = find('沒官網');
 ok(!dz2.MailSentAt && (dz2.Stage === '' || dz2.Stage === '未處理') && call('handleProspectMailPreview', { key: dz2.Key, row: dz2.RowIndex }).subject === '草稿主旨', '存成草稿：修改的內容存回名單、狀態不變、不算已寄');
+// ---- 四種附件、寄信時選附件、測試寄出 ----
+const D2 = 'zzzSUPPLIER1234567890_x';
+const prevGet = ctx.DriveApp.getFileById;
+ctx.DriveApp.getFileById = (id) => (id === D2 ? { getName: () => '供應廠商簡介.pdf', getSize: () => 1000, getBlob: () => ({ name: '供應廠商簡介.pdf' }) } : prevGet(id));
+r = call('handleProspectMailCfgSave', { cfg: { attach: DRIVE_ID, attachSupplier: 'https://drive.google.com/file/d/' + D2 + '/view', attachMotion: 'D:\\x.pdf' } });
+ok(!r.success && /運動控制客戶/.test(r.message), '寄信設定：哪一欄附件格式錯就指出哪一欄');
+r = call('handleProspectMailCfgSave', { cfg: { attach: DRIVE_ID, attachSupplier: D2 } });
+ok(r.success && r.attaches.length === 4 && r.attaches[0].ok && r.attaches[2].name === '供應廠商簡介.pdf' && !r.attaches[1].configured, '寄信設定：四種附件各自的狀態');
+const xs = find('翔笙');
+let pv = call('handleProspectMailPreview', { key: xs.Key, row: xs.RowIndex });
+ok(pv.attaches.length === 4 && pv.attachDefault === 'equip', '預覽：設備商預設帶「設備商推 AOI」');
+const ds = find('大塑膠');
+ok(call('handleProspectMailPreview', { key: ds.Key, row: ds.RowIndex }).attachDefault === 'equip', '預覽：一般使用者想帶的附件沒設定 → 改帶有設定的');
+const ts = find('沒官網');
+const n0s = sent.length;
+r = call('handleProspectMailSend', { key: ts.Key, row: ts.RowIndex, to: 'x@nosite.com.tw', subject: '測試主旨', body: '這是一封測試信，內容要超過二十個字才可以寄出喔。', test: true, testTo: 'me@cetus.tw', attachKey: 'supplier' });
+ok(r.success && r.test && sent.length === n0s + 1 && sent[sent.length - 1].to === 'me@cetus.tw' && sent[sent.length - 1].opts.attachments[0].name === '供應廠商簡介.pdf', '測試寄出：寄到自己填的信箱，附上選的附件');
+const ts2 = find('沒官網');
+ok(!ts2.MailSentAt && ts2.Stage !== '已聯絡', '測試寄出：不算已寄出、不改開發狀態');
+r = call('handleProspectMailSend', { key: ts.Key, row: ts.RowIndex, to: 'x@nosite.com.tw', subject: 's', body: '這是一封測試信，內容要超過二十個字才可以寄出喔。', test: true, testTo: 'bad', attachKey: 'none' });
+ok(!r.success && /信箱/.test(r.message), '測試寄出：信箱格式錯擋下');
+r = call('handleProspectMailSend', { key: ts.Key, row: ts.RowIndex, to: 'x@nosite.com.tw', subject: 's', body: '這是一封測試信，內容要超過二十個字才可以寄出喔。', test: true, testTo: 'me@cetus.tw', attachKey: 'motion' });
+ok(!r.success && /運動控制客戶/.test(r.message), '選了還沒設定的附件 → 擋下並說明');
+r = call('handleProspectMailSend', { key: ts.Key, row: ts.RowIndex, to: 'x@nosite.com.tw', subject: 's', body: '這是一封測試信，內容要超過二十個字才可以寄出喔。', test: true, testTo: 'me@cetus.tw', attachKey: 'none' });
+ok(r.success && !sent[sent.length - 1].opts.attachments, '選「不附檔案」就不附');
+
 console.log('prospects-mail checks passed: ' + pass);
