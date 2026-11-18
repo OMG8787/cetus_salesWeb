@@ -13234,8 +13234,13 @@ function handleProspectMailSend(body) {
     o2.MailSentAt = now;
     psSheet_(false).getRange(f2.row, 1, 1, PS_COLS.length).setValues([psArr_(o2)]);
   });
-  var logged = handleProspectLogAdd({ _user: body._user, key: key, row: found.row, method: 'Email', content: '寄出開發信：「' + subject + '」→ ' + to + (attName ? '（附件：' + attName + '）' : '（沒有附件）'), nextFollowUp: found.obj.NextFollowUp || '' });
+  var logged = handleProspectLogAdd({ _user: body._user, key: key, row: found.row, method: 'Email', content: '寄出開發信：「' + subject + '」→ ' + to + (attName ? '（附件：' + attName + '）' : '（沒有附件）'), nextFollowUp: found.obj.NextFollowUp || '', stage: psMailStage_(found.obj) });
   return { success: true, sentAt: now, attach: attName, row: logged && logged.success ? logged.row : null, logError: logged && logged.success ? '' : (logged && logged.message) || '' };
+}
+
+/** 寄出開發信後的開發狀態：還沒處理的變「開發中」（「已聯絡」留給雙方真的聯繫上）；已經往後走的不動（回 null）。 */
+function psMailStage_(o) {
+  return !o.Stage || o.Stage === PS_STAGES[0] ? '開發中' : null;
 }
 
 // ---- 批次寄信：勾選的公司各自寄出名單上存好的開發信 ----
@@ -13328,7 +13333,7 @@ function handleProspectMailBulk(body) {
       f2.obj.MailSentAt = now;
       sh.getRange(f2.row, 1, 1, PS_COLS.length).setValues([psArr_(f2.obj)]);
     });
-    handleProspectLogAdd({ _user: body._user, key: o.Key, row: p.row, method: 'Email', content: '寄出開發信（批次）：「' + subject + '」→ ' + to + (mo.attName ? '（附件：' + mo.attName + '）' : '（沒有附件）'), nextFollowUp: o.NextFollowUp || '' });
+    handleProspectLogAdd({ _user: body._user, key: o.Key, row: p.row, method: 'Email', content: '寄出開發信（批次）：「' + subject + '」→ ' + to + (mo.attName ? '（附件：' + mo.attName + '）' : '（沒有附件）'), nextFollowUp: o.NextFollowUp || '', stage: psMailStage_(o) });
     out.status = 'ok';
     out.to = to;
     out.attach = mo.attName;
