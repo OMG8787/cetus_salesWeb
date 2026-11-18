@@ -730,7 +730,7 @@ function setup() {
   if (usersSheet.getLastRow() < 2) {
     var password = randomPassword_(10);
     appendObjectRow(SHEET_USERS, { Username: 'admin', PasswordHash: sha256(password), Role: 'admin', DisplayName: '管理員' });
-    log.push('★ 已建立管理員帳號 ── 帳號：admin　密碼：' + password + '（請記下來，登入後可到 Users 分頁新增其他人）');
+    log.push('★ 已建立管理員帳號 ── 帳號：admin\u3000密碼：' + password + '（請記下來，登入後可到 Users 分頁新增其他人）');
   }
 
   installWarmTrigger_();
@@ -4131,7 +4131,7 @@ function myutronListSeries_() {
 function myutronText_(raw) {
   return htmlDecode_(String(raw || '').replace(/<br\s*\/?>/gi, ' '))
     .replace(/[″”“]/g, '"')
-    .replace(/ /g, ' ')
+    .replace(/\u00A0/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -6056,7 +6056,7 @@ function handleGenerateRequirementDoc(body) {
       '<tr><th>案件編號</th><td>' + escapeHtml(caseObj['CaseID']) + '</td></tr>' +
       '<tr><th>客戶</th><td>' + escapeHtml(caseObj['CustomerName']) + '</td></tr>' +
       '<tr><th>終端客戶</th><td>' + escapeHtml(caseObj['EndCustomerName']) + '</td></tr>' +
-      '<tr><th>專案聯絡人</th><td>' + escapeHtml(caseObj['ProjectContact']) + '　' + escapeHtml(caseObj['ContactPhone']) + '</td></tr>' +
+      '<tr><th>專案聯絡人</th><td>' + escapeHtml(caseObj['ProjectContact']) + '\u3000' + escapeHtml(caseObj['ContactPhone']) + '</td></tr>' +
       '<tr><th>業務</th><td>' + escapeHtml(caseObj['Salesperson']) + '</td></tr>' +
       '<tr><th>FAE</th><td>' + escapeHtml(caseObj['FAE']) + '</td></tr>' +
       '<tr><th>產品應用</th><td>' + escapeHtml(caseObj['ProductApplication']) + '</td></tr>' +
@@ -11879,8 +11879,8 @@ function psReadRows_(sh, rows) {
 
 // ---------- 欄位清理 / 衍生欄位 ----------
 function psClean_(v, max, keepNewline) {
-  var s = v == null ? '' : String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F​﻿]/g, '');
-  s = keepNewline ? s.replace(/[ \t　]+/g, ' ').replace(/\r\n?/g, '\n').trim() : s.replace(/[\s　]+/g, ' ').trim();
+  var s = v == null ? '' : String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u200B\uFEFF]/g, '');
+  s = keepNewline ? s.replace(/[ \t\u3000]+/g, ' ').replace(/\r\n?/g, '\n').trim() : s.replace(/[\s\u3000]+/g, ' ').trim();
   return s.slice(0, max || 200);
 }
 
@@ -11911,7 +11911,7 @@ function psCityOf_(address) {
 
 /** 產業類別文字 → [{code, name}]。工廠登記的格式是「29機械設備製造業、25金屬製品製造業」（代碼 2 碼開頭，名稱裡也可能有頓號）；其他來源是自由文字，用符號切開。 */
 function psCatParse_(s) {
-  s = String(s || '').replace(/　/g, ' ').trim();
+  s = String(s || '').replace(/\u3000/g, ' ').trim();
   var out = [];
   var add = function (code, name) {
     if (code && out.every(function (o) { return o.code !== code; })) out.push({ code: code, name: name });
@@ -12499,7 +12499,7 @@ function psDecodeEntities_(t) {
 }
 
 function psHtmlText_(html) {
-  return psDecodeEntities_(String(html || '').replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/[ \t\r\n ]+/g, ' ');
+  return psDecodeEntities_(String(html || '').replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/[ \t\r\n\u00A0]+/g, ' ');
 }
 
 /** Cloudflare 的「電子郵件保護」：data-cfemail="十六進位" 用第一個位元組當金鑰 XOR。 */
