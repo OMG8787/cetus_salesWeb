@@ -295,12 +295,60 @@ function contactHtml(r) {
   if (r.Contact) out.push(`<div>👤 ${e(r.Contact)}</div>`);
   if (r.Phone) out.push(`<div>📞 <a href="tel:${e(String(r.Phone).replace(/[^\d+]/g, ''))}">${e(r.Phone)}</a></div>`);
   if (r.Email) out.push(`<div>✉️ <a href="mailto:${e(r.Email)}">${e(r.Email)}</a></div>`);
+  const others = parseContacts(r.Contacts);
+  if (others.length) out.push(`<div class="calc-hint" title="${e(others.map((c) => [c.name, c.title, c.phone, c.email].filter(Boolean).join(' ')).join('\n'))}">👥 其他聯絡人 ${others.length} 位</div>`);
   const url = psSafeUrl(r.Website);
   if (url) out.push(`<div>🌐 <a href="${e(url)}" target="_blank" rel="noopener noreferrer">${e(String(r.Website).replace(/^https?:\/\//i, '').slice(0, 32))}</a></div>`);
   else if (r.Website) out.push(`<div>🌐 ${e(r.Website)}</div>`);
   if (r.ExtraContacts) out.push(`<div class="calc-hint" title="${e(r.ExtraContacts)}">＋ ${e(r.ExtraContacts.slice(0, 40))}</div>`);
   if (r.Enriched && r.Enriched !== 'ok') out.push(`<div class="calc-hint" title="${e(r.EnrichNote || '')}">🔎 ${e(ENRICH_LABEL[r.Enriched] || r.Enriched)}</div>`);
   return out.join('') || '<span class="calc-hint">—</span>';
+}
+
+/** 名單上的其他聯絡人（JSON 字串）→ 陣列；壞掉就當沒有。 */
+function parseContacts(v) {
+  try {
+    const a = JSON.parse(v || '[]');
+    return Array.isArray(a) ? a : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+// ---------- 編輯視窗：其他聯絡人 ----------
+let editContacts = [];
+const CONTACT_MAX = 10;
+function renderContactRows() {
+  const ro = readOnly();
+  document.getElementById('pse-contacts').innerHTML = editContacts
+    .map(
+      (c, i) => `<div class="pse-crow">
+      <input placeholder="姓名" maxlength="60" value="${e(c.name || '')}" data-ci="${i}" data-cf="name" ${ro ? 'disabled' : ''} />
+      <input placeholder="職稱" maxlength="40" value="${e(c.title || '')}" data-ci="${i}" data-cf="title" ${ro ? 'disabled' : ''} />
+      <input placeholder="電話" maxlength="60" value="${e(c.phone || '')}" data-ci="${i}" data-cf="phone" ${ro ? 'disabled' : ''} />
+      <input placeholder="Email" maxlength="120" value="${e(c.email || '')}" data-ci="${i}" data-cf="email" ${ro ? 'disabled' : ''} />
+      ${ro ? '' : `<button type="button" class="btn-mini" title="移除這位" onclick="removeContactRow(${i})">✕</button>`}
+    </div>`
+    )
+    .join('') || '<span class="calc-hint">（沒有）</span>';
+  const add = document.getElementById('pse-contact-add');
+  add.style.display = ro ? 'none' : '';
+  add.disabled = editContacts.length >= CONTACT_MAX;
+}
+document.addEventListener('input', (ev) => {
+  const t = ev.target;
+  if (t && t.dataset && t.dataset.ci !== undefined && editContacts[t.dataset.ci]) editContacts[t.dataset.ci][t.dataset.cf] = t.value;
+});
+function addContactRow() {
+  if (editContacts.length >= CONTACT_MAX) return;
+  editContacts.push({ name: '', title: '', phone: '', email: '' });
+  renderContactRows();
+  const ins = document.querySelectorAll('#pse-contacts input[data-cf="name"]');
+  if (ins.length) ins[ins.length - 1].focus();
+}
+function removeContactRow(i) {
+  editContacts.splice(i, 1);
+  renderContactRows();
 }
 
 const ENRICH_LABEL = { ok: '找到聯絡方式', nocontact: '有官網、沒找到聯絡方式', nosite: '找不到官網', blocked: '網站不允許自動讀取', error: '查詢失敗' };
@@ -493,7 +541,7 @@ async function bulkMail() {
   if (!count.ok) return alert('勾選的公司都不能寄：\n' + skips.join('\n'));
   const quotaLine = quota >= 0 ? `\n今天剩下的寄信額度：${quota} 封${quota < count.ok ? `（不夠，只會寄出前 ${quota} 家）` : ''}` : '';
   const attachText = document.getElementById('ps-bulk-attach').selectedOptions[0].textContent;
-  if (!confirm(`確定寄出 ${count.ok} 封開發信？\n每家寄出名單上存好的主旨與內容；${attachText}${skips.length ? '\n\n' + skips.join('\n') : ''}${quotaLine}\n\n寄出後無法收回。`)) return;
+  if (!confirm(`確定寄出 ${count.ok} 封開發信？\n每家寄出名單上存好的主旨與內容，寄給這家所有聯絡人的信箱（一封）；${attachText}${skips.length ? '\n\n' + skips.join('\n') : ''}${quotaLine}\n\n寄出後無法收回。`)) return;
 
   let queue = keys.slice();
   const done = { ok: 0, fail: [], quota: false };
@@ -729,6 +777,8 @@ function openEdit(i) {
   set('pse-contact', r.Contact);
   set('pse-phone', r.Phone);
   set('pse-email', r.Email);
+  editContacts = parseContacts(r.Contacts).map((c) => Object.assign({ name: '', title: '', phone: '', email: '' }, c));
+  renderContactRows();
   set('pse-website', r.Website);
   set('pse-notes', r.Notes);
   document.getElementById('pse-optout').checked = !!r.Optout;
@@ -755,7 +805,7 @@ async function saveEdit() {
       document.getElementById('pse-next').value = '';
     }
   }
-  const fields = { Type: v('pse-type'), Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked, NextFollowUp: v('pse-next') };
+  const fields = { Type: v('pse-type'), Stage: v('pse-stage'), AssignedTo: v('pse-assigned'), Contact: v('pse-contact'), Phone: v('pse-phone'), Email: v('pse-email'), Website: v('pse-website'), Notes: document.getElementById('pse-notes').value, Optout: document.getElementById('pse-optout').checked, NextFollowUp: v('pse-next'), Contacts: editContacts.map((c) => ({ name: (c.name || '').trim(), title: (c.title || '').trim(), phone: (c.phone || '').trim(), email: (c.email || '').trim() })).filter((c) => c.name || c.phone || c.email) };
   const r = await callApi('prospectUpdate', { key: editRow.Key, row: editRow.RowIndex, fields });
   if (!r || !r.success) {
     document.getElementById('pse-msg').textContent = (r && r.message) || '儲存失敗';
@@ -1161,6 +1211,7 @@ async function openMail(i) {
   peer.textContent = r.Peer ? '⚠️ 可能是同業：' + r.Peer + '（信件以硬體採購 / 軟體客製 / 合作為主）' : '';
   document.getElementById('psm-state').textContent = '讀取中…';
   ['psm-to', 'psm-subject', 'psm-body'].forEach((id) => (document.getElementById(id).value = ''));
+  renderMoreEmails([]);
   document.getElementById('psm-msg').textContent = '';
   document.getElementById('psm-attach-sel').innerHTML = '';
   document.getElementById('psm-attach').textContent = '';
@@ -1186,6 +1237,7 @@ async function loadMail(regen) {
     return;
   }
   document.getElementById('psm-to').value = res.to || '';
+  renderMoreEmails(res.moreEmails || []);
   document.getElementById('psm-subject').value = res.subject || '';
   document.getElementById('psm-body').value = res.body || '';
   const st = [];
@@ -1214,6 +1266,21 @@ async function mailRegen() {
   await loadMail(true);
 }
 
+/** 查官網找到、但還不是聯絡人的信箱：列成按鈕，點了加進收件人（不會自動寄給它們）。 */
+function renderMoreEmails(list) {
+  const el = document.getElementById('psm-more');
+  el.innerHTML = list.length ? '<span class="calc-hint">官網上找到的其他信箱（點了加進收件人）：</span>' + list.map((m) => `<button type="button" class="btn-mini" data-addto="${e(m)}">＋ ${e(m)}</button>`).join('') : '';
+}
+document.addEventListener('click', (ev) => {
+  const t = ev.target;
+  if (!t || !t.dataset || !t.dataset.addto) return;
+  const box = document.getElementById('psm-to');
+  const cur = box.value.split(/[,;，；\s]+/).filter(Boolean);
+  if (cur.indexOf(t.dataset.addto) < 0) cur.push(t.dataset.addto);
+  box.value = cur.join(', ');
+  t.remove();
+});
+
 async function sendMail() {
   const to = document.getElementById('psm-to').value.trim();
   const subject = document.getElementById('psm-subject').value.trim();
@@ -1224,7 +1291,7 @@ async function sendMail() {
     return;
   }
   const attachKey = document.getElementById('psm-attach-sel').value || 'none';
-  if (!confirm(`確定寄給 ${to}？\n主旨：${subject}\n附件：${pickedAttachText()}\n\n寄出後無法收回。`)) return;
+  if (!confirm(`確定寄給 ${to}？${to.split(/[,;，；\s]+/).filter(Boolean).length > 1 ? '\n（一封信同時寄給這幾位）' : ''}\n主旨：${subject}\n附件：${pickedAttachText()}\n\n寄出後無法收回。`)) return;
   setMailBusy(true);
   msg.textContent = '寄送中…';
   const row = mailRow;

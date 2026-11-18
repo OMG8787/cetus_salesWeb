@@ -11722,7 +11722,7 @@ function handleCopyGenerate(body) {
 // ============================================================
 var PS_SHEET = 'Prospects';
 // 前 7 欄是「篩選用」：Source〜Has 連續放在一起，一次讀就好；Search 只有關鍵字搜尋時才讀。
-var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt', 'Type', 'MailSubject', 'MailBody', 'MailAt', 'MailSentAt', 'Peer'];
+var PS_COLS = ['Key', 'Source', 'City', 'CatCodes', 'Stage', 'Has', 'Search', 'Name', 'TaxId', 'RegNo', 'Address', 'Owner', 'Category', 'Products', 'Status', 'Org', 'Website', 'Phone', 'Email', 'Contact', 'Notes', 'Optout', 'AssignedTo', 'ImportedAt', 'UpdatedAt', 'Enriched', 'EnrichedAt', 'EnrichNote', 'ExtraContacts', 'NextFollowUp', 'LastContactAt', 'Hidden', 'HiddenAt', 'HiddenBy', 'ConvertedTo', 'ConvertedAt', 'Type', 'MailSubject', 'MailBody', 'MailAt', 'MailSentAt', 'Peer', 'Contacts'];
 var PS_LOG_SHEET = 'ProspectLogs';
 var PS_LOG_COLS = ['ID', 'Key', 'Time', 'User', 'Method', 'Content', 'Stage', 'NextFollowUp'];
 var PS_LOG_METHODS = ['電話', 'Email', '拜訪', 'LINE', '展覽', '其他'];
@@ -11937,11 +11937,84 @@ function psKey_(r) {
 }
 
 /** 補齊衍生欄位：縣市、產業代碼、有無聯絡方式、搜尋文字、Key。 */
+// ---- 其他聯絡人（Contacts 欄：JSON [{ name, title, phone, email }]，最多 10 位；主要聯絡人仍是 Contact / Phone / Email）----
+var PS_CONTACTS_MAX = 10;
+
+/** 文字裡所有合法的 Email（可以用逗號、分號、空白、頓號分開，也能從「信箱：a@x.com、b@y.com｜電話…」這種文字裡挑出來），去重，最多 10 個。 */
+function psEmailList_(v) {
+  var out = [];
+  (String(v == null ? '' : v).match(/[^\s@,;，；、：:｜|<>()（）"']+@[^\s@,;，；、：:｜|<>()（）"']+/g) || []).forEach(function (x) {
+    var e = psEmail_(x);
+    if (e && out.indexOf(e) < 0 && out.length < PS_CONTACTS_MAX) out.push(e);
+  });
+  return out;
+}
+
+/** 整理其他聯絡人：陣列或 JSON 字串都可以；strict = true 時 Email 格式錯就丟錯誤（手動編輯用），否則丟掉那個 Email。 */
+function psContactsClean_(raw, strict) {
+  var arr = raw;
+  if (typeof raw === 'string') {
+    try {
+      arr = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      arr = [];
+    }
+  }
+  var out = [];
+  (Array.isArray(arr) ? arr : []).forEach(function (c) {
+    c = c || {};
+    var em = String(c.email || '').trim();
+    var x = { name: psClean_(c.name, 60), title: psClean_(c.title, 40), phone: psClean_(c.phone, 60), email: psEmail_(em) };
+    if (em && !x.email && strict) throw new Error('其他聯絡人的 Email 格式不正確：' + em.slice(0, 60));
+    if (!x.name && !x.phone && !x.email) return;
+    if (out.length >= PS_CONTACTS_MAX) {
+      if (strict) throw new Error('其他聯絡人最多 ' + PS_CONTACTS_MAX + ' 位');
+      return;
+    }
+    out.push(x);
+  });
+  return out;
+}
+
+/** 這家的收件信箱：主要 Email + 其他聯絡人的 Email（不含查官網時另外找到、放在「其他聯絡方式」的）。 */
+function psMailTo_(o) {
+  var out = [];
+  [o.Email].concat(psContactsClean_(o.Contacts).map(function (c) { return c.email; })).forEach(function (e) {
+    e = psEmail_(e);
+    if (e && out.indexOf(e) < 0) out.push(e);
+  });
+  return out;
+}
+
+/** 把新的聯絡人併進既有的（只新增：同一個 Email、或沒有 Email 但同名的不重複加；主要聯絡人也不重複）。回傳有沒有新增。 */
+function psContactsMerge_(o, incoming) {
+  var cur = psContactsClean_(o.Contacts);
+  var seen = {};
+  if (o.Email) seen['e:' + String(o.Email).toLowerCase()] = true;
+  if (o.Contact) seen['n:' + o.Contact] = true;
+  cur.forEach(function (c) {
+    if (c.email) seen['e:' + c.email] = true;
+    if (c.name) seen['n:' + c.name] = true;
+  });
+  var added = false;
+  psContactsClean_(incoming).forEach(function (c) {
+    if (cur.length >= PS_CONTACTS_MAX) return;
+    if (c.email ? seen['e:' + c.email] : seen['n:' + c.name]) return;
+    cur.push(c);
+    if (c.email) seen['e:' + c.email] = true;
+    if (c.name) seen['n:' + c.name] = true;
+    added = true;
+  });
+  if (added) o.Contacts = JSON.stringify(cur);
+  return added;
+}
+
 function psDerive_(r) {
   r.City = psCityOf_(r.Address) || r.City || '';
   r.CatCodes = psCatParse_(r.Category).map(function (c) { return c.code; }).join('|');
-  r.Has = (r.Phone ? 'P' : '') + (r.Email ? 'E' : '') + (r.Website ? 'W' : '') + (r.Enriched ? 'C' : '') + (r.Hidden ? 'H' : '') + psTypeLetter_(r.Type); // C = 已經查過官網 / 聯絡方式；H = 隱藏；D / U = 設備商 / 一般使用者
-  r.Search = [r.Name, r.TaxId, r.Owner, r.Products, r.Address, r.Phone, r.Email, r.Website, r.Contact].join(' ').toLowerCase().replace(/台/g, '臺').replace(/\s+/g, ' ').slice(0, 400);
+  var others = psContactsClean_(r.Contacts);
+  r.Has = (r.Phone || others.some(function (c) { return c.phone; }) ? 'P' : '') + (psMailTo_(r).length ? 'E' : '') + (r.Website ? 'W' : '') + (r.Enriched ? 'C' : '') + (r.Hidden ? 'H' : '') + psTypeLetter_(r.Type); // C = 已經查過官網 / 聯絡方式；H = 隱藏；D / U = 設備商 / 一般使用者
+  r.Search = [r.Name, r.TaxId, r.Owner, r.Products, r.Address, r.Phone, r.Email, r.Website, r.Contact].concat(others.map(function (c) { return [c.name, c.title, c.phone, c.email].join(' '); })).join(' ').toLowerCase().replace(/台/g, '臺').replace(/\s+/g, ' ').slice(0, 400);
   r.Key = psKey_(r);
   return r;
 }
@@ -11956,6 +12029,8 @@ function psIncoming_(o, source) {
     MailSubject: psClean_(o.MailSubject, 120), MailBody: psClean_(o.MailBody, 4000, true),
   };
   if (!r.Name) return null;
+  r.Contacts = JSON.stringify(psContactsClean_(o.Contacts));
+  if (r.Contacts === '[]') r.Contacts = '';
   if (r.MailBody) r.MailAt = nowStr();
   else r.MailSubject = '';
   r.Type = psTypeOf_(o.Type) || psGuessType_(r);
@@ -11983,6 +12058,7 @@ function psMergeInto_(ex, inc, update) {
     ex.Name = inc.Name;
     changed = true;
   }
+  if (inc.Contacts && psContactsMerge_(ex, inc.Contacts)) changed = true;
   if (!ex.Notes && inc.Notes) {
     ex.Notes = inc.Notes;
     changed = true;
@@ -12314,7 +12390,7 @@ function psAssignee_(v, body) {
   return s === '@me' ? String((body._user && body._user.username) || '') : s;
 }
 
-var PS_EDITABLE = { Stage: 1, Notes: 1, Website: 1, Phone: 1, Email: 1, Contact: 1, Optout: 1, AssignedTo: 1, NextFollowUp: 1, Type: 1 };
+var PS_EDITABLE = { Contacts: 1, Stage: 1, Notes: 1, Website: 1, Phone: 1, Email: 1, Contact: 1, Optout: 1, AssignedTo: 1, NextFollowUp: 1, Type: 1 };
 
 function psCheckStage_(v) {
   var s = psClean_(v, 20);
@@ -12355,6 +12431,10 @@ function handleProspectUpdate(body) {
         else if (k === 'AssignedTo') o.AssignedTo = psAssignee_(v, body);
         else if (k === 'NextFollowUp') o.NextFollowUp = psDate_(v);
         else if (k === 'Type') o.Type = psTypeStrict_(v);
+        else if (k === 'Contacts') {
+          var cs = psContactsClean_(v, true);
+          o.Contacts = cs.length ? JSON.stringify(cs) : '';
+        }
         else o[k] = psClean_(v, k === 'Phone' ? 60 : 80);
       });
     } catch (e) {
@@ -13180,7 +13260,9 @@ function handleProspectMailPreview(body) {
     o.MailBody = '您好：\n\n\n' + cfg.signature;
   }
   var att = psMailAttach_(cfg);
-  return { success: true, to: o.Email || '', name: o.Name, subject: o.MailSubject, body: o.MailBody, generated: generated, hasDraft: hasDraft, genError: genError, draftAt: o.MailAt || '', sentAt: o.MailSentAt || '', attach: { configured: !!cfg.attach, ok: att.ok, name: att.name, message: att.message }, attaches: psMailAttachList_(cfg), attachDefault: psMailAttachDefault_(cfg, o), peer: o.Peer || '', myEmail: psMyEmail_(body), fromName: cfg.fromName };
+  var toList = psMailTo_(o);
+  var more = psEmailList_(o.ExtraContacts).filter(function (x) { return toList.indexOf(x) < 0; });
+  return { success: true, to: toList.join(', '), moreEmails: more, name: o.Name, subject: o.MailSubject, body: o.MailBody, generated: generated, hasDraft: hasDraft, genError: genError, draftAt: o.MailAt || '', sentAt: o.MailSentAt || '', attach: { configured: !!cfg.attach, ok: att.ok, name: att.name, message: att.message }, attaches: psMailAttachList_(cfg), attachDefault: psMailAttachDefault_(cfg, o), peer: o.Peer || '', myEmail: psMyEmail_(body), fromName: cfg.fromName };
 }
 
 /** 登入者自己的 Email（測試寄出的預設收件人）。 */
@@ -13196,11 +13278,14 @@ function psMyEmail_(body) {
 /** 寄出（使用者已預覽、可編輯內容）：寄信 → 記錄到聯繫紀錄（Email）→ 開發狀態從「未處理」變「已聯絡」。 */
 function handleProspectMailSend(body) {
   var key = String(body.key || '');
-  var to = psEmail_(body.to);
+  var toList = psEmailList_(body.to);
+  var to = toList.join(', ');
   var subject = psClean_(body.subject, 200);
   var text = psClean_(body.body, 8000, true);
   if (!key) return { success: false, message: '缺少名單編號' };
-  if (!to) return { success: false, message: '收件人 Email 格式不對' };
+  if (!toList.length) return { success: false, message: '收件人 Email 格式不對（多個信箱用逗號分開）' };
+  var bad = String(body.to || '').split(/[,;，；\s]+/).filter(function (x) { return x && !psEmail_(x); });
+  if (bad.length) return { success: false, message: '這個收件人格式不對：' + bad[0].slice(0, 60) };
   if (!subject) return { success: false, message: '請填寫主旨' };
   if (text.length < 20) return { success: false, message: '信件內容太短' };
   var sh = psSheet_(false);
@@ -13234,7 +13319,7 @@ function handleProspectMailSend(body) {
     o2.MailSentAt = now;
     psSheet_(false).getRange(f2.row, 1, 1, PS_COLS.length).setValues([psArr_(o2)]);
   });
-  var logged = handleProspectLogAdd({ _user: body._user, key: key, row: found.row, method: 'Email', content: '寄出開發信：「' + subject + '」→ ' + to + (attName ? '（附件：' + attName + '）' : '（沒有附件）'), nextFollowUp: found.obj.NextFollowUp || '', stage: psMailStage_(found.obj) });
+  var logged = handleProspectLogAdd({ _user: body._user, key: key, row: found.row, method: 'Email', content: '寄出開發信：「' + subject + '」→ ' + toList.join('、') + (attName ? '（附件：' + attName + '）' : '（沒有附件）'), nextFollowUp: found.obj.NextFollowUp || '', stage: psMailStage_(found.obj) });
   return { success: true, sentAt: now, attach: attName, row: logged && logged.success ? logged.row : null, logError: logged && logged.success ? '' : (logged && logged.message) || '' };
 }
 
@@ -13259,7 +13344,7 @@ function psMailQuota_() {
 function psMailBulkWhy_(o, resend) {
   if (o.Hidden) return 'hidden';
   if (o.Optout) return 'optout';
-  if (!psEmail_(o.Email)) return 'noemail';
+  if (!psMailTo_(o).length) return 'noemail';
   if (!o.MailBody) return 'nodraft';
   if (o.MailSentAt && !resend) return 'sent';
   return '';
@@ -13304,7 +13389,8 @@ function handleProspectMailBulk(body) {
     results.push(out);
     if (p.why) return (out.status = p.why);
     if (Date.now() - t0 > PS_MAIL_BULK_MS) return (out.status = 'later');
-    if (quota === 0) return (out.status = 'quota');
+    var toList = psMailTo_(o);
+    if (quota === 0 || (quota > 0 && quota < toList.length)) return (out.status = 'quota'); // 一封寄給 3 個人算 3 位收件人
     var key = ak === 'auto' ? psMailAttachDefault_(cfg, o) : ak;
     if (!optsByKey[key]) optsByKey[key] = psMailOpts_(cfg, { attachKey: key });
     var mo = optsByKey[key];
@@ -13314,7 +13400,7 @@ function handleProspectMailBulk(body) {
       return;
     }
     if (cache.get('psmail:' + o.Key)) return (out.status = 'dup');
-    var to = psEmail_(o.Email);
+    var to = toList.join(', ');
     var subject = psClean_(o.MailSubject || '鑫堡 AOI 檢測方案｜' + o.Name, 200);
     try {
       GmailApp.sendEmail(to, subject, o.MailBody, mo.opts);
@@ -13325,7 +13411,7 @@ function handleProspectMailBulk(body) {
       return;
     }
     cache.put('psmail:' + o.Key, '1', 30);
-    if (quota > 0) quota--;
+    if (quota > 0) quota = Math.max(0, quota - toList.length);
     var now = nowStr();
     withLock_(function () {
       var f2 = psFindRow_(sh, o.Key, p.row);
@@ -13333,7 +13419,7 @@ function handleProspectMailBulk(body) {
       f2.obj.MailSentAt = now;
       sh.getRange(f2.row, 1, 1, PS_COLS.length).setValues([psArr_(f2.obj)]);
     });
-    handleProspectLogAdd({ _user: body._user, key: o.Key, row: p.row, method: 'Email', content: '寄出開發信（批次）：「' + subject + '」→ ' + to + (mo.attName ? '（附件：' + mo.attName + '）' : '（沒有附件）'), nextFollowUp: o.NextFollowUp || '', stage: psMailStage_(o) });
+    handleProspectLogAdd({ _user: body._user, key: o.Key, row: p.row, method: 'Email', content: '寄出開發信（批次）：「' + subject + '」→ ' + toList.join('、') + (mo.attName ? '（附件：' + mo.attName + '）' : '（沒有附件）'), nextFollowUp: o.NextFollowUp || '', stage: psMailStage_(o) });
     out.status = 'ok';
     out.to = to;
     out.attach = mo.attName;
@@ -14248,6 +14334,7 @@ function claudeFill_(body) {
         o.Peer = psClean_(it.Peer, 120);
         filled.push('Peer');
       }
+      if (it.Contacts && psContactsMerge_(o, it.Contacts)) filled.push('Contacts');
       if (!o.ExtraContacts && it.ExtraContacts) {
         o.ExtraContacts = psClean_(it.ExtraContacts, 300);
         filled.push('ExtraContacts');

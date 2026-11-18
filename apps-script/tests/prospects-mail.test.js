@@ -226,4 +226,41 @@ r = call('handleProspectMailBulk', { keys: [find('批次乙').Key], attachKey: '
 ok(r.results[0].status === 'error' && r.quota === 0, 'Gmail 額度用完 → 回報錯誤、之後不再寄');
 sendFail = false;
 
+// ---- 多個聯絡人 / 多個收件人 ----
+call('handleProspectImport', { source: '多聯絡人', rows: [rec('多窗口科技股份有限公司', { RegNo: 'C1', Email: 'sales@multi.com.tw', Contact: '王經理', MailSubject: '多窗口主旨', MailBody: BODY, Contacts: [{ name: '李工程師', title: '品保', email: 'qa@multi.com.tw' }, { name: '', email: 'bad-email' }, { name: '陳採購', phone: '04-1234567' }] })] });
+let mc = find('多窗口');
+let cs = JSON.parse(mc.Contacts);
+ok(cs.length === 2 && cs[0].email === 'qa@multi.com.tw' && cs[1].phone === '04-1234567', '匯入可以帶其他聯絡人；格式錯的 Email 丟掉、空白的不收');
+ok(call('handleProspectQuery', { q: '李工程師' }).rows.length === 1 && call('handleProspectQuery', { q: 'qa@multi' }).rows.length === 1, '其他聯絡人的姓名 / 信箱也搜尋得到');
+call('handleProspectImport', { source: '多聯絡人2', rows: [rec('多窗口科技股份有限公司', { RegNo: 'C1', Contacts: [{ name: '李工程師', email: 'qa@multi.com.tw' }, { name: '張業務', email: 'zhang@multi.com.tw' }, { name: '王經理', email: 'sales@multi.com.tw' }] })] });
+mc = find('多窗口');
+ok(JSON.parse(mc.Contacts).length === 3 && JSON.parse(mc.Contacts)[2].email === 'zhang@multi.com.tw', '再匯入同一家：只新增沒有的聯絡人（同 Email、主要聯絡人不重複）');
+r = call('handleProspectUpdate', { key: mc.Key, row: mc.RowIndex, fields: { Contacts: [{ name: 'x', email: 'not-an-email' }] } });
+ok(!r.success && /Email 格式不正確/.test(r.message), '手動編輯：其他聯絡人 Email 格式錯 → 擋下');
+r = call('handleProspectUpdate', { key: mc.Key, row: mc.RowIndex, fields: { Contacts: [{ name: '李工程師', email: 'qa@multi.com.tw' }, { name: '張業務', email: 'zhang@multi.com.tw' }] } });
+ok(r.success && JSON.parse(r.row.Contacts).length === 2, '手動編輯：可以刪改其他聯絡人');
+call('handleProspectUpdate', { key: mc.Key, row: mc.RowIndex, fields: { Email: '' } });
+ok(find('多窗口').Has.indexOf('E') > -1, '沒有主要 Email、但其他聯絡人有 → 仍算「有 Email」');
+call('handleProspectUpdate', { key: mc.Key, row: mc.RowIndex, fields: { Email: 'sales@multi.com.tw' } });
+mc = find('多窗口');
+r = call('handleProspectMailPreview', { key: mc.Key, row: mc.RowIndex });
+ok(r.to === 'sales@multi.com.tw, qa@multi.com.tw, zhang@multi.com.tw', '預覽：收件人預設帶主要 + 其他聯絡人的全部信箱');
+let nb2 = sent.length;
+r = call('handleProspectMailSend', { key: mc.Key, row: mc.RowIndex, to: 'sales@multi.com.tw, qa@multi.com.tw；zhang@multi.com.tw', subject: '多窗口主旨', body: BODY, attachKey: 'none' });
+ok(r.success && sent.length === nb2 + 1 && sent[nb2].to === 'sales@multi.com.tw, qa@multi.com.tw, zhang@multi.com.tw', '單封寄信：一封同時寄給多個收件人');
+ok(/qa@multi\.com\.tw/.test(call('handleProspectLogs', { key: mc.Key }).logs[0].Content), '聯繫紀錄記下全部收件人');
+r = call('handleProspectMailSend', { key: mc.Key, row: mc.RowIndex, to: 'sales@multi.com.tw, oops', subject: 's', body: BODY, attachKey: 'none' });
+ok(!r.success && /oops/.test(r.message), '收件人有一個格式錯 → 指出是哪個，不寄');
+call('handleProspectImport', { source: '多聯絡人', rows: [rec('多窗口二號股份有限公司', { RegNo: 'C2', Email: 'a@two.com.tw', MailBody: BODY, Contacts: [{ name: '乙', email: 'b@two.com.tw' }] })] });
+const m2 = find('多窗口二號');
+nb2 = sent.length;
+r = call('handleProspectMailBulk', { keys: [m2.Key], attachKey: 'none' });
+ok(r.results[0].status === 'ok' && sent[nb2].to === 'a@two.com.tw, b@two.com.tw', '批次寄信：寄給這家全部信箱（一封）');
+// 預覽：查官網找到、但沒放進聯絡人的信箱另外列出
+call('handleProspectImport', { source: '多聯絡人', rows: [rec('多窗口三號股份有限公司', { RegNo: 'C3', Email: 'a@three.com.tw' })] });
+const m3 = find('多窗口三號');
+ctx.claudeFill_({ items: [{ key: m3.Key, row: m3.RowIndex, ExtraContacts: '信箱：hr@three.com.tw、sales@three.com.tw｜電話：02-1234', Contacts: [{ name: '丙', email: 'c@three.com.tw' }] }] });
+r = call('handleProspectMailPreview', { key: m3.Key, row: find('多窗口三號').RowIndex });
+ok(r.to === 'a@three.com.tw, c@three.com.tw' && r.moreEmails.join() === 'hr@three.com.tw,sales@three.com.tw', '其他聯絡方式裡的信箱不自動寄，列在 moreEmails 讓人選；Claude 金鑰可補聯絡人');
+
 console.log('prospects-mail checks passed: ' + pass);
