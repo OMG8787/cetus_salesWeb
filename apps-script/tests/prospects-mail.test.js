@@ -247,7 +247,7 @@ r = call('handleProspectMailPreview', { key: mc.Key, row: mc.RowIndex });
 ok(r.to === 'sales@multi.com.tw, qa@multi.com.tw, zhang@multi.com.tw', '預覽：收件人預設帶主要 + 其他聯絡人的全部信箱');
 let nb2 = sent.length;
 r = call('handleProspectMailSend', { key: mc.Key, row: mc.RowIndex, to: 'sales@multi.com.tw, qa@multi.com.tw；zhang@multi.com.tw', subject: '多窗口主旨', body: BODY, attachKey: 'none' });
-ok(r.success && sent.length === nb2 + 1 && sent[nb2].to === 'sales@multi.com.tw, qa@multi.com.tw, zhang@multi.com.tw', '單封寄信：一封同時寄給多個收件人');
+ok(r.success && sent.length === nb2 + 1 && sent[nb2].to === 'sales@multi.com.tw,qa@multi.com.tw,zhang@multi.com.tw', '單封寄信：一封同時寄給多個收件人');
 ok(/qa@multi\.com\.tw/.test(call('handleProspectLogs', { key: mc.Key }).logs[0].Content), '聯繫紀錄記下全部收件人');
 r = call('handleProspectMailSend', { key: mc.Key, row: mc.RowIndex, to: 'sales@multi.com.tw, oops', subject: 's', body: BODY, attachKey: 'none' });
 ok(!r.success && /oops/.test(r.message), '收件人有一個格式錯 → 指出是哪個，不寄');
@@ -255,12 +255,23 @@ call('handleProspectImport', { source: '多聯絡人', rows: [rec('多窗口二�
 const m2 = find('多窗口二號');
 nb2 = sent.length;
 r = call('handleProspectMailBulk', { keys: [m2.Key], attachKey: 'none' });
-ok(r.results[0].status === 'ok' && sent[nb2].to === 'a@two.com.tw, b@two.com.tw', '批次寄信：寄給這家全部信箱（一封）');
+ok(r.results[0].status === 'ok' && sent[nb2].to === 'a@two.com.tw,b@two.com.tw', '批次寄信：寄給這家全部信箱（一封）');
 // 預覽：查官網找到、但沒放進聯絡人的信箱另外列出
 call('handleProspectImport', { source: '多聯絡人', rows: [rec('多窗口三號股份有限公司', { RegNo: 'C3', Email: 'a@three.com.tw' })] });
 const m3 = find('多窗口三號');
 ctx.claudeFill_({ items: [{ key: m3.Key, row: m3.RowIndex, ExtraContacts: '信箱：hr@three.com.tw、sales@three.com.tw｜電話：02-1234', Contacts: [{ name: '丙', email: 'c@three.com.tw' }] }] });
 r = call('handleProspectMailPreview', { key: m3.Key, row: find('多窗口三號').RowIndex });
 ok(r.to === 'a@three.com.tw, c@three.com.tw' && r.moreEmails.join() === 'hr@three.com.tw,sales@three.com.tw', '其他聯絡方式裡的信箱不自動寄，列在 moreEmails 讓人選；Claude 金鑰可補聯絡人');
+
+// ---- 測試寄出也可以多個收件人；頓號分隔也行 ----
+nb2 = sent.length;
+r = call('handleProspectMailSend', { key: mc.Key, row: mc.RowIndex, to: 'sales@multi.com.tw', subject: 's', body: BODY, test: true, testTo: 'me@cetus.tw, boss@cetus.tw、sales@cetus.tw', attachKey: 'none' });
+ok(r.success && sent[nb2].to === 'me@cetus.tw,boss@cetus.tw,sales@cetus.tw', '測試寄出：多個測試信箱全部收到（逗號、頓號都可以）');
+r = call('handleProspectMailSend', { key: mc.Key, row: mc.RowIndex, to: 'sales@multi.com.tw', subject: 's', body: BODY, test: true, testTo: 'me@cetus.tw, oops', attachKey: 'none' });
+ok(!r.success && /oops/.test(r.message), '測試寄出：有一個格式錯 → 指出是哪個');
+ctx.CacheService.getScriptCache().remove('psmail:' + mc.Key); // 前面剛寄過的 30 秒防重複
+nb2 = sent.length;
+r = call('handleProspectMailSend', { key: mc.Key, row: mc.RowIndex, to: 'sales@multi.com.tw、qa@multi.com.tw', subject: '多窗口主旨', body: BODY, attachKey: 'none' });
+ok(r.success && sent[nb2].to === 'sales@multi.com.tw,qa@multi.com.tw', '確認寄出：頓號分隔也會寄給全部');
 
 console.log('prospects-mail checks passed: ' + pass);

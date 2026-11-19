@@ -249,8 +249,8 @@
     <select id="psm-attach-sel" onchange="showPickedAttach()"></select>
     <div id="psm-attach" class="calc-hint" style="margin:4px 0;"></div>
     <div class="psm-test">
-      <label class="ps-label" for="psm-test-to">測試寄出（先寄給自己看客戶收到的樣子；不算已寄出、不記聯繫紀錄）</label>
-      <div class="psm-test-row"><input id="psm-test-to" type="email" maxlength="120" placeholder="你的信箱" /><button type="button" class="ps-btn" id="psm-test" onclick="testMail()">🧪 測試寄出</button></div>
+      <label class="ps-label" for="psm-test-to">測試寄出（先寄給自己看客戶收到的樣子；可以填多個信箱，用逗號分開；不算已寄出、不記聯繫紀錄）</label>
+      <div class="psm-test-row"><input id="psm-test-to" type="text" maxlength="600" placeholder="你的信箱（多個用逗號分開）" /><button type="button" class="ps-btn" id="psm-test" onclick="testMail()">🧪 測試寄出</button></div>
     </div>
     <div class="pcv-btns" style="margin-top:10px;">
       <button type="button" class="ps-btn ps-btn-primary" id="psm-send" onclick="sendMail()">📨 確認寄出</button>

@@ -13278,14 +13278,14 @@ function psMyEmail_(body) {
 /** 寄出（使用者已預覽、可編輯內容）：寄信 → 記錄到聯繫紀錄（Email）→ 開發狀態從「未處理」變「已聯絡」。 */
 function handleProspectMailSend(body) {
   var key = String(body.key || '');
-  var toList = psEmailList_(body.to);
-  var to = toList.join(', ');
+  var rc = psRecipients_(body.to);
+  var toList = rc.list;
+  var to = toList.join(',');
   var subject = psClean_(body.subject, 200);
   var text = psClean_(body.body, 8000, true);
   if (!key) return { success: false, message: '缺少名單編號' };
+  if (rc.bad) return { success: false, message: '這個收件人格式不對：' + rc.bad };
   if (!toList.length) return { success: false, message: '收件人 Email 格式不對（多個信箱用逗號分開）' };
-  var bad = String(body.to || '').split(/[,;，；\s]+/).filter(function (x) { return x && !psEmail_(x); });
-  if (bad.length) return { success: false, message: '這個收件人格式不對：' + bad[0].slice(0, 60) };
   if (!subject) return { success: false, message: '請填寫主旨' };
   if (text.length < 20) return { success: false, message: '信件內容太短' };
   var sh = psSheet_(false);
@@ -13400,7 +13400,7 @@ function handleProspectMailBulk(body) {
       return;
     }
     if (cache.get('psmail:' + o.Key)) return (out.status = 'dup');
-    var to = toList.join(', ');
+    var to = toList.join(',');
     var subject = psClean_(o.MailSubject || '鑫堡 AOI 檢測方案｜' + o.Name, 200);
     try {
       GmailApp.sendEmail(to, subject, o.MailBody, mo.opts);
@@ -13427,10 +13427,28 @@ function handleProspectMailBulk(body) {
   return { success: true, results: results, quota: quota };
 }
 
+/** 收件人欄 → { list: 合法信箱（去重，最多 10 個）, bad: 第一個格式不對的（沒有就空字串） }。逗號、分號、頓號、空白都可以分隔。 */
+function psRecipients_(raw) {
+  var list = [];
+  var bad = '';
+  String(raw == null ? '' : raw).split(/[,;，；、\s]+/).forEach(function (x) {
+    if (!x) return;
+    var e = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x) ? psEmail_(x) : '';
+    if (!e) {
+      if (!bad) bad = x.slice(0, 60);
+      return;
+    }
+    if (list.indexOf(e) < 0 && list.length < PS_CONTACTS_MAX) list.push(e);
+  });
+  return { list: list, bad: bad };
+}
+
 /** 測試寄出：把同一封信（含選的附件）寄到 testTo，看客戶收到的樣子；不記聯繫紀錄、不改開發狀態、不算已寄出、不存草稿。 */
 function psMailTest_(body, subject, text) {
-  var testTo = psEmail_(body.testTo);
-  if (!testTo) return { success: false, message: '測試收件信箱格式不對' };
+  var trc = psRecipients_(body.testTo);
+  if (trc.bad) return { success: false, message: '測試收件信箱格式不對：' + trc.bad };
+  if (!trc.list.length) return { success: false, message: '測試收件信箱格式不對' };
+  var testTo = trc.list.join(',');
   var cache = CacheService.getScriptCache();
   var k = 'psmailtest:' + String((body._user && body._user.username) || '');
   var n = Number(cache.get(k) || 0);
