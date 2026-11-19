@@ -784,6 +784,7 @@ function openEdit(i) {
   document.getElementById('pse-optout').checked = !!r.Optout;
   document.getElementById('pse-next').value = r.NextFollowUp || '';
   openLogPanel(r);
+  loadCardPeople(r.Name, 'pse-cards');
   renderEditTools(r);
   document.getElementById('pse-enrich').innerHTML = (r.ExtraContacts ? `其他聯絡方式：${e(r.ExtraContacts)}<br>` : '') + (r.Enriched ? `官網查詢（${e(r.EnrichedAt || '')}）：${e(ENRICH_LABEL[r.Enriched] || r.Enriched)}　${e(r.EnrichNote || '')}` : '');
   document.getElementById('pse-msg').textContent = ro ? '你只有查看權限' : '';

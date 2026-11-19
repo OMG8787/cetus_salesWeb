@@ -5,7 +5,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>名片客戶專區 - AOI 業務系統</title>
-<link rel="stylesheet" href="style.css?v=20261111d" />
+<link rel="stylesheet" href="style.css?v=20261119a" />
 <link rel="stylesheet" href="dark.css?v=20261109b" />
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png" />
@@ -79,6 +79,10 @@
   <h2>名片客戶專區</h2>
   <div class="calc-hint">LINE 傳給員工助理的名片、辨識完會放在這裡（歸在你自己的帳號下，需先在「BOT 設定 → 員工助理」綁定 LINE）。辨識錯的地方按「編輯」自己改；確認後按「登入成客戶」：公司已是客戶就新增為聯絡窗口；還不是客戶的會問你要登入成「一般客戶」還是放進「陌生開發名單」（來源標名片）。</div>
   <div class="nc-bar">
+    <select id="nc-view" onchange="renderCards()" title="依公司彙整：所有同事收到的名片，同一家公司放在一起">
+      <option value="list">我的名片清單</option>
+      <option value="company">依公司彙整（全公司）</option>
+    </select>
     <select id="nc-filter" onchange="renderCards()">
       <option value="all">全部</option>
       <option value="pending" selected>待登入</option>
@@ -87,7 +91,8 @@
     <input id="nc-search" placeholder="搜尋姓名 / 公司 / 電話 / Email / 註記" oninput="renderCards()" />
     <span id="nc-count" class="calc-hint"></span>
   </div>
-  <div class="nc-scroll">
+  <div id="nc-groups" style="display:none;"></div>
+  <div class="nc-scroll" id="nc-list">
     <table class="nc-table">
       <thead>
         <tr>
@@ -138,6 +143,7 @@
 <script src="common.js?v=20261111d"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
-<script src="namecards.js?v=20261111b"></script>
+<script src="cardpeople.js?v=20261119a"></script>
+<script src="namecards.js?v=20261119a"></script>
 </body>
 </html>

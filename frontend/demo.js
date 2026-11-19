@@ -288,6 +288,16 @@ function demoBotApi(action, params, db) {
       save();
       return { success: true, cards: b.nameCards, pending: b.nameCards.filter((c) => c.status === 'pending').length, saved: b.nameCards.filter((c) => c.status === 'saved').length };
     }
+    case 'cardCompanies': {
+      // 示範：同一家公司兩位同事收到的名片
+      const g = { key: '示範科技', company: '示範科技股份有限公司', names: ['示範科技股份有限公司', '示範科技公司'], customer: '', prospect: '示範科技股份有限公司', count: 2, lastTime: nowStr(), collectors: [{ owner: 'demo', name: '示範業務', count: 1, mine: true }, { owner: 'amy', name: 'Amy', count: 1, mine: false }],
+        people: [
+          { id: 1, name: '王小明', title: '採購經理', phone: '0912-345-678', companyPhone: '02-2299-5111', email: 'ming@example.com', ownerName: '示範業務', mine: true, time: nowStr(), batch: '示範展會', status: 'pending', result: '' },
+          { id: 9, name: '林工程師', title: '設備工程', phone: '', companyPhone: '', email: 'lin@example.com', ownerName: 'Amy', mine: false, time: nowStr(), batch: '拜訪', status: 'saved', result: '新增聯絡窗口' },
+        ] };
+      const want = String(params.company || '');
+      return { success: true, companies: !want || /示範科技/.test(want) ? [g] : [], total: 1 };
+    }
     case 'botAlerts':
     case 'botAlertAck': {
       // 示範：有一位 LINE 客人在等專人，按「我已處理」就消失
@@ -1197,6 +1207,7 @@ function handleDemoApi(action, params) {
     case 'botAlerts':
     case 'botAlertAck':
     case 'getNameCards':
+    case 'cardCompanies':
     case 'cardUpdate':
     case 'cardToCustomer':
     case 'cardDelete':

@@ -6970,7 +6970,7 @@ function botPerms_() {
     botKbDelete: ['bot', 'd'], botKbDocSave: ['bot', 'w'], botKbAiSplit: ['bot', 'w'], botKbSetAudience: ['bot', 'w'], botClear: ['bot', 'd'], botCsPreview: ['bot', 'r'], botKbEmbed: ['bot', 'w'],
     botKbImageUpload: ['bot', 'w'], botLeads: ['bot', 'r'], botLeadDelete: ['bot', 'd'],
     botAlerts: ['bot', 'r'], botAlertAck: ['bot', 'w'], botSendForm: ['bot', 'w'], botVisits: ['bot', 'r'], botTakeover: ['bot', 'w'], botNotifyTest: ['bot', 'w'],
-    getNameCards: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardToProspect: ['customers', 'w'], cardDelete: ['customers', 'w'],
+    getNameCards: ['customers', 'r'], cardCompanies: ['customers', 'r'], cardUpdate: ['customers', 'w'], cardToCustomer: ['customers', 'w'], cardToProspect: ['customers', 'w'], cardDelete: ['customers', 'w'],
   };
   return botMergePerms_(base, typeof botStaffPerms_ === 'function' ? botStaffPerms_() : null);
 }
@@ -7014,6 +7014,7 @@ function botRoutes_() {
     botTakeover: { auth: true, fn: handleBotTakeover },
     botNotifyTest: { auth: true, fn: handleBotNotifyTest },
     getNameCards: { auth: true, fn: handleGetNameCards },
+    cardCompanies: { auth: true, fn: handleCardCompanies },
     cardUpdate: { auth: true, fn: handleCardUpdate },
     cardToCustomer: { auth: true, fn: handleCardToCustomer },
     cardToProspect: { auth: true, fn: handleCardToProspect },
@@ -10944,6 +10945,82 @@ function handleCardToCustomer(body) {
   }
   var after = nameCardMine_(body, card.id);
   return { success: true, kind: plan.kind, company: after.company, result: after.result };
+}
+
+// ---- 依公司彙整名片：同一家公司的名片放在一起，看得到跟對方誰接觸過、是哪位同事收到的（全公司的名片，唯讀）----
+/** 名片收件人（Owner）→ 顯示名稱：網站帳號用 Users 的姓名；沒綁定網站帳號的 LINE 成員用 LINE 名稱。 */
+function cardOwnerNames_() {
+  var names = {};
+  sheetToObjects(SHEET_USERS).rows.forEach(function (u) { names[String(u['Username'])] = String(u['DisplayName'] || u['Username']); });
+  try {
+    botMemberRows_().forEach(function (m) {
+      var id = String(m['LineUserId'] || '');
+      if (id && !names[id]) names[id] = String(m['DisplayName'] || '') + '（LINE）';
+    });
+  } catch (e) {
+    // 沒有員工助理成員表就略過
+  }
+  return names;
+}
+
+/**
+ * 回傳 { companies: [{ key, company, names:[名片上出現過的寫法], customer, prospect, people:[...], collectors:[{ owner, name, count }], count, lastTime }] }。
+ * body.company 有給 → 只回那一家（用公司名稱比對，「XX股份有限公司」「XX公司」視為同一家）；body.q 關鍵字篩選。
+ * 只算待登入與已登入的名片（丟棄的不算）；沒有公司名稱的名片不列入。
+ */
+function handleCardCompanies(body) {
+  var me = String(body._user.username);
+  var ownerNames = cardOwnerNames_();
+  var custIdx = psCustomerIndex_();
+  var want = String(body.company || '').trim() ? psNameKey_(body.company) : '';
+  var q = String(body.q || '').trim().toLowerCase();
+  var groups = {};
+  botCardRows_().forEach(function (c) {
+    if (c.status !== 'pending' && c.status !== 'saved') return;
+    if (!c.company) return;
+    var key = psNameKey_(c.company);
+    if (!key || (want && key !== want)) return;
+    var g = groups[key] || (groups[key] = { key: key, names: {}, people: [], collectors: {}, lastTime: '', taxId: '' });
+    g.names[c.company] = (g.names[c.company] || 0) + 1;
+    if (c.taxId && !g.taxId) g.taxId = c.taxId;
+    g.people.push({ id: c.id, name: c.name, title: c.title, phone: c.phone, companyPhone: c.companyPhone, email: c.email, owner: c.owner, ownerName: ownerNames[c.owner] || c.owner, mine: c.owner === me, time: c.time, batch: c.batch, status: c.status, result: c.result });
+    g.collectors[c.owner] = (g.collectors[c.owner] || 0) + 1;
+    if (String(c.time) > g.lastTime) g.lastTime = String(c.time);
+  });
+  // 開發名單比對（名稱或統編）：一次讀兩欄
+  var psIdx = {};
+  var sh = psSheet_(false);
+  if (sh && sh.getLastRow() >= 2) {
+    var n = sh.getLastRow() - 1;
+    var pnames = psColVals_(sh, psCol_('Name'), n);
+    var ptax = psColVals_(sh, psCol_('TaxId'), n);
+    for (var i = 0; i < n; i++) {
+      psIdx['n:' + psNameKey_(pnames[i])] = pnames[i];
+      if (ptax[i]) psIdx['t:' + ptax[i]] = pnames[i];
+    }
+  }
+  var list = Object.keys(groups).map(function (k) {
+    var g = groups[k];
+    var names = Object.keys(g.names).sort(function (a, b) { return g.names[b] - g.names[a] || b.length - a.length; });
+    g.people.sort(function (a, b) { return String(b.time).localeCompare(String(a.time)); });
+    var out = {
+      key: k,
+      company: names[0],
+      names: names,
+      customer: psCustomerOf_(custIdx, { Name: names[0], TaxId: g.taxId }),
+      prospect: (g.taxId && psIdx['t:' + g.taxId]) || psIdx['n:' + k] || '',
+      people: g.people,
+      collectors: Object.keys(g.collectors).map(function (o) { return { owner: o, name: ownerNames[o] || o, count: g.collectors[o], mine: o === me }; }).sort(function (a, b) { return b.count - a.count; }),
+      count: g.people.length,
+      lastTime: g.lastTime,
+    };
+    return out;
+  }).filter(function (g) {
+    if (!q) return true;
+    return [g.company, g.names.join(' '), g.people.map(function (p) { return [p.name, p.title, p.phone, p.email, p.ownerName, p.batch].join(' '); }).join(' ')].join(' ').toLowerCase().indexOf(q) > -1;
+  });
+  list.sort(function (a, b) { return b.count - a.count || String(b.lastTime).localeCompare(String(a.lastTime)); });
+  return { success: true, companies: list.slice(0, 500), total: list.length };
 }
 
 function handleCardDelete(body) {

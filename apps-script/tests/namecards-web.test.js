@@ -79,4 +79,31 @@ ok(!ed('handleCardDelete', { id: del }).success, '重複刪除會說找不到');
 ok(ctx.permFor_('getNameCards').join() === 'customers,r' && ctx.permFor_('cardUpdate').join() === 'customers,w' && ctx.permFor_('cardToCustomer').join() === 'customers,w' && ctx.permFor_('cardDelete').join() === 'customers,w', '權限登記');
 ok(ctx.botRoutes_().cardToCustomer && ctx.botRoutes_().getNameCards, '路由登記');
 
+// ---- 依公司彙整（全公司的名片，看誰接觸過）----
+const B = 'U' + 'b'.repeat(32);
+const C = 'U' + 'c'.repeat(32);
+api('start', B, { displayName: '管理員LINE' });
+admin('handleBotMemberSave', { lineUserId: B, status: '已開通', role: 'editor', linkedUsername: 'admin1' });
+api('start', C, { displayName: '小美' });
+admin('handleBotMemberSave', { lineUserId: C, status: '已開通', role: 'editor' });
+api('cards', B, { cards: [{ name: '張副總', title: '副總', company: '新星科技公司', email: 'chang@star.com' }, { name: '丟掉的', company: '新星科技股份有限公司' }] });
+api('cards', C, { cards: [{ name: '王小明', company: '新星科技', phone: '0912-345-678' }] });
+const adminCards = admin('handleGetNameCards', {}).cards;
+admin('handleCardDelete', { id: adminCards.find((c) => c.name === '丟掉的').id });
+ok(ctx.permFor_('cardCompanies').join() === 'customers,r' && ctx.botRoutes_().cardCompanies, '彙整：權限與路由');
+r = ed('handleCardCompanies', {});
+const star = r.companies.find((g) => g.key === ctx.psNameKey_('新星科技'));
+ok(r.success && star && star.count === 3, '「新星科技股份有限公司 / 新星科技公司 / 新星科技」併成同一家，共 3 張（刪掉的不算）');
+ok(star.company === '新星科技股份有限公司' && star.names.length === 3, '顯示最常出現的寫法，也列出所有寫法');
+ok(star.collectors.length === 3 && star.collectors.some((x) => x.name === '編輯' && x.mine) && star.collectors.some((x) => x.name === 'admin1') && star.collectors.some((x) => x.name === '小美（LINE）'), '列出是哪些同事收到名片（沒綁網站帳號的顯示 LINE 名稱）');
+ok(star.people.find((x) => x.name === '張副總').ownerName === 'admin1' && !star.people.find((x) => x.name === '張副總').mine && star.people.find((x) => x.owner === 'ed').mine && star.people.find((x) => x.owner === C).ownerName === '小美（LINE）', '每位聯絡人標出收到的同事、是不是自己的');
+ok(!r.companies.some((g) => /無公司/.test(g.company)), '沒有公司名稱的名片不列入');
+const exist = r.companies.find((g) => g.company === '既有科技股份有限公司');
+ok(exist && exist.customer === '既有科技股份有限公司', '已是客戶的公司會標出來');
+r = vw('handleCardCompanies', { company: '新星科技有限公司' });
+ok(r.companies.length === 1 && r.companies[0].count === 3, '用公司名稱查一家（寫法不同也找得到）；查看權限也能看');
+ok(ed('handleCardCompanies', { q: '張副總' }).companies.length === 1 && ed('handleCardCompanies', { q: '查無此人' }).companies.length === 0, '關鍵字搜尋（姓名 / 同事 / 展會）');
+ctx.handleProspectImport({ _user: { username: 'ed' }, source: 't', rows: [{ Name: '新星科技股份有限公司', TaxId: '12345678' }] });
+ok(ed('handleCardCompanies', { company: '新星科技' }).companies[0].prospect === '新星科技股份有限公司', '在開發名單裡的公司會標出來');
+
 console.log('namecards-web.test.js：' + pass + ' 項通過');

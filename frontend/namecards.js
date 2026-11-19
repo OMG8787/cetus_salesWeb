@@ -34,7 +34,28 @@ async function loadCards() {
     return;
   }
   allCards = r.cards;
+  cardGroups = null; // 名片有變動：依公司彙整下次重新讀
   renderCards();
+}
+
+// ---------------- 依公司彙整（全公司的名片，唯讀） ----------------
+let cardGroups = null;
+async function renderGroups() {
+  const box = document.getElementById('nc-groups');
+  if (!cardGroups) {
+    box.innerHTML = '<span class="calc-hint">讀取中…</span>';
+    const r = await callApi('cardCompanies', {}, { silent: true });
+    if (!r || !r.success) {
+      box.innerHTML = `<span class="calc-hint">${htmlEsc((r && r.message) || '讀取失敗，請稍後再試')}</span>`;
+      return;
+    }
+    cardGroups = r.companies;
+  }
+  const kw = document.getElementById('nc-search').value.trim().toLowerCase();
+  const list = cardGroups.filter((g) => !kw || [g.company, g.names.join(' '), g.people.map((p) => [p.name, p.title, p.phone, p.email, p.ownerName, p.batch].join(' ')).join(' ')].join(' ').toLowerCase().includes(kw));
+  const people = list.reduce((n, g) => n + g.count, 0);
+  document.getElementById('nc-count').textContent = `${list.length} 家公司・${people} 張名片（含所有同事收到的；有公司名稱的才會彙整）`;
+  box.innerHTML = list.length ? list.map((g) => cardGroupHtml(g)).join('') : '<div class="calc-hint" style="padding:10px 0;">沒有符合的公司。</div>';
 }
 
 function cardById(id) {
@@ -42,6 +63,14 @@ function cardById(id) {
 }
 
 function renderCards() {
+  const byCompany = document.getElementById('nc-view').value === 'company';
+  document.getElementById('nc-groups').style.display = byCompany ? '' : 'none';
+  document.getElementById('nc-list').style.display = byCompany ? 'none' : '';
+  document.getElementById('nc-filter').style.display = byCompany ? 'none' : '';
+  if (byCompany) {
+    document.getElementById('nc-empty').style.display = 'none';
+    return renderGroups();
+  }
   const filter = document.getElementById('nc-filter').value;
   const kw = document.getElementById('nc-search').value.trim().toLowerCase();
   const list = allCards.filter((c) => {

@@ -356,6 +356,7 @@ async function openCustomerContactsModal(companyName) {
   currentContactsCompany = companyName;
   document.getElementById('cc-modal-company').textContent = companyName;
   document.getElementById('customer-contacts-modal').style.display = 'flex';
+  loadCardPeople(companyName, 'cc-cards');
   await loadCustomerContacts();
 }
 
