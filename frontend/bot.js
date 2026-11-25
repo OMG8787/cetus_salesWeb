@@ -134,6 +134,14 @@ function fillCs(cs) {
   setVal('cs-handoff-words', cs.handoffWords);
   setVal('cs-handoff-text', cs.handoffText);
   setVal('cs-handoff-lead', cs.handoffLeadText);
+  const gate = cs.gate || {}; // 舊版管理系統沒有這組設定：畫面顯示預設值
+  setVal('cs-gate-mode', gate.mode || 'always');
+  $('cs-gate-need').checked = gate.need !== false;
+  $('cs-gate-name').checked = gate.name !== false;
+  $('cs-gate-company').checked = gate.company === true;
+  setVal('cs-gate-text', gate.text);
+  setVal('cs-gate-line-text', gate.lineText);
+  toggleGateBox();
   setVal('cs-leave-text', cs.leaveText);
   setVal('cs-leave-yes', cs.leaveYes);
   setVal('cs-leave-no', cs.leaveNo);
@@ -192,6 +200,10 @@ function fillCs(cs) {
   toggleHoursBox();
 }
 
+function toggleGateBox() {
+  $('cs-gate-box').style.opacity = $('cs-gate-mode').value === 'off' ? '.5' : '1';
+}
+
 function toggleHoursBox() {
   $('cs-hours-box').style.opacity = $('cs-hours-enabled').checked ? '1' : '.5';
 }
@@ -209,6 +221,14 @@ function readCs() {
     prompt: val('cs-prompt'),
     handoffText: val('cs-handoff-text'),
     handoffLeadText: val('cs-handoff-lead'),
+    gate: {
+      mode: val('cs-gate-mode'),
+      need: $('cs-gate-need').checked,
+      name: $('cs-gate-name').checked,
+      company: $('cs-gate-company').checked,
+      text: val('cs-gate-text'),
+      lineText: val('cs-gate-line-text'),
+    },
     leaveText: val('cs-leave-text'),
     leaveYes: val('cs-leave-yes'),
     leaveNo: val('cs-leave-no'),

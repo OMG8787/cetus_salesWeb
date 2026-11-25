@@ -2,7 +2,7 @@ import { gas } from "../../src/gas.js";
 import { DEFAULT_GUARD, leadLimited } from "../../src/guard.js";
 import { checkOrigin, corsHeaders, enforceRequestLimit, errorResponse, loadWidget, VISITOR_ID, visitorUserId, WidgetError } from "../../src/web.js";
 
-/** 網站客服視窗的「留下聯繫資料」表單：POST /api/widget/lead { visitorId, name, company, phone, email, note } */
+/** 網站客服視窗的「留下聯繫資料」表單：POST /api/widget/lead { visitorId, name, company, phone, email, note, gate? } */
 export async function OPTIONS(request: Request): Promise<Response> {
   try {
     return new Response(null, { status: 204, headers: corsHeaders(checkOrigin(request, await loadWidget())) });
@@ -32,6 +32,7 @@ export async function POST(request: Request): Promise<Response> {
         email: field(body?.email, 80),
         note: field(body?.note, 300),
         source: "form",
+        gate: body?.gate === true, // 轉真人前的表單：管理系統照 BOT 設定檢查必填
         ip,
       });
     } catch (error) {

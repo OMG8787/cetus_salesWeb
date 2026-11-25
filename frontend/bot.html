@@ -160,6 +160,28 @@
         <input id="cs-handoff-words" maxlength="300" />
         <label>轉真人時的回覆（留空使用預設）</label>
         <textarea id="cs-handoff-text" rows="2" maxlength="500" placeholder="例如：已通知專人，營業時間內會盡快回覆您 🙏"></textarea>
+        <div class="bot-gate">
+          <label>轉真人前，先請客人留下需求與資料
+            <select id="cs-gate-mode" onchange="toggleGateBox()">
+              <option value="always">每次轉真人都要先留（建議）</option>
+              <option value="first">只有一開始就找真人時才要先留</option>
+              <option value="off">不擋，直接轉真人</option>
+            </select></label>
+          <div id="cs-gate-box">
+            <div class="calc-hint">客人要找真人時，機器人先不通知同事：網站視窗跳出表單，LINE 請客人直接回覆；留好資料（電話或 Email 一定要有）才轉給真人，通知裡會附上客人的需求。已經留過資料的客人不會再問。</div>
+            <div class="bot-row">
+              <span>表單必填：</span>
+              <label><input type="checkbox" id="cs-gate-need" /> 需求</label>
+              <label><input type="checkbox" id="cs-gate-name" /> 姓名</label>
+              <label><input type="checkbox" id="cs-gate-company" /> 公司</label>
+              <span class="calc-hint">（電話或 Email 擇一一定必填）</span>
+            </div>
+            <label>網站視窗：表單上方的說明（留空使用預設）</label>
+            <textarea id="cs-gate-text" rows="2" maxlength="300"></textarea>
+            <label>LINE：請客人直接回覆資料的說明（LINE 沒有表單；客人回覆裡有電話或 Email 就算留好；留空使用預設）</label>
+            <textarea id="cs-gate-line-text" rows="4" maxlength="300"></textarea>
+          </div>
+        </div>
         <label>按「轉真人」後，先請客人留下資料的話（接在上面那段回覆後面；留空使用預設）</label>
         <textarea id="cs-handoff-lead" rows="2" maxlength="300"></textarea>
         <label>客人轉真人後、還沒留資料就要關閉視窗時，再提醒一次的話（留空使用預設）</label>
@@ -727,7 +749,7 @@
 <script src="common.js?v=20261111d"></script>
 <script src="assistant.js?v=20261109b"></script>
 <script src="alerts.js?v=20261112d"></script>
-<script src="bot.js?v=20261116b"></script>
+<script src="bot.js?v=20261125a"></script>
 <script src="botstaff.js?v=20261109b"></script>
 </body>
 </html>

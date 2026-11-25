@@ -95,15 +95,35 @@ const SESSION_TTL_MS = 5 * 60_000;
 const SESSION_KEEP_TURNS = 10;
 const SESSION_KEEP_CHARS = 600;
 
-function rememberSession(uid: string, info: CsInfo, said: string, reply: string, extra: { askedContact?: boolean; leadDone?: boolean }): void {
+function rememberSession(uid: string, info: CsInfo, said: string, reply: string, extra: { askedContact?: boolean; leadDone?: boolean; gate?: boolean }): void {
   if (sessions.size > 500) sessions.clear();
   const base = sessions.get(uid)?.history ?? info.history ?? [];
   const history = [...base, { u: true, t: said.slice(0, SESSION_KEEP_CHARS) }, { u: false, t: reply.slice(0, SESSION_KEEP_CHARS) }].slice(-SESSION_KEEP_TURNS);
-  const leadState: CsInfo["leadState"] = extra.leadDone ? "done" : info.leadState || (extra.askedContact ? "asked" : "");
+  const leadState: CsInfo["leadState"] = extra.leadDone ? "done" : extra.gate && info.leadState !== "done" ? "gate" : info.leadState || (extra.askedContact ? "asked" : "");
   sessions.set(uid, { at: Date.now(), history, turnCount: (info.turnCount ?? 0) + 1, leadState, known: true });
 }
 
-const LEAD_RANK: Record<string, number> = { "": 0, asked: 1, done: 2 };
+const LEAD_RANK: Record<string, number> = { "": 0, asked: 1, gate: 1, done: 2 };
+
+// ---- 轉真人前先留資料（BOT 設定 → 客服設定 → 客人要找真人）----
+/** 這次轉真人要不要先請客人留資料：已留過不擋；first = 客人第一句就找真人（或之前已經被擋、還沒留）才擋；always = 每次都擋 */
+export function gateNeeded(info: CsInfo): boolean {
+  const mode = info.gate?.mode ?? "off";
+  if (mode === "off" || info.leadState === "done") return false;
+  return mode === "always" || (info.turnCount ?? 0) === 0 || info.leadState === "gate";
+}
+
+const EMAIL_RE = /[^\s@，,；;：:（）()<>]+@[^\s@，,；;：:（）()<>]+\.[A-Za-z]{2,}/;
+const PHONE_RE = /(?:\+?886[\s-]?|0)\d(?:[\s-]?\d){6,10}/;
+
+/** 從客人打的一段話找出電話 / Email，剩下的字當作需求與姓名（LINE 沒有表單，靠這個） */
+export function parseLeadText(text: string): { phone: string; email: string; rest: string } {
+  const email = (EMAIL_RE.exec(text) ?? [""])[0];
+  const noMail = email ? text.replace(email, " ") : text;
+  const phone = (PHONE_RE.exec(noMail) ?? [""])[0].replace(/\s/g, "");
+  const rest = (phone ? noMail.replace(PHONE_RE, " ") : noMail).replace(/(電話|手機|email|e-mail|信箱|mail)\s*[:：]?/gi, " ").replace(/[\s,，、;；:：。.!！?？()（）\-—]+/g, "");
+  return { phone, email, rest };
+}
 
 /** 客人關閉了網站客服視窗：這一段對話結束，機器人不再記得（後台留紀錄並標示已關閉）。 */
 export async function csEnd(uid: string): Promise<boolean> {
@@ -406,6 +426,8 @@ export interface CsResult {
   quickActions: boolean;
   /** 這則回覆含選型計算結果：網站視窗附「看更多」按鈕（點了請訪客留資料） */
   seeMore?: boolean;
+  /** 轉真人前要先留資料：網站視窗跳出表單（哪些欄位必填），送出後再轉真人 */
+  gate?: { need: boolean; name: boolean; company: boolean };
 }
 
 const NO_REPLY = (info: CsInfo, paused = false): CsResult => ({ silent: true, paused, reply: "", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: false, quickActions: false });
@@ -501,7 +523,7 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
   const name = async () => (info.known === false || opts.channel === "web" ? (await opts.displayName?.()) ?? "" : "");
   const said = opts.human ? handoffLabel(info) : text; // 客人按「轉真人」按鈕時，對話紀錄記成按鈕上的字
   // 記錄對話要寫進管理系統（Apps Script 一次要好幾秒）：網站視窗用 defer 放到回應之後再寫，客人不用多等
-  const remember = async (reply: string, topic = "", extra: { askedContact?: boolean; images?: ReplyImage[]; leadDone?: boolean } = {}) => {
+  const remember = async (reply: string, topic = "", extra: { askedContact?: boolean; images?: ReplyImage[]; leadDone?: boolean; gate?: boolean } = {}) => {
     if (!testing) rememberSession(uid, info, said, reply, extra);
     const { leadDone: _leadDone, ...sent } = extra;
     const job = (async () => {
@@ -517,7 +539,15 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
       opts.defer(job);
     } else await job;
   };
+  /** 轉真人前先請客人留資料：先不通知、不暫停機器人；網站視窗跳出表單，LINE 請客人直接回覆 */
+  const gate = async (topic = ""): Promise<CsResult> => {
+    const g = info.gate!;
+    const reply = opts.channel === "web" ? g.text : g.lineText;
+    await remember(reply, topic ? `轉真人前請留資料（${topic}）` : "轉真人前請留資料", { gate: true });
+    return { silent: false, paused: false, reply, choices: [], handoff: null, info, images: [], askContact: false, gate: { need: g.need, name: g.name, company: g.company }, handoffButton: false, quickActions: false };
+  };
   const handoff = async (topic = ""): Promise<CsResult> => {
+    if (gateNeeded(info)) return gate(topic);
     const displayName = (await opts.displayName?.()) ?? "";
     if (!testing) await gas.csHandoff(uid, displayName, said, topic);
     const reply = handoffReply(info, topic);
@@ -525,7 +555,9 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
     return { silent: false, paused: !testing, reply, choices: [], handoff: topic, info, images: [], askContact: opts.channel === "web" && info.leadState !== "done", handoffButton: false, quickActions: false }; // 網站視窗按轉真人 → 同時跳出填基本資料的表單
   };
 
-  const direct = reset || opts.human || hasWord(text, info.handoffWords?.length ? info.handoffWords : DEFAULT_HANDOFF) || !!matchTopic(text, info.topics);
+  const gateLead = info.leadState === "gate" && !opts.human && !reset ? parseLeadText(text) : null;
+  const gateHasContact = !!gateLead && !!(gateLead.phone || gateLead.email);
+  const direct = reset || opts.human || gateHasContact || hasWord(text, info.handoffWords?.length ? info.handoffWords : DEFAULT_HANDOFF) || !!matchTopic(text, info.topics);
   if (direct) {
     const stop = await settle(); // 重新開始 / 轉真人：會寫入管理系統，先確認最新狀態
     if (stop) return stop;
@@ -535,6 +567,26 @@ export async function csConverse(uid: string, text: string, opts: { channel: CsC
     sessions.delete(uid);
     await gas.csForget(uid);
     return { silent: false, paused: false, reply: "好的～想問什麼都可以直接問我 😊", choices: [], handoff: null, info, images: [], askContact: false, handoffButton: info.handoffButton !== false, quickActions: false };
+  }
+
+  // 正在等客人留資料（轉真人前）：這則訊息有電話或 Email → 記進聯繫名單，接著轉真人
+  if (gateHasContact && info.leadState === "gate" && gateLead) {
+    const g = info.gate;
+    const missing = g?.need && gateLead.rest.length < 4 ? "您的需求（想詢問的產品或問題）" : "";
+    if (missing) {
+      const reply = `收到您的聯絡方式了，再請簡單說明${missing}，馬上幫您轉接專人 🙏`;
+      await remember(reply, "轉真人前請留資料", { gate: true });
+      return { silent: false, paused: false, reply, choices: [], handoff: null, info, images: [], askContact: false, handoffButton: false, quickActions: false };
+    }
+    try {
+      await gas.csLead(uid, { phone: gateLead.phone, email: gateLead.email, note: text.slice(0, 300), source: "chat" });
+    } catch (error) {
+      const reply = `資料還不完整：${(error as Error).message}，再麻煩您補上 🙏`;
+      await remember(reply, "轉真人前請留資料", { gate: true });
+      return { silent: false, paused: false, reply, choices: [], handoff: null, info, images: [], askContact: false, handoffButton: false, quickActions: false };
+    }
+    info = { ...info, leadState: "done" };
+    return handoff();
   }
 
   if (opts.human) return handoff(); // 客人按了回覆下方的「轉真人」按鈕

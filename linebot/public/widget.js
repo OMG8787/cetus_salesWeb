@@ -322,7 +322,8 @@
         humanWait = !!d.paused;
         if (isHuman === true || d.paused) handedOff = true; // 轉過真人：關閉視窗前要再提醒一次留資料
         startPolling(); // 訪客說過話後開始輪詢：轉真人後每 2 秒，沒轉則每 10 秒（後台也能直接接手）
-        if (d.askContact && !silent && !store.get(leadKey())) contactCard();
+        if (d.gate && !silent) contactCard({ gate: d.gate }); // 轉真人前要先留需求與資料（BOT 設定）：送出後才轉真人
+        else if (d.askContact && !silent && !store.get(leadKey())) contactCard();
       })
       .catch(function (e) {
         if (t) t.remove();
@@ -410,17 +411,22 @@
     col.className = "col"; col.style.maxWidth = "92%"; col.style.width = "100%";
     var card = document.createElement("form");
     card.className = "card";
+    var g = opt.gate || null; // 轉真人前的表單：哪些欄位必填照 BOT 設定
+    var req = function (on, label) { return label + (on ? "（必填）" : ""); };
     card.innerHTML =
-      (opt.more
+      (g
+        ? "<b>🙋 轉接專人前，請先留下需求與聯絡方式</b><p>送出後馬上幫您轉接，專人看到需求就能直接協助您。</p>"
+        : opt.more
         ? "<b>🔎 想看更多適合的方案？</b><p>留下聯繫資料，專人會依您剛才的需求整理更多型號與建議，主動與您聯繫。</p>"
         : "<b>📇 方便留下聯繫資料嗎？</b><p>之後有新的資訊或需要進一步討論，專人可以主動聯繫您。</p>") +
-      '<input name="name" placeholder="姓名" maxlength="40" autocomplete="name">' +
-      '<input name="company" placeholder="公司" maxlength="60" autocomplete="organization">' +
+      (g ? '<textarea name="note" rows="3" maxlength="300" placeholder="' + req(g.need, "您的需求：想詢問的產品、檢測物件或問題") + '"></textarea>' : "") +
+      '<input name="name" placeholder="' + req(g && g.name, "姓名") + '" maxlength="40" autocomplete="name">' +
+      '<input name="company" placeholder="' + req(g && g.company, "公司") + '" maxlength="60" autocomplete="organization">' +
       '<input name="phone" placeholder="電話（電話或 Email 擇一必填）" maxlength="30" autocomplete="tel" inputmode="tel">' +
       '<input name="email" placeholder="Email" maxlength="80" autocomplete="email" inputmode="email">' +
-      '<textarea name="note" rows="2" maxlength="300" placeholder="想了解什麼（選填）"></textarea>' +
+      (g ? "" : '<textarea name="note" rows="2" maxlength="300" placeholder="想了解什麼（選填）"></textarea>') +
       '<div class="cerr" role="alert"></div>' +
-      '<div class="acts"><button type="submit" class="go">送出</button><button type="button" class="skip">稍後再說</button></div>';
+      '<div class="acts"><button type="submit" class="go">' + (g ? "送出並轉接專人" : "送出") + '</button><button type="button" class="skip">' + (g ? "取消" : "稍後再說") + "</button></div>";
     col.appendChild(card); row.appendChild(col); body.appendChild(row); cardRow = row; scrollDown();
     var err = card.querySelector(".cerr"), go = card.querySelector(".go");
     // 「看更多」：備註前面自動帶上剛才的選型結果摘要，專人不用再問一次需求（後端備註上限 300 字）
@@ -433,10 +439,18 @@
     card.onsubmit = function (e) {
       e.preventDefault();
       var f = function (n) { return card.elements[n].value.trim(); };
+      if (g && g.need && !f("note")) { err.textContent = "請填寫您的需求，專人才能直接協助您"; return; }
+      if (g && g.name && !f("name")) { err.textContent = "請填寫您的姓名"; return; }
+      if (g && g.company && !f("company")) { err.textContent = "請填寫公司名稱"; return; }
       if (!f("phone") && !f("email")) { err.textContent = "請至少留下電話或 Email，專人才能聯繫您"; return; }
+      if (g && busy) { err.textContent = "客服回覆中，請稍後再送出"; return; }
       err.textContent = ""; go.disabled = true;
-      api("/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, name: f("name"), company: f("company"), phone: f("phone"), email: f("email"), note: leadNote(f("note")) }) })
-        .then(function () { store.set(leadKey(), "1"); row.remove(); cardOpen = false; add("ai", "謝謝您！已收到您的聯繫資料，專人會盡快與您聯繫 🙏", { noHand: true }); })
+      api("/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitorId: visitor, name: f("name"), company: f("company"), phone: f("phone"), email: f("email"), note: leadNote(f("note")), gate: !!g }) })
+        .then(function () {
+          store.set(leadKey(), "1"); row.remove(); cardOpen = false;
+          if (g) { note("已收到您的資料，正在幫您轉接專人…"); ask("", false, true); return; } // 資料留好了：這時才真正轉真人
+          add("ai", "謝謝您！已收到您的聯繫資料，專人會盡快與您聯繫 🙏", { noHand: true });
+        })
         .catch(function (e2) { go.disabled = false; err.textContent = e2.message || "送出失敗，請稍後再試"; });
     };
   }

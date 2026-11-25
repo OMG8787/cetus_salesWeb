@@ -36,6 +36,7 @@ export async function POST(request: Request): Promise<Response> {
         reply: result.silent || !result.reply ? null : { id: 0, text: result.reply, choices: result.choices, images: result.images, handoffButton: result.handoffButton, quickActions: result.quickActions, seeMore: result.seeMore === true },
         paused: result.paused,
         askContact: result.askContact,
+        gate: result.gate ?? null,
       },
       { headers: cors },
     );

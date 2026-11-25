@@ -31,6 +31,18 @@ export interface CsTopic {
   askPos?: "after" | "before";
 }
 
+/** 轉真人前先留資料：off 不擋 / first 第一句就找真人才擋 / always 每次都擋；need / name / company 是否必填（電話或 Email 一定要有） */
+export interface CsGate {
+  mode: "off" | "first" | "always";
+  need: boolean;
+  name: boolean;
+  company: boolean;
+  /** 網站視窗表單上方的說明 */
+  text: string;
+  /** LINE（沒有表單）請客人直接回覆的說明 */
+  lineText: string;
+}
+
 export interface CsStyle {
   tone: "friendly" | "formal" | "concise";
   address: string;
@@ -49,6 +61,8 @@ export interface CsInfo {
   handoffText: string;
   /** 按「轉真人」後，先請客人留下聯絡資料的那段話（後台可改） */
   handoffLeadText?: string;
+  /** 轉真人前先留資料（後台可設定；沒帶 = 舊版管理系統，不擋） */
+  gate?: CsGate;
   /** 回覆最少等待秒數（像真人打字） */
   replyDelay?: number;
   ai: AiConfig | null;
@@ -66,8 +80,8 @@ export interface CsInfo {
   contactAfter?: number;
   /** 這位客人已經聊了幾段 */
   turnCount?: number;
-  /** 聯繫資料：'' 還沒問 / asked 已問過 / done 已留 */
-  leadState?: "" | "asked" | "done";
+  /** 聯繫資料：'' 還沒問 / asked 已問過 / gate 要轉真人、等客人留資料 / done 已留 */
+  leadState?: "" | "asked" | "gate" | "done";
   /** 回覆時關閉 Gemini 的思考（BOT 設定可開關；沒帶 = 關閉思考） */
   noThinking?: boolean;
   /** 知識庫有附圖時可以直接給客人 */
@@ -280,11 +294,11 @@ export const gas = {
   csStart(lineUserId: string, ip = ""): Promise<CsInfo> {
     return post<CsInfo>({ op: "csStart", lineUserId, botUrl: config.botUrl, ...(ip ? { ip } : {}) });
   },
-  csRemember(lineUserId: string, turns: { u: boolean; t: string }[], displayName = "", topic = "", extra: { askedContact?: boolean; images?: { url: string; caption: string }[] } = {}): Promise<number> {
+  csRemember(lineUserId: string, turns: { u: boolean; t: string }[], displayName = "", topic = "", extra: { askedContact?: boolean; gate?: boolean; images?: { url: string; caption: string }[] } = {}): Promise<number> {
     return post<number>({ op: "csRemember", lineUserId, turns, displayName, topic, ...extra });
   },
   /** 客人留下聯繫資料（網站表單或 AI 聽到客人主動留） */
-  csLead(lineUserId: string, lead: { name?: string; company?: string; phone?: string; email?: string; note?: string; source?: "form" | "ai"; ip?: string }): Promise<boolean> {
+  csLead(lineUserId: string, lead: { name?: string; company?: string; phone?: string; email?: string; note?: string; source?: "form" | "ai" | "chat"; gate?: boolean; ip?: string }): Promise<boolean> {
     return post<boolean>({ op: "csLead", lineUserId, ...lead });
   },
   csForget(lineUserId: string): Promise<boolean> {

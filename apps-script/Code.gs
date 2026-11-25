@@ -6932,6 +6932,8 @@ var BOT_HANDOFF_WORDS = '真人 客服人員 小編 專人 人工 業務';
 var BOT_DEFAULT_TEXTS = {
   handoffLeadText: '📇 為了方便專員與您聯繫，請先留下您的姓名，以及電話或 Email，專員會盡快回覆您。',
   leaveText: '您還沒有留下聯絡方式，專員可能無法主動聯繫您。離開前要不要留下資料？',
+  gateText: '🙋 轉接專人前，請先在下方表單留下您的需求與聯絡方式，送出後馬上幫您轉接，專人看到需求就能直接協助您 🙏',
+  gateLineText: '🙋 轉接專人前，請先直接回覆以下資料，收到後馬上幫您轉接專人：\n・您的需求（想詢問的產品或問題）\n・姓名、公司\n・電話或 Email',
   leaveYes: '📇 留下資料',
   leaveNo: '不用了，離開',
 };
@@ -7288,6 +7290,23 @@ function botCsFields_(list) {
   return all.filter(function (k) { return list.indexOf(k) > -1; });
 }
 
+/**
+ * 轉真人前先留資料（BOT 設定 → 客服設定 → 客人要找真人）：
+ * mode：off 不擋 / first 第一句就要找真人才擋 / always 每次轉真人都要先留（預設）；
+ * need / name / company：表單裡需求、姓名、公司是否必填（電話或 Email 一定要有一個）；text 網站視窗的說明、lineText LINE 的說明。
+ */
+function botCsGate_(g) {
+  g = g || {};
+  return {
+    mode: g.mode === 'off' || g.mode === 'first' ? g.mode : 'always',
+    need: g.need !== false,
+    name: g.name !== false,
+    company: g.company === true,
+    text: String(g.text || '').trim().slice(0, 300) || BOT_DEFAULT_TEXTS.gateText,
+    lineText: String(g.lineText || '').trim().slice(0, 300) || BOT_DEFAULT_TEXTS.gateLineText,
+  };
+}
+
 function botCsConfig_(cs) {
   cs = cs || {};
   var src = cs.sources || {}, st = cs.style || {}, h = cs.hours || {}, tp = cs.topics || {}, web = cs.web || {};
@@ -7304,6 +7323,7 @@ function botCsConfig_(cs) {
     leaveText: String(cs.leaveText || '').trim().slice(0, 200) || BOT_DEFAULT_TEXTS.leaveText, // 轉真人後、還沒留資料就要關閉視窗時的再次提醒
     leaveYes: String(cs.leaveYes || '').trim().slice(0, 12) || BOT_DEFAULT_TEXTS.leaveYes,
     leaveNo: String(cs.leaveNo || '').trim().slice(0, 12) || BOT_DEFAULT_TEXTS.leaveNo,
+    gate: botCsGate_(cs.gate),
     sources: {
       qa: on(src.qa),
       products: src.products === true,
@@ -7895,6 +7915,7 @@ function csStart_(id, req) {
     prompt: cs.prompt,
     handoffText: cs.handoffText,
     handoffLeadText: cs.handoffLeadText,
+    gate: cs.gate,
     ai: ais.length ? ais[0] : null,
     aiFallback: ais.slice(1),
     search: botSearchCfg_(),
@@ -7942,6 +7963,7 @@ function csRemember_(id, req) {
   botCachePut_(csHistKey_(id), list, m.hours * 3600);
   if (add.some(function (x) { return x.u; })) botCachePut_('cscnt:' + id, Number(botCacheGet_('cscnt:' + id) || 0) + 1, 21600); // 這位客人聊了幾段
   if (req.askedContact === true && !botCache_().get('cslead:' + id)) botCachePut_('cslead:' + id, 'asked', 21600);
+  if (req.gate === true && String(botCacheGet_('cslead:' + id) || '') !== 'done') botCachePut_('cslead:' + id, 'gate', 21600); // 要轉真人、正在等客人留資料
   // 對話紀錄：機器人這則附了圖片，在文字後面加上圖片標記（網站視窗還原對話時會顯示成圖片）
   var imgs = (Array.isArray(req.images) ? req.images : []).slice(0, 5).map(function (im) { return '[[img:' + String((im && im.url) || '').slice(0, 300) + '|' + String((im && im.caption) || '').replace(/[\]|\[]/g, ' ').slice(0, 60) + ']]'; });
   if (channel !== 'test' && add.some(function (x) { return x.u; })) csChatNotify_(channel, id, name, add);
@@ -8108,6 +8130,7 @@ function csHandoff_(id, req) {
     Title: '🛎️ 客人找真人：' + (name || channelText) + (topic ? '（' + topic + '）' : ''),
     Content:
       '客人說：' + String(req.text || '').slice(0, 300) +
+      (botCacheGet_('csleadsum:' + id) ? '\n\n【客人留的資料】\n' + botCacheGet_('csleadsum:' + id) : '') +
       (recent.length ? '\n\n【之前的對話】\n' + recent.join('\n') : '') +
       '\n\n' + (id.charAt(0) === 'V' ? '請到「BOT 設定 → 對話與小編接手」回覆這位網站訪客' : '請到 LINE 官方帳號後台（LINE Official Account Manager）回覆') +
       (pause > 0 ? '；機器人 ' + pause + ' 分鐘內不會回這位客人' : '') +
@@ -8136,8 +8159,14 @@ function csLead_(id, req) {
   if (!phone && !email) throw new Error('請留下電話或 Email，專人才能聯繫您');
   if (phone && phone.replace(/\D/g, '').length < 6) throw new Error('電話號碼看起來不完整');
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Email 格式不正確');
+  if (req.gate === true) { // 轉真人前的表單：照 BOT 設定檢查必填
+    var gate = botSettings_().gate;
+    if (gate.need && !note) throw new Error('請填寫您的需求，專人才能直接協助您');
+    if (gate.name && !name) throw new Error('請填寫您的姓名');
+    if (gate.company && !company) throw new Error('請填寫公司名稱');
+  }
   var channel = id.charAt(0) === 'V' ? 'web' : id.charAt(0) === 'T' ? 'test' : 'line';
-  var source = req.source === 'ai' ? 'ai' : 'form';
+  var source = req.source === 'ai' || req.source === 'chat' ? req.source : 'form';
   var lineName = String(botCacheGet_('csname:' + id) || '');
   var sent = Number(botCacheGet_('cslc:' + id) || 0); // 同一位客人一小時最多留 5 次，避免被灌名單
   if (sent >= 5) throw new Error('送出太頻繁了，請稍後再試');
@@ -8152,6 +8181,7 @@ function csLead_(id, req) {
     appendObjectRow(SHEET_BOT_LEADS, { ID: max + 1, Time: botNow_(), Channel: channel, UserId: id, Name: name || lineName, Company: company, Phone: phone, Email: email, Note: note, Source: source });
   });
   botCachePut_('cslead:' + id, 'done', 21600);
+  botCachePut_('csleadsum:' + id, ['姓名：' + (name || lineName || '—'), company ? '公司：' + company : '', phone ? '電話：' + phone : '', email ? 'Email：' + email : '', note ? '需求 / 備註：' + note : ''].filter(Boolean).join('\n'), 21600);
   if (channel !== 'test') {
     var today = todayStr();
     var who = (name || lineName || (channel === 'web' ? '網站訪客' : 'LINE 客人')) + (company ? '（' + company + '）' : '');
@@ -8159,7 +8189,7 @@ function csLead_(id, req) {
       Owner: 'SYSTEM',
       OwnerName: '客服機器人',
       Title: '📇 新的聯繫名單：' + who,
-      Content: ['姓名：' + (name || lineName || '—'), company ? '公司：' + company : '', phone ? '電話：' + phone : '', email ? 'Email：' + email : '', note ? '備註：' + note : '', '來源：' + (channel === 'web' ? '網站客服視窗' : 'LINE') + (source === 'ai' ? '（客人在聊天中主動留下）' : '（留資料表單）'), '\n完整名單在「BOT 設定 → 聯繫名單」。'].filter(Boolean).join('\n'),
+      Content: ['姓名：' + (name || lineName || '—'), company ? '公司：' + company : '', phone ? '電話：' + phone : '', email ? 'Email：' + email : '', note ? '備註：' + note : '', '來源：' + (channel === 'web' ? '網站客服視窗' : 'LINE') + (source === 'ai' ? '（客人在聊天中主動留下）' : source === 'chat' ? '（轉真人前在聊天中留下）' : '（留資料表單）'), '\n完整名單在「BOT 設定 → 聯繫名單」。'].filter(Boolean).join('\n'),
       Shared: '是',
       CreatedDate: today,
       LastUpdated: today,
